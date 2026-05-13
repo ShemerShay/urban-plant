@@ -1,0 +1,31 @@
+{
+  "name": "urban-plant",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "setup:env": "node scripts/ensure-env-local.mjs"
+  },
+  "dependencies": {
+    "embla-carousel-react": "^8.6.0",
+    "next": "16.2.4",
+    "posthog-js": "^1.372.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-qr-code": "^2.0.21",
+    "resend": "^6.12.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

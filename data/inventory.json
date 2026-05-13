@@ -1,0 +1,17 @@
+[
+  {
+    "plantId": "monstera",
+    "locationId": "cafe-noir",
+    "status": "available"
+  },
+  {
+    "plantId": "olive-01",
+    "locationId": "chachos-shenkin",
+    "status": "sold"
+  },
+  {
+    "plantId": "alocasia",
+    "locationId": "cafe-lev-haair",
+    "status": "available"
+  }
+]
