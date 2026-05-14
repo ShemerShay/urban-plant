@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+
+import type { PlantCatalogStatus } from "@/lib/types";
 
 type FormFields = {
   fullName: string;
@@ -18,6 +19,8 @@ type FieldErrors = Partial<Record<keyof FormFields, string>>;
 interface CheckoutFormProps {
   plantId: string;
   plantName: string;
+  /** Catalog availability; when `sold`, the submit control stays disabled like other blocked purchases. */
+  plantStatus: PlantCatalogStatus;
   /** Formatted price line for confirmation email (e.g. ₪89) */
   priceDisplay: string;
   /** From QR `?location=`; null when not provided */
@@ -27,31 +30,13 @@ interface CheckoutFormProps {
 const baseInputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
-function successPath(
-  fulfillmentMethod: FulfillmentMethod,
-  orderId: string,
-  plantId: string,
-  plantName: string,
-  emailFailed = false,
-) {
-  const params = new URLSearchParams();
-  params.set("orderId", orderId);
-  params.set("plantId", plantId);
-  params.set("plantName", plantName);
-  if (fulfillmentMethod === "pickup") params.set("fulfillmentMethod", "pickup");
-  if (emailFailed) params.set("emailFailed", "1");
-
-  const query = params.toString();
-  return query ? `/success?${query}` : "/success";
-}
-
 export function CheckoutForm({
   plantId,
   plantName,
-  priceDisplay,
+  plantStatus,
+  priceDisplay: _priceDisplay,
   locationId,
 }: CheckoutFormProps) {
-  const router = useRouter();
   const [fulfillmentMethod, setFulfillmentMethod] =
     useState<FulfillmentMethod>("delivery");
   const [fields, setFields] = useState<FormFields>({
@@ -63,12 +48,16 @@ export function CheckoutForm({
   });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [prepMessage, setPrepMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  void _priceDisplay;
 
   function handleChange(field: keyof FormFields, value: string) {
     setFields((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: undefined }));
     setSubmitError(null);
+    setPrepMessage(null);
   }
 
   function handleFulfillmentChange(next: FulfillmentMethod) {
@@ -79,6 +68,7 @@ export function CheckoutForm({
       address: next === "pickup" ? undefined : prev.address,
     }));
     setSubmitError(null);
+    setPrepMessage(null);
   }
 
   function validate() {
@@ -101,20 +91,26 @@ export function CheckoutForm({
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (plantStatus === "sold") return;
     if (!validate()) return;
 
     setIsSubmitting(true);
     setSubmitError(null);
+    setPrepMessage(null);
+
+    const orderId = crypto.randomUUID();
 
     try {
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          orderId,
           plantId,
           locationId,
           fulfillmentMethod,
           fullName: fields.fullName.trim(),
+          customerEmail: fields.email.trim(),
           phone: fields.phone.trim(),
           address:
             fulfillmentMethod === "delivery" ? fields.address.trim() : "",
@@ -127,7 +123,6 @@ export function CheckoutForm({
 
       const data = (await response.json().catch(() => ({}))) as {
         error?: string;
-        orderId?: string;
       };
 
       if (!response.ok) {
@@ -135,36 +130,9 @@ export function CheckoutForm({
         return;
       }
 
-      const orderId = typeof data.orderId === "string" ? data.orderId : "";
-      const customerEmail = fields.email.trim();
+      setPrepMessage("Order prepared. The secure payment step will connect here next.");
 
-      try {
-        const emailResponse = await fetch("/api/send-purchase-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customerEmail,
-            plantName,
-            plantId,
-            orderId,
-            fullName: fields.fullName.trim(),
-            priceDisplay,
-          }),
-        });
-
-        if (!emailResponse.ok) {
-          router.push(
-            successPath(fulfillmentMethod, orderId, plantId, plantName, true),
-          );
-          return;
-        }
-
-        router.push(successPath(fulfillmentMethod, orderId, plantId, plantName));
-      } catch {
-        router.push(
-          successPath(fulfillmentMethod, orderId, plantId, plantName, true),
-        );
-      }
+      // TODO(CardCom): initiate CardCom checkout (e.g. Low Profile) with orderId, then redirect or open the payment UI; on callback, update the order row and route to `/payment/success` or `/payment/failed`.
     } catch {
       setSubmitError("Network error. Try again.");
     } finally {
@@ -177,7 +145,8 @@ export function CheckoutForm({
     fields.email.trim().length > 0 &&
     (fulfillmentMethod === "pickup" ||
       (fields.phone.trim().length > 0 && fields.address.trim().length > 0));
-  const isSubmitDisabled = isSubmitting || !hasRequiredFields;
+  const isSubmitDisabled =
+    isSubmitting || !hasRequiredFields || plantStatus === "sold";
 
   return (
     <form id="checkout-form" onSubmit={onSubmit} className="space-y-4">
@@ -311,6 +280,7 @@ export function CheckoutForm({
       </div>
 
       {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
+      {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}
 
       <button
         type="submit"

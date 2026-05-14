@@ -34,7 +34,9 @@ export default async function PlantPage({ params, searchParams }: PlantPageProps
     locationForLinks !== undefined ? getLocationById(locationForLinks) : undefined;
 
   const ctaText = formatBuyCta(plant.price, plant.currency);
-  const purchaseEnabled = await canPurchasePlantAtLocation(plant.id, locationForLinks);
+  const purchaseEnabled =
+    plant.status !== "sold" &&
+    (await canPurchasePlantAtLocation(plant.id, locationForLinks));
 
   return (
     <main

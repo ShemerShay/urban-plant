@@ -5,7 +5,13 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { OrderStatus } from "@/lib/status";
 import { ORDER_STATUS_LABELS } from "@/lib/status";
 
-const OPTIONS: OrderStatus[] = ["sold", "picked_up", "delivered", "available"];
+const OPTIONS: OrderStatus[] = [
+  "pending_payment",
+  "sold",
+  "picked_up",
+  "delivered",
+  "available",
+];
 
 function Chevron({ open }: { open: boolean }) {
   return (

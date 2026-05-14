@@ -1,9 +1,13 @@
 export type CareLevel = "Easy" | "Moderate" | "Advanced";
 export type LightLevel = "Low light" | "Indirect bright light" | "Full sun";
 
+/** Catalog-level availability (independent of per-location shelf inventory). */
+export type PlantCatalogStatus = "available" | "sold";
+
 export interface PlantProduct {
   id: string;
   name: string;
+  status: PlantCatalogStatus;
   subtitle: string;
   description: string;
   price: number;
