@@ -20,11 +20,13 @@ async function syncShelfToOrderStatus(
   locationId: string | null,
   status: OrderStatus,
 ): Promise<void> {
+  if (status === "pending_payment") return;
   if (status === "available") {
     await markInventoryAvailable(plantId, locationId);
-  } else {
-    await markInventorySold(plantId, locationId);
+    return;
   }
+  // `sold`, `picked_up`, and `delivered` all keep the physical unit off the shelf.
+  await markInventorySold(plantId, locationId);
 }
 
 function nextOrderWithStatus(prev: SavedOrder, status: OrderStatus): SavedOrder {
@@ -56,7 +58,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   }
 
   await deleteOrderById(orderId);
-  await markInventoryAvailable(prev.plantId, prev.locationId);
+  if (prev.orderStatus !== "pending_payment") {
+    await markInventoryAvailable(prev.plantId, prev.locationId);
+  }
 
   return NextResponse.json({ ok: true });
 }
@@ -95,7 +99,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(
       {
         error:
-          'Invalid order status. Send orderStatus: "available" | "sold" | "picked_up" | "delivered" (or legacy action: "markDelivered").',
+          'Invalid order status. Send orderStatus: "pending_payment" | "available" | "sold" | "picked_up" | "delivered" (or legacy action: "markDelivered").',
       },
       { status: 400 },
     );

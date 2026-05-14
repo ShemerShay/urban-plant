@@ -1,4 +1,4 @@
-import { buildWhatsAppChatUrl, getWhatsAppBusinessDigits } from "@/lib/whatsappContact";
+import { buildWhatsAppChatUrl } from "@/lib/whatsappContact";
 
 function IconWhatsApp({ className }: { className?: string }) {
   return (
@@ -12,10 +12,11 @@ interface PlantPageContactLinkProps {
   whatsAppMessage: string;
 }
 
+const contactRowClassName =
+  "inline-flex max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center text-sm font-semibold text-[#497863] underline-offset-4 transition hover:text-[#163529] hover:underline";
+
 /** In-page footer link: stays in document flow at the bottom of the plant page (not in the fixed CTA bar). */
 export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkProps) {
-  if (!getWhatsAppBusinessDigits()) return null;
-
   const href = buildWhatsAppChatUrl(whatsAppMessage);
 
   return (
@@ -24,7 +25,7 @@ export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkPr
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center text-sm font-semibold text-[#497863] underline-offset-4 transition hover:text-[#163529] hover:underline"
+        className={contactRowClassName}
       >
         <IconWhatsApp className="size-5 shrink-0 text-[#25D366]" />
         <span className="min-w-0 break-words">Contact us</span>

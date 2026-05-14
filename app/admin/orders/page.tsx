@@ -17,7 +17,14 @@ function firstParam(v: string | string[] | undefined): string | undefined {
 }
 
 function parseStatus(raw: string | undefined): OrderStatus | "all" {
-  if (raw === "available" || raw === "sold" || raw === "picked_up" || raw === "delivered") return raw;
+  if (
+    raw === "pending_payment" ||
+    raw === "available" ||
+    raw === "sold" ||
+    raw === "picked_up" ||
+    raw === "delivered"
+  )
+    return raw;
   return "all";
 }
 
@@ -48,7 +55,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
 
   const allOrders = await readOrders();
 
-  let orders = allOrders.filter((o) => {
+  const orders = allOrders.filter((o) => {
     if (statusFilter !== "all" && o.orderStatus !== statusFilter) return false;
     if (plantFilter !== "all" && o.plantId !== plantFilter) return false;
     if (locationFilter !== "all") {

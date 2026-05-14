@@ -7,6 +7,7 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
 import type { FulfillmentMethod, SavedOrder } from "./orderTypes";
+import { parsePaymentStatus } from "./orderTypes";
 import type { OrderStatus } from "./status";
 import { isOrderStatus } from "./status";
 
@@ -70,6 +71,18 @@ function normalizeOrder(entry: unknown): SavedOrder | null {
   const pickedUpAt =
     typeof o.pickedUpAt === "string" && o.pickedUpAt ? o.pickedUpAt : undefined;
 
+  const customerEmail =
+    typeof o.customerEmail === "string" && o.customerEmail.trim()
+      ? o.customerEmail.trim()
+      : undefined;
+  const paymentStatus = parsePaymentStatus(o.paymentStatus);
+  const lowProfileId =
+    typeof o.lowProfileId === "string" && o.lowProfileId ? o.lowProfileId : undefined;
+  const cardcomTransactionId =
+    typeof o.cardcomTransactionId === "string" && o.cardcomTransactionId
+      ? o.cardcomTransactionId
+      : undefined;
+
   if (
     !orderId ||
     !plantId ||
@@ -91,12 +104,16 @@ function normalizeOrder(entry: unknown): SavedOrder | null {
     locationAddress,
     price,
     fullName,
+    ...(customerEmail ? { customerEmail } : {}),
     phone: phone ?? "",
     address: address ?? "",
     apartmentOrNotes,
     fulfillmentMethod,
     createdAt,
     orderStatus,
+    ...(paymentStatus ? { paymentStatus } : {}),
+    ...(lowProfileId ? { lowProfileId } : {}),
+    ...(cardcomTransactionId ? { cardcomTransactionId } : {}),
     ...(deliveredAt ? { deliveredAt } : {}),
     ...(pickedUpAt ? { pickedUpAt } : {}),
   };

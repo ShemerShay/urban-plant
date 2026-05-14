@@ -44,6 +44,7 @@ export default async function CheckoutPage({ params, searchParams }: CheckoutPag
           <CheckoutForm
             plantId={plantId}
             plantName={plant.name}
+            plantStatus={plant.status}
             priceDisplay={formatPrice(plant.price, plant.currency)}
             locationId={locationForLinks ?? null}
           />

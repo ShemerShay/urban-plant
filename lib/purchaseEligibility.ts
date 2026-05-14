@@ -7,9 +7,13 @@
 
 import { getInventoryDisplayStatus } from "@/lib/inventoryStorage";
 import { readOrders } from "@/lib/ordersStorage";
+import type { SavedOrder } from "@/lib/orderTypes";
 import type { OrderStatus } from "@/lib/status";
 
-function blocksPurchase(status: OrderStatus): boolean {
+function blocksPurchase(order: SavedOrder): boolean {
+  if (order.paymentStatus === "pending_payment") return true;
+  if (order.orderStatus === "pending_payment") return true;
+  const status: OrderStatus = order.orderStatus;
   return status === "sold" || status === "picked_up" || status === "delivered";
 }
 
@@ -25,10 +29,7 @@ export async function canPurchasePlantAtLocation(
 
   const orders = await readOrders();
   const blocked = orders.some(
-    (o) =>
-      o.plantId === plantId &&
-      o.locationId === loc &&
-      blocksPurchase(o.orderStatus),
+    (o) => o.plantId === plantId && o.locationId === loc && blocksPurchase(o),
   );
   return !blocked;
 }

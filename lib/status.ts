@@ -11,10 +11,17 @@ export const PLANT_STATUS_LABELS: Record<PlantStatus, string> = {
 /**
  * Order lifecycle. `available` means the unit was released back to the shelf
  * (plant is buyable again at that location when inventory allows).
+ * `pending_payment` is used until CardCom confirms payment (no shelf update yet).
  */
-export type OrderStatus = "available" | "sold" | "picked_up" | "delivered";
+export type OrderStatus =
+  | "pending_payment"
+  | "available"
+  | "sold"
+  | "picked_up"
+  | "delivered";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  pending_payment: "Awaiting payment",
   available: "Available — on shelf again",
   sold: "Sold",
   picked_up: "Sold & Taken",
@@ -29,7 +36,13 @@ export const INVENTORY_STATUS_LABELS: Record<InventoryStatus, string> = {
   sold: "Sold",
 };
 
-const ORDER_SET = new Set<OrderStatus>(["available", "sold", "picked_up", "delivered"]);
+const ORDER_SET = new Set<OrderStatus>([
+  "pending_payment",
+  "available",
+  "sold",
+  "picked_up",
+  "delivered",
+]);
 
 export function isOrderStatus(value: unknown): value is OrderStatus {
   return typeof value === "string" && ORDER_SET.has(value as OrderStatus);

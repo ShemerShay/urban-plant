@@ -20,6 +20,8 @@ interface AdminOrderCardProps {
 
 function statusBadgeClass(status: OrderStatus): string {
   switch (status) {
+    case "pending_payment":
+      return "bg-violet-100 text-violet-950";
     case "delivered":
       return "bg-emerald-100 text-emerald-900";
     case "picked_up":
@@ -103,6 +105,12 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
       </div>
 
       <p className="mt-3 text-base font-semibold text-emerald-950">{order.fullName}</p>
+      {order.customerEmail ? (
+        <p className="mt-1 text-sm text-slate-700">
+          <span className="text-slate-500">Email: </span>
+          {order.customerEmail}
+        </p>
+      ) : null}
       <p className="mt-1 text-sm text-slate-700">
         <span className="text-slate-500">Phone: </span>
         {order.phone}

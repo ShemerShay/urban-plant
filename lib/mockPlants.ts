@@ -4,6 +4,7 @@ export const mockPlants: PlantProduct[] = [
   {
     id: "monstera",
     name: "Monstera Deliciosa",
+    status: "available",
     subtitle: "Easy indoor plant",
     description:
       "A calm, sculptural plant that adds fresh character to indoor spaces. Great for creating a soft natural presence at home.",
@@ -29,6 +30,7 @@ export const mockPlants: PlantProduct[] = [
   {
     id: "alocasia",
     name: "Alocasia",
+    status: "available",
     subtitle: "Bold tropical contrast",
     description:
       "Arrow-shaped leaves with striking veins—an eye-catching accent that reads upscale and intentional.",
@@ -54,6 +56,7 @@ export const mockPlants: PlantProduct[] = [
   {
     id: "asparagus",
     name: "Asparagus fern",
+    status: "available",
     subtitle: "Soft airy texture",
     description:
       "Feathery, delicate foliage that adds movement and a relaxed botanical vibe to tight spaces.",
@@ -79,6 +82,7 @@ export const mockPlants: PlantProduct[] = [
   {
     id: "olive-01",
     name: "Mediterranean Olive",
+    status: "available",
     subtitle: "Premium indoor tree",
     description:
       "A timeless olive tree that brings a soft Mediterranean character to cafés, living rooms, and workspaces.",
