@@ -1,35 +1,19 @@
 /**
- * Whether the customer can start checkout for this catalog plant at a partner location.
- * Without a location (no QR anchor), purchase is allowed.
- * With a location: shelf must be `available` and there must be no existing order
- * for this plant+location in sold / picked_up / delivered (not when `available`).
+ * Whether checkout can start for a POS Spot. Local availability lives on POS Spot.
  */
 
-import { getInventoryDisplayStatus } from "@/lib/inventoryStorage";
-import { readOrders } from "@/lib/ordersStorage";
-import type { SavedOrder } from "@/lib/orderTypes";
-import type { OrderStatus } from "@/lib/status";
-
-function blocksPurchase(order: SavedOrder): boolean {
-  if (order.paymentStatus === "pending_payment") return true;
-  if (order.orderStatus === "pending_payment") return true;
-  const status: OrderStatus = order.orderStatus;
-  return status === "sold" || status === "picked_up" || status === "delivered";
-}
+import { findLegacyPosSpot, getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 
 export async function canPurchasePlantAtLocation(
   plantId: string,
   locationId: string | null | undefined,
 ): Promise<boolean> {
   if (!locationId?.trim()) return true;
+  const match = await findLegacyPosSpot(plantId, locationId);
+  return match ? match.posSpot.status === "available" : true;
+}
 
-  const loc = locationId.trim();
-  const shelf = await getInventoryDisplayStatus(plantId, locationId);
-  if (shelf !== "available") return false;
-
-  const orders = await readOrders();
-  const blocked = orders.some(
-    (o) => o.plantId === plantId && o.locationId === loc && blocksPurchase(o),
-  );
-  return !blocked;
+export async function canPurchasePosSpot(spotSlugOrId: string): Promise<boolean> {
+  const posSpot = await getPosSpotBySpotSlug(spotSlugOrId);
+  return posSpot?.status === "available";
 }

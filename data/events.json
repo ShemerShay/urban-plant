@@ -1,0 +1,61 @@
+[
+  {
+    "id": "e94ea654-2745-4004-921d-629523434d3c",
+    "type": "order_created",
+    "createdAt": "2026-05-17T14:13:37.302Z",
+    "posSpotId": "pos-chachos-shenkin-olive-01",
+    "offerId": "offer-olive-01",
+    "orderId": "ffd9b5f1-0f8c-4014-bee3-d7f8022be541",
+    "productId": "olive-01",
+    "partnerLocationId": "chachos-shenkin",
+    "createdBy": "online",
+    "data": {
+      "fulfillmentMethod": "delivery",
+      "orderStatus": "sold"
+    }
+  },
+  {
+    "id": "60ed682d-2631-4e65-80e5-df13fc493308",
+    "type": "order_cancelled",
+    "createdAt": "2026-05-17T14:19:55.804Z",
+    "posSpotId": "pos-chachos-shenkin-olive-01",
+    "offerId": "offer-olive-01",
+    "orderId": "ffd9b5f1-0f8c-4014-bee3-d7f8022be541",
+    "productId": "olive-01",
+    "partnerLocationId": "chachos-shenkin",
+    "createdBy": "admin",
+    "data": {
+      "cancellationReason": "me"
+    }
+  },
+  {
+    "id": "bc2cec7b-1c6c-49a8-8bdd-fd3df2d85fff",
+    "type": "order_created",
+    "createdAt": "2026-05-17T14:20:13.348Z",
+    "posSpotId": "pos-chachos-shenkin-olive-01",
+    "offerId": "offer-olive-01",
+    "orderId": "8ed02d4d-5494-424b-b80a-3a1a262b260a",
+    "productId": "olive-01",
+    "partnerLocationId": "chachos-shenkin",
+    "createdBy": "online",
+    "data": {
+      "fulfillmentMethod": "delivery",
+      "orderStatus": "sold"
+    }
+  },
+  {
+    "id": "214c3f07-7ee0-4b26-ab2a-d5a19c0975cf",
+    "type": "plant_placed",
+    "posSpotId": "pos-cafe-left-shelf",
+    "offerId": "offer-monstera",
+    "productId": "monstera",
+    "partnerLocationId": "cafe-noir",
+    "createdAt": "2026-05-17T14:27:06.024Z",
+    "createdBy": "admin",
+    "data": {
+      "spotSlug": "cafe-left-shelf",
+      "spotDescription": "on the left shelf at the entrance",
+      "status": "available"
+    }
+  }
+]

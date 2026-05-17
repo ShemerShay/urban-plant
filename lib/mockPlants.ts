@@ -56,8 +56,10 @@ export const mockPlants: PlantProduct[] = [
   {
     id: "asparagus",
     name: "Asparagus fern",
+    family: "Asparagaceae",
     status: "available",
     subtitle: "Soft airy texture",
+    averageSize: "small",
     description:
       "Feathery, delicate foliage that adds movement and a relaxed botanical vibe to tight spaces.",
     price: 89,

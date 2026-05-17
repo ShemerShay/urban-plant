@@ -1,47 +1,38 @@
-/** Full status union (shelf + fulfillment). */
-export type PlantStatus = "available" | "sold" | "picked_up" | "delivered";
+/** Full status union (catalog / POS spot + fulfillment). */
+export type PlantStatus = "available" | "sold" | "picked_up" | "delivered" | "cancelled";
 
 export const PLANT_STATUS_LABELS: Record<PlantStatus, string> = {
   available: "Available",
   sold: "Sold",
   picked_up: "Sold & Taken",
   delivered: "Delivered",
+  cancelled: "Cancelled",
 };
 
-/**
- * Order lifecycle. `available` means the unit was released back to the shelf
- * (plant is buyable again at that location when inventory allows).
- * `pending_payment` is used until CardCom confirms payment (no shelf update yet).
- */
-export type OrderStatus =
-  | "pending_payment"
-  | "available"
-  | "sold"
-  | "picked_up"
-  | "delivered";
+/** Completed order lifecycle. Checkout/payment-pending state does not live on Order. */
+export type OrderStatus = "sold" | "picked_up" | "delivered" | "cancelled";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  pending_payment: "Awaiting payment",
-  available: "Available — on shelf again",
   sold: "Sold",
   picked_up: "Sold & Taken",
   delivered: "Delivered",
+  cancelled: "Cancelled",
 };
 
-/** Plant unit at a partner location (on-prem shelf vs sold from shelf). */
-export type InventoryStatus = "available" | "sold";
+/** Local POS spot availability. */
+export type InventoryStatus = "available" | "sold" | "inactive";
 
 export const INVENTORY_STATUS_LABELS: Record<InventoryStatus, string> = {
   available: "Available",
   sold: "Sold",
+  inactive: "Inactive",
 };
 
 const ORDER_SET = new Set<OrderStatus>([
-  "pending_payment",
-  "available",
   "sold",
   "picked_up",
   "delivered",
+  "cancelled",
 ]);
 
 export function isOrderStatus(value: unknown): value is OrderStatus {

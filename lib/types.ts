@@ -7,6 +7,7 @@ export type PlantCatalogStatus = "available" | "sold";
 export interface PlantProduct {
   id: string;
   name: string;
+  family?: string;
   status: PlantCatalogStatus;
   subtitle: string;
   description: string;
@@ -16,6 +17,11 @@ export interface PlantProduct {
   labels: string[];
   light: LightLevel;
   water: string;
+  averageSize?: "small" | "medium" | "large";
+  maintenanceConditions?: string;
+  supplierName?: string;
+  baseSupplierPrice?: number;
+  createdAt?: string;
   difficulty: CareLevel;
   location: string;
   petFriendly: boolean;

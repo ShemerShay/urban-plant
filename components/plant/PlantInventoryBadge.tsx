@@ -1,18 +1,23 @@
-import { getInventoryDisplayStatus } from "@/lib/inventoryStorage";
+import { findLegacyPosSpot, getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import { INVENTORY_STATUS_LABELS } from "@/lib/status";
 
 interface PlantShelfBadgeProps {
-  plantId: string;
-  locationId: string | undefined;
+  plantId?: string;
+  locationId?: string | undefined;
+  spotSlug?: string;
 }
 
-/** Availability at a partner location (shelf state for this plant unit). */
-export async function PlantInventoryBadge({ plantId, locationId }: PlantShelfBadgeProps) {
-  const status = await getInventoryDisplayStatus(plantId, locationId);
-  if (status === null) return null;
+/** Availability at the POS Spot that owns the QR. */
+export async function PlantInventoryBadge({ plantId, locationId, spotSlug }: PlantShelfBadgeProps) {
+  const posSpot = spotSlug
+    ? await getPosSpotBySpotSlug(spotSlug)
+    : plantId
+      ? (await findLegacyPosSpot(plantId, locationId))?.posSpot
+      : undefined;
+  if (!posSpot) return null;
 
-  const label = INVENTORY_STATUS_LABELS[status];
-  const isAvailable = status === "available";
+  const label = INVENTORY_STATUS_LABELS[posSpot.status];
+  const isAvailable = posSpot.status === "available";
 
   return (
     <div

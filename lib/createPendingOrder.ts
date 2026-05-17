@@ -1,4 +1,4 @@
-import type { FulfillmentMethod, SavedOrder } from "./orderTypes";
+import type { FulfillmentMethod } from "./orderTypes";
 
 export type CreatePendingOrderInput = {
   orderId: string;
@@ -17,26 +17,21 @@ export type CreatePendingOrderInput = {
   locationAddress: string | null;
 };
 
-/** Build a persisted row awaiting CardCom confirmation (no shelf / inventory change yet). */
-export function createPendingOrder(input: CreatePendingOrderInput): SavedOrder {
+export type CheckoutSessionDraft = CreatePendingOrderInput & {
+  id: string;
+  status: "pending_payment";
+  createdAt: string;
+  paymentProviderSessionId?: string;
+};
+
+/** Build a future checkout-session draft. Pending payment state does not live on Order. */
+export function createPendingOrder(input: CreatePendingOrderInput): CheckoutSessionDraft {
   const createdAt = new Date().toISOString();
 
   return {
-    orderId: input.orderId,
-    plantId: input.plantId,
-    plantName: input.plantName,
-    locationId: input.locationId,
-    locationName: input.locationName,
-    locationAddress: input.locationAddress,
-    price: input.amount,
-    fullName: input.customerName,
-    customerEmail: input.customerEmail,
-    phone: input.phone,
-    address: input.address,
-    apartmentOrNotes: input.apartmentOrNotes,
-    fulfillmentMethod: input.fulfillmentMethod,
+    ...input,
+    id: input.orderId,
     createdAt,
-    orderStatus: "pending_payment",
-    paymentStatus: "pending_payment",
+    status: "pending_payment",
   };
 }

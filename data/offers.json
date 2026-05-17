@@ -1,0 +1,39 @@
+[
+  {
+    "id": "offer-monstera",
+    "productId": "monstera",
+    "consumerPrice": 89,
+    "status": "active",
+    "createdAt": "2026-05-17T00:00:00.000Z"
+  },
+  {
+    "id": "offer-alocasia",
+    "productId": "alocasia",
+    "consumerPrice": 169,
+    "status": "active",
+    "createdAt": "2026-05-17T00:00:00.000Z"
+  },
+  {
+    "id": "offer-asparagus",
+    "productId": "asparagus",
+    "consumerPrice": 89,
+    "status": "active",
+    "createdAt": "2026-05-17T00:00:00.000Z"
+  },
+  {
+    "id": "offer-olive-01",
+    "productId": "olive-01",
+    "consumerPrice": 249,
+    "status": "active",
+    "createdAt": "2026-05-17T00:00:00.000Z"
+  },
+  {
+    "id": "offer-asparagus-partner-01",
+    "productId": "asparagus",
+    "consumerPrice": 89,
+    "supplierPrice": 52,
+    "supplierName": "Urban Plant Nursery",
+    "status": "active",
+    "createdAt": "2026-05-17T12:00:00.000Z"
+  }
+]

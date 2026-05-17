@@ -5,13 +5,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { OrderStatus } from "@/lib/status";
 import { ORDER_STATUS_LABELS } from "@/lib/status";
 
-const OPTIONS: OrderStatus[] = [
-  "pending_payment",
-  "sold",
-  "picked_up",
-  "delivered",
-  "available",
-];
+/** Operational statuses; cancellation is handled by the cancel action because it requires a reason. */
+const OPTIONS: OrderStatus[] = ["sold", "picked_up", "delivered"];
 
 function Chevron({ open }: { open: boolean }) {
   return (

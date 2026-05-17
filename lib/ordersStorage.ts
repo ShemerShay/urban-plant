@@ -6,8 +6,7 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
-import type { FulfillmentMethod, SavedOrder } from "./orderTypes";
-import { parsePaymentStatus } from "./orderTypes";
+import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
 import type { OrderStatus } from "./status";
 import { isOrderStatus } from "./status";
 
@@ -17,12 +16,76 @@ function normalizeLegacyOrderStatus(raw: unknown, source: "orderStatus" | "deliv
   if (isOrderStatus(raw)) return raw;
   /**
    * Legacy `deliveryStatus` only: "available"/"pending" meant order placed, awaiting fulfillment.
-   * Do not treat `orderStatus: "available"` as legacy — that is the real released-to-shelf state.
+   * Legacy `orderStatus: "available"` is no longer an Order state; preserve the order as sold.
    */
-  if (source === "deliveryStatus" && (raw === "available" || raw === "pending")) {
+  if (
+    (source === "deliveryStatus" && (raw === "available" || raw === "pending")) ||
+    raw === "available" ||
+    raw === "pending_payment"
+  ) {
     return "sold";
   }
   return "sold";
+}
+
+function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const o = value as Record<string, unknown>;
+  const productId = typeof o.productId === "string" ? o.productId : "";
+  const productName = typeof o.productName === "string" ? o.productName : "";
+  const productDescription = typeof o.productDescription === "string" ? o.productDescription : "";
+  const offerId = typeof o.offerId === "string" ? o.offerId : "";
+  const consumerPrice =
+    typeof o.consumerPrice === "number" && Number.isFinite(o.consumerPrice)
+      ? o.consumerPrice
+      : null;
+  const fulfillmentType: FulfillmentMethod =
+    o.fulfillmentType === "pickup" ? "pickup" : "delivery";
+  if (!productId || !productName || !productDescription || !offerId || consumerPrice === null) {
+    return undefined;
+  }
+
+  const careRaw = o.care && typeof o.care === "object" ? (o.care as Record<string, unknown>) : {};
+  const careInstructions = Array.isArray(careRaw.careInstructions)
+    ? careRaw.careInstructions.filter((x): x is string => typeof x === "string")
+    : undefined;
+  const averageSize =
+    careRaw.averageSize === "small" || careRaw.averageSize === "medium" || careRaw.averageSize === "large"
+      ? careRaw.averageSize
+      : undefined;
+
+  return {
+    productId,
+    productName,
+    ...(typeof o.productFamily === "string" && o.productFamily ? { productFamily: o.productFamily } : {}),
+    ...(typeof o.productImage === "string" && o.productImage ? { productImage: o.productImage } : {}),
+    productDescription,
+    offerId,
+    consumerPrice,
+    ...(typeof o.supplierPrice === "number" && Number.isFinite(o.supplierPrice)
+      ? { supplierPrice: o.supplierPrice }
+      : {}),
+    ...(typeof o.supplierName === "string" && o.supplierName ? { supplierName: o.supplierName } : {}),
+    ...(typeof o.partnerLocationId === "string" && o.partnerLocationId ? { partnerLocationId: o.partnerLocationId } : {}),
+    ...(typeof o.partnerLocationName === "string" && o.partnerLocationName ? { partnerLocationName: o.partnerLocationName } : {}),
+    ...(typeof o.posSpotId === "string" && o.posSpotId ? { posSpotId: o.posSpotId } : {}),
+    ...(typeof o.posSpotDescription === "string" && o.posSpotDescription ? { posSpotDescription: o.posSpotDescription } : {}),
+    ...(typeof o.spotSlug === "string" && o.spotSlug
+      ? { spotSlug: o.spotSlug }
+      : typeof o.qrSlug === "string" && o.qrSlug
+        ? { spotSlug: o.qrSlug }
+        : {}),
+    fulfillmentType,
+    care: {
+      ...(typeof careRaw.light === "string" && careRaw.light ? { light: careRaw.light } : {}),
+      ...(typeof careRaw.wateringDays === "string" && careRaw.wateringDays ? { wateringDays: careRaw.wateringDays } : {}),
+      ...(averageSize ? { averageSize } : {}),
+      ...(typeof careRaw.maintenanceConditions === "string" && careRaw.maintenanceConditions
+        ? { maintenanceConditions: careRaw.maintenanceConditions }
+        : {}),
+      ...(careInstructions && careInstructions.length > 0 ? { careInstructions } : {}),
+    },
+  };
 }
 
 /** Normalize persisted rows (supports legacy `deliveryStatus` field name). */
@@ -31,6 +94,11 @@ function normalizeOrder(entry: unknown): SavedOrder | null {
   const o = entry as Record<string, unknown>;
 
   const orderId = typeof o.orderId === "string" ? o.orderId : null;
+  const id = typeof o.id === "string" && o.id ? o.id : undefined;
+  const checkoutSessionId =
+    typeof o.checkoutSessionId === "string" && o.checkoutSessionId ? o.checkoutSessionId : undefined;
+  const posSpotId = typeof o.posSpotId === "string" && o.posSpotId ? o.posSpotId : undefined;
+  const offerId = typeof o.offerId === "string" && o.offerId ? o.offerId : undefined;
   const plantId = typeof o.plantId === "string" ? o.plantId : null;
   const plantName = typeof o.plantName === "string" ? o.plantName : null;
 
@@ -75,13 +143,14 @@ function normalizeOrder(entry: unknown): SavedOrder | null {
     typeof o.customerEmail === "string" && o.customerEmail.trim()
       ? o.customerEmail.trim()
       : undefined;
-  const paymentStatus = parsePaymentStatus(o.paymentStatus);
-  const lowProfileId =
-    typeof o.lowProfileId === "string" && o.lowProfileId ? o.lowProfileId : undefined;
-  const cardcomTransactionId =
-    typeof o.cardcomTransactionId === "string" && o.cardcomTransactionId
-      ? o.cardcomTransactionId
-      : undefined;
+  const source = o.source === "manual" || o.source === "admin" || o.source === "online" ? o.source : undefined;
+  const cancelledAt =
+    typeof o.cancelledAt === "string" && o.cancelledAt ? o.cancelledAt : undefined;
+  const cancelledBy =
+    typeof o.cancelledBy === "string" && o.cancelledBy ? o.cancelledBy : undefined;
+  const cancellationReason =
+    typeof o.cancellationReason === "string" && o.cancellationReason ? o.cancellationReason : undefined;
+  const snapshot = normalizeSnapshot(o.snapshot);
 
   if (
     !orderId ||
@@ -96,7 +165,11 @@ function normalizeOrder(entry: unknown): SavedOrder | null {
   }
 
   return {
+    ...(id ? { id } : {}),
     orderId,
+    ...(checkoutSessionId ? { checkoutSessionId } : {}),
+    ...(posSpotId ? { posSpotId } : {}),
+    ...(offerId ? { offerId } : {}),
     plantId,
     plantName,
     locationId,
@@ -111,9 +184,11 @@ function normalizeOrder(entry: unknown): SavedOrder | null {
     fulfillmentMethod,
     createdAt,
     orderStatus,
-    ...(paymentStatus ? { paymentStatus } : {}),
-    ...(lowProfileId ? { lowProfileId } : {}),
-    ...(cardcomTransactionId ? { cardcomTransactionId } : {}),
+    ...(source ? { source } : {}),
+    ...(cancelledAt ? { cancelledAt } : {}),
+    ...(cancelledBy ? { cancelledBy } : {}),
+    ...(cancellationReason ? { cancellationReason } : {}),
+    ...(snapshot ? { snapshot } : {}),
     ...(deliveredAt ? { deliveredAt } : {}),
     ...(pickedUpAt ? { pickedUpAt } : {}),
   };
@@ -143,17 +218,19 @@ export async function appendOrder(order: SavedOrder): Promise<void> {
   await saveOrders(orders);
 }
 
-export async function deleteOrderById(orderId: string): Promise<boolean> {
-  const orders = await readOrders();
-  const next = orders.filter((o) => o.orderId !== orderId);
-  if (next.length === orders.length) return false;
-  await saveOrders(next);
-  return true;
-}
-
 export async function patchOrderById(
   orderId: string,
-  patch: Partial<Pick<SavedOrder, "orderStatus" | "deliveredAt" | "pickedUpAt">>,
+  patch: Partial<
+    Pick<
+      SavedOrder,
+      | "orderStatus"
+      | "deliveredAt"
+      | "pickedUpAt"
+      | "cancelledAt"
+      | "cancelledBy"
+      | "cancellationReason"
+    >
+  >,
 ): Promise<SavedOrder | null> {
   const orders = await readOrders();
   const idx = orders.findIndex((o) => o.orderId === orderId);

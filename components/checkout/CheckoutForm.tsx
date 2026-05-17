@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { PlantCatalogStatus } from "@/lib/types";
@@ -25,6 +26,8 @@ interface CheckoutFormProps {
   priceDisplay: string;
   /** From QR `?location=`; null when not provided */
   locationId: string | null;
+  /** Stable POS Spot slug for the new QR -> POS Spot flow. */
+  spotSlug?: string;
 }
 
 const baseInputClass =
@@ -36,7 +39,9 @@ export function CheckoutForm({
   plantStatus,
   priceDisplay: _priceDisplay,
   locationId,
+  spotSlug,
 }: CheckoutFormProps) {
+  const router = useRouter();
   const [fulfillmentMethod, setFulfillmentMethod] =
     useState<FulfillmentMethod>("delivery");
   const [fields, setFields] = useState<FormFields>({
@@ -108,6 +113,7 @@ export function CheckoutForm({
           orderId,
           plantId,
           locationId,
+          spotSlug,
           fulfillmentMethod,
           fullName: fields.fullName.trim(),
           customerEmail: fields.email.trim(),
@@ -130,9 +136,15 @@ export function CheckoutForm({
         return;
       }
 
-      setPrepMessage("Order prepared. The secure payment step will connect here next.");
+      const successParams = new URLSearchParams({
+        orderId,
+        plantId,
+        plantName,
+        fulfillmentMethod,
+      });
+      router.replace(`/success?${successParams.toString()}`);
 
-      // TODO(CardCom): initiate CardCom checkout (e.g. Low Profile) with orderId, then redirect or open the payment UI; on callback, update the order row and route to `/payment/success` or `/payment/failed`.
+      // TODO(payment): move completed order creation to provider confirmation/webhook.
     } catch {
       setSubmitError("Network error. Try again.");
     } finally {

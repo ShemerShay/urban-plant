@@ -7,12 +7,23 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createPendingOrder } from "@/lib/createPendingOrder";
-import { markInventorySold } from "@/lib/inventoryStorage";
-import { resolveLocationFields } from "@/lib/mockLocations";
+import { appendEvent } from "@/lib/eventStorage";
+import type { ActivityEvent } from "@/lib/eventTypes";
+import {
+  logOrderFlowEnd,
+  logOrderFlowSection,
+  logOrderFlowStart,
+} from "@/lib/logOrderFlow";
+import { getLocationById, resolveLocationFields } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/mockPlants";
-import type { FulfillmentMethod, SavedOrder } from "@/lib/orderTypes";
+import { getOfferById } from "@/lib/offerStorage";
+import type { Offer } from "@/lib/offerTypes";
+import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "@/lib/orderTypes";
 import { appendOrder } from "@/lib/ordersStorage";
+import { findLegacyPosSpot, getPosSpotBySpotSlug, setPosSpotStatus } from "@/lib/posSpotStorage";
+import type { PosSpot } from "@/lib/posSpotTypes";
 import type { OrderStatus } from "@/lib/status";
+import type { PlantProduct } from "@/lib/types";
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -27,6 +38,154 @@ function parsePrice(value: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+function buildSnapshot(input: {
+  plant: PlantProduct;
+  offer: Offer;
+  posSpot?: PosSpot;
+  fulfillmentMethod: FulfillmentMethod;
+}): OrderSnapshot {
+  const { plant, offer, posSpot, fulfillmentMethod } = input;
+  const partner = posSpot ? getLocationById(posSpot.partnerLocationId) : undefined;
+  return {
+    productId: plant.id,
+    productName: plant.name,
+    ...(plant.family ? { productFamily: plant.family } : {}),
+    ...(plant.images[0] ? { productImage: plant.images[0] } : {}),
+    productDescription: plant.description,
+    offerId: offer.id,
+    consumerPrice: offer.consumerPrice,
+    ...(typeof offer.supplierPrice === "number" ? { supplierPrice: offer.supplierPrice } : {}),
+    ...(offer.supplierName ? { supplierName: offer.supplierName } : {}),
+    ...(posSpot ? { partnerLocationId: posSpot.partnerLocationId } : {}),
+    ...(partner ? { partnerLocationName: partner.name } : {}),
+    ...(posSpot ? { posSpotId: posSpot.id, posSpotDescription: posSpot.spotDescription } : {}),
+    ...(posSpot ? { spotSlug: posSpot.spotSlug } : {}),
+    fulfillmentType: fulfillmentMethod,
+    care: {
+      light: plant.light,
+      wateringDays: plant.water,
+      ...(plant.averageSize ? { averageSize: plant.averageSize } : {}),
+      ...(plant.maintenanceConditions
+        ? { maintenanceConditions: plant.maintenanceConditions }
+        : {}),
+      careInstructions: plant.careInstructions,
+    },
+  };
+}
+
+function buildOrderCreatedEvent(order: SavedOrder): ActivityEvent {
+  return {
+    id: randomUUID(),
+    type: "order_created",
+    ...(order.posSpotId ? { posSpotId: order.posSpotId } : {}),
+    ...(order.offerId ? { offerId: order.offerId } : {}),
+    orderId: order.orderId,
+    productId: order.plantId,
+    ...(order.locationId ? { partnerLocationId: order.locationId } : {}),
+    createdAt: order.createdAt,
+    createdBy: order.source ?? "online",
+    data: {
+      fulfillmentMethod: order.fulfillmentMethod,
+      orderStatus: order.orderStatus,
+    },
+  };
+}
+
+async function appendOrderCreatedEvent(order: SavedOrder): Promise<ActivityEvent> {
+  const event = buildOrderCreatedEvent(order);
+  await appendEvent(event);
+  return event;
+}
+
+function logOnlineOrderFlow(input: {
+  requestPayload: Record<string, unknown>;
+  posSpot?: PosSpot;
+  offer: Offer;
+  product: PlantProduct;
+  checkoutSessionDraft: ReturnType<typeof createPendingOrder> | null;
+  orderBeforeSave: SavedOrder;
+  snapshot: OrderSnapshot;
+  orderAfterSave: SavedOrder;
+  updatedPosSpot?: PosSpot;
+  orderCreatedEvent: ActivityEvent;
+}): void {
+  logOrderFlowStart({
+    flow: "online_checkout",
+    orderId: input.orderBeforeSave.orderId,
+    spotSlug: input.posSpot?.spotSlug ?? null,
+  });
+  logOrderFlowSection("CHECKOUT REQUEST PAYLOAD", input.requestPayload);
+  logOrderFlowSection(
+    "POS SPOT (resolved from QR / spotSlug)",
+    input.posSpot ?? { note: "No POS Spot — legacy catalog checkout path" },
+  );
+  logOrderFlowSection("currentOfferId", input.posSpot?.currentOfferId ?? input.offer.id);
+  logOrderFlowSection("OFFER", input.offer);
+  logOrderFlowSection("PRODUCT", input.product);
+  logOrderFlowSection(
+    "CHECKOUT SESSION",
+    input.checkoutSessionDraft ?? {
+      note: "Not persisted yet — current flow completes the order directly without payment session storage.",
+    },
+  );
+  logOrderFlowSection("ORDER SNAPSHOT", input.snapshot);
+  logOrderFlowSection("FINAL ORDER (before save)", input.orderBeforeSave);
+  logOrderFlowSection("FINAL ORDER (after save)", input.orderAfterSave);
+  logOrderFlowSection(
+    "UPDATED POS SPOT (after sold)",
+    input.updatedPosSpot ?? { note: "POS Spot status unchanged — no spot on this order" },
+  );
+  logOrderFlowSection("order_created EVENT", input.orderCreatedEvent);
+  logOrderFlowEnd();
+}
+
+function completedOrder(input: {
+  orderId: string;
+  plant: PlantProduct;
+  offer: Offer;
+  posSpot?: PosSpot;
+  fullName: string;
+  customerEmail?: string;
+  phone: string;
+  address: string;
+  apartmentOrNotes: string;
+  fulfillmentMethod: FulfillmentMethod;
+  createdAt: string;
+  source: "online" | "manual" | "admin";
+}): SavedOrder {
+  const partner = input.posSpot ? getLocationById(input.posSpot.partnerLocationId) : undefined;
+  const orderStatus: OrderStatus =
+    input.fulfillmentMethod === "pickup" ? "picked_up" : "sold";
+  return {
+    id: input.orderId,
+    orderId: input.orderId,
+    ...(input.posSpot ? { posSpotId: input.posSpot.id } : {}),
+    offerId: input.offer.id,
+    plantId: input.plant.id,
+    plantName: input.plant.name,
+    locationId: input.posSpot?.partnerLocationId ?? null,
+    locationName: partner?.name ?? null,
+    locationAddress: partner?.address ?? null,
+    price: input.offer.consumerPrice,
+    fullName: input.fullName,
+    ...(input.customerEmail ? { customerEmail: input.customerEmail } : {}),
+    phone: input.phone,
+    address: input.address,
+    apartmentOrNotes: input.apartmentOrNotes,
+    fulfillmentMethod: input.fulfillmentMethod,
+    createdAt: input.createdAt,
+    orderStatus,
+    source: input.source,
+    snapshot: buildSnapshot({
+      plant: input.plant,
+      offer: input.offer,
+      posSpot: input.posSpot,
+      fulfillmentMethod: input.fulfillmentMethod,
+    }),
+    ...(orderStatus === "picked_up" ? { pickedUpAt: input.createdAt } : {}),
+  };
 }
 
 /**
@@ -115,8 +274,18 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
   }
 
   const createdAt = new Date().toISOString();
+  const orderId = randomUUID();
+  const manualOffer: Offer = {
+    id: "manual-offer",
+    productId: resolvedPlantId,
+    consumerPrice: resolvedPrice,
+    status: "active",
+    createdAt,
+  };
   const order: SavedOrder = {
-    orderId: randomUUID(),
+    id: orderId,
+    orderId,
+    offerId: manualOffer.id,
     plantId: resolvedPlantId,
     plantName: resolvedPlantName,
     locationId: resolvedLocationId,
@@ -130,11 +299,16 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
     fulfillmentMethod,
     createdAt,
     orderStatus,
+    source: "admin",
     ...(orderStatus === "picked_up" ? { pickedUpAt: createdAt } : {}),
   };
 
   await appendOrder(order);
-  await markInventorySold(resolvedPlantId, resolvedLocationId);
+  const orderCreatedEvent = await appendOrderCreatedEvent(order);
+  logOrderFlowStart({ flow: "legacy_manual_admin", orderId: order.orderId });
+  logOrderFlowSection("FINAL ORDER (manual admin)", order);
+  logOrderFlowSection("order_created EVENT", orderCreatedEvent);
+  logOrderFlowEnd();
 
   return NextResponse.json({ ok: true, orderId: order.orderId });
 }
@@ -171,6 +345,7 @@ export async function POST(request: NextRequest) {
     apartmentOrNotes,
     fulfillmentMethod: fulfillmentMethodRaw,
     customerEmail: customerEmailRaw,
+    spotSlug: spotSlugRaw,
   } = record;
 
   const orderId = typeof orderIdRaw === "string" ? orderIdRaw.trim() : "";
@@ -211,11 +386,7 @@ export async function POST(request: NextRequest) {
     locationInput = undefined;
   }
 
-  const {
-    locationId: resolvedLocationId,
-    locationName: resolvedLocationName,
-    locationAddress: resolvedLocationAddress,
-  } = resolveLocationFields(
+  const { locationId: resolvedLocationId } = resolveLocationFields(
     locationInput === undefined ? undefined : locationInput,
   );
 
@@ -233,27 +404,97 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const pending = createPendingOrder({
+  const spotSlug = typeof spotSlugRaw === "string" ? spotSlugRaw.trim() : "";
+  let posSpot: PosSpot | undefined;
+  let offer: Offer | undefined;
+
+  if (spotSlug) {
+    posSpot = await getPosSpotBySpotSlug(spotSlug);
+    if (!posSpot) {
+      return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
+    }
+    offer = await getOfferById(posSpot.currentOfferId);
+  } else {
+    const legacy = await findLegacyPosSpot(catalogPlant.id, resolvedLocationId);
+    posSpot = legacy?.posSpot;
+    offer = legacy?.offer ?? (await getOfferById(`offer-${catalogPlant.id}`));
+  }
+
+  if (!offer || offer.status !== "active") {
+    return NextResponse.json({ error: "Offer is not available" }, { status: 400 });
+  }
+  if (offer.productId !== catalogPlant.id) {
+    return NextResponse.json({ error: "Offer does not match selected product" }, { status: 400 });
+  }
+  if (posSpot && posSpot.status !== "available") {
+    return NextResponse.json(
+      { error: "This POS Spot is no longer available for purchase." },
+      { status: 400 },
+    );
+  }
+
+  const createdAt = new Date().toISOString();
+  const partner = posSpot ? getLocationById(posSpot.partnerLocationId) : undefined;
+  const order = completedOrder({
     orderId,
-    plantId: catalogPlant.id,
-    plantName: catalogPlant.name,
-    amount: catalogPlant.price,
-    customerName: nameStr,
+    plant: catalogPlant,
+    offer,
+    posSpot,
+    fullName: nameStr,
     customerEmail: emailTrim,
     phone: phoneStr,
     address: fulfillmentMethod === "delivery" ? addressStr : "",
     apartmentOrNotes: fulfillmentMethod === "delivery" ? notesStr : "",
     fulfillmentMethod,
-    locationId: resolvedLocationId,
-    locationName: resolvedLocationName,
-    locationAddress: resolvedLocationAddress,
+    createdAt,
+    source: "online",
+  });
+  const snapshot = order.snapshot!;
+  const checkoutSessionDraft = createPendingOrder({
+    orderId,
+    plantId: catalogPlant.id,
+    plantName: catalogPlant.name,
+    amount: offer.consumerPrice,
+    customerName: nameStr,
+    customerEmail: emailTrim,
+    fulfillmentMethod,
+    phone: phoneStr,
+    address: fulfillmentMethod === "delivery" ? addressStr : "",
+    apartmentOrNotes: fulfillmentMethod === "delivery" ? notesStr : "",
+    locationId: posSpot?.partnerLocationId ?? resolvedLocationId,
+    locationName: partner?.name ?? null,
+    locationAddress: partner?.address ?? null,
   });
 
-  await appendOrder(pending);
+  await appendOrder(order);
+  const updatedPosSpot = posSpot ? await setPosSpotStatus(posSpot.id, "sold") : undefined;
+  const orderCreatedEvent = await appendOrderCreatedEvent(order);
 
-  console.log("[orders] Pending order (pre-CardCom):", JSON.stringify(pending));
+  logOnlineOrderFlow({
+    requestPayload: {
+      orderId,
+      plantId: catalogId,
+      locationId: locationInput,
+      spotSlug: spotSlug || null,
+      fulfillmentMethod,
+      fullName: nameStr,
+      customerEmail: emailTrim,
+      phone: phoneStr,
+      address: fulfillmentMethod === "delivery" ? addressStr : "",
+      apartmentOrNotes: fulfillmentMethod === "delivery" ? notesStr : "",
+    },
+    posSpot,
+    offer,
+    product: catalogPlant,
+    checkoutSessionDraft,
+    orderBeforeSave: order,
+    snapshot,
+    orderAfterSave: order,
+    updatedPosSpot: updatedPosSpot ?? undefined,
+    orderCreatedEvent,
+  });
 
-  // TODO(CardCom): call CardCom Low Profile / redirect — use pending.orderId, amount, customerEmail, return URLs `/payment/success` and `/payment/failed`, then persist lowProfileId / cardcomTransactionId on the order row.
+  // TODO(payment): move this completed order creation to provider confirmation/webhook.
 
-  return NextResponse.json({ ok: true, orderId: pending.orderId });
+  return NextResponse.json({ ok: true, orderId: order.orderId });
 }
