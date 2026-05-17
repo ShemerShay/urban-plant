@@ -46,7 +46,11 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const plantId = readPlantId(sp.plantId);
   const order = orderId ? (await readOrders()).find((o) => o.orderId === orderId) : undefined;
   const plantName =
-    order?.plantName || getPlantById(plantId)?.name || readPlantName(sp.plantName) || "your plant";
+    order?.snapshot?.productName ||
+    order?.plantName ||
+    getPlantById(plantId)?.name ||
+    readPlantName(sp.plantName) ||
+    "your plant";
 
   return (
     <main id="success-page" className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-10">

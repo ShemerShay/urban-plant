@@ -17,14 +17,7 @@ function firstParam(v: string | string[] | undefined): string | undefined {
 }
 
 function parseStatus(raw: string | undefined): OrderStatus | "all" {
-  if (
-    raw === "pending_payment" ||
-    raw === "available" ||
-    raw === "sold" ||
-    raw === "picked_up" ||
-    raw === "delivered"
-  )
-    return raw;
+  if (raw === "sold" || raw === "picked_up" || raw === "delivered" || raw === "cancelled") return raw;
   return "all";
 }
 
@@ -57,19 +50,21 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
 
   const orders = allOrders.filter((o) => {
     if (statusFilter !== "all" && o.orderStatus !== statusFilter) return false;
-    if (plantFilter !== "all" && o.plantId !== plantFilter) return false;
+    if (plantFilter !== "all" && (o.snapshot?.productId ?? o.plantId) !== plantFilter) return false;
     if (locationFilter !== "all") {
-      if (locationFilter === "__none__" && o.locationId !== null) return false;
-      if (locationFilter !== "__none__" && o.locationId !== locationFilter) return false;
+      const locationId = o.snapshot?.partnerLocationId ?? o.locationId;
+      if (locationFilter === "__none__" && locationId !== null) return false;
+      if (locationFilter !== "__none__" && locationId !== locationFilter) return false;
     }
     return true;
   });
 
-  const hasNoLocationOrder = allOrders.some((o) => o.locationId === null);
+  const hasNoLocationOrder = allOrders.some((o) => (o.snapshot?.partnerLocationId ?? o.locationId) === null);
   const locationMap = new Map<string, string>();
   for (const o of allOrders) {
-    if (o.locationId !== null && !locationMap.has(o.locationId)) {
-      locationMap.set(o.locationId, o.locationName ?? o.locationId);
+    const locationId = o.snapshot?.partnerLocationId ?? o.locationId;
+    if (locationId !== null && !locationMap.has(locationId)) {
+      locationMap.set(locationId, o.snapshot?.partnerLocationName ?? o.locationName ?? locationId);
     }
   }
   const locationOptions: FilterOption[] = [];
@@ -85,7 +80,8 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
 
   const plantMap = new Map<string, string>();
   for (const o of allOrders) {
-    if (!plantMap.has(o.plantId)) plantMap.set(o.plantId, o.plantName);
+    const productId = o.snapshot?.productId ?? o.plantId;
+    if (!plantMap.has(productId)) plantMap.set(productId, o.snapshot?.productName ?? o.plantName);
   }
   const plantOptions: FilterOption[] = [...plantMap.entries()]
     .sort((a, b) => a[1].localeCompare(b[1]))

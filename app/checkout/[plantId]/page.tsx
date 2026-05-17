@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
 import { formatPrice, getPlantById } from "@/lib/mockPlants";
+import { findLegacyPosSpot } from "@/lib/posSpotStorage";
 import { plantPagePath } from "@/lib/qrNavigation";
 
 interface CheckoutPageProps {
@@ -21,6 +22,10 @@ export default async function CheckoutPage({ params, searchParams }: CheckoutPag
   const locationQuery =
     typeof rawLoc === "string" ? rawLoc : Array.isArray(rawLoc) ? rawLoc[0] : undefined;
   const locationForLinks = locationQuery?.trim() || undefined;
+  const legacyPosSpotMatch = locationForLinks
+    ? await findLegacyPosSpot(plant.id, locationForLinks)
+    : null;
+  const price = legacyPosSpotMatch?.offer.consumerPrice ?? plant.price;
 
   return (
     <main id="checkout-page" className="mx-auto min-h-screen w-full max-w-md px-4 py-6">
@@ -36,7 +41,7 @@ export default async function CheckoutPage({ params, searchParams }: CheckoutPag
           <p className="text-sm text-slate-500">You are ordering</p>
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">{plant.name}</h1>
           <p className="mt-2 text-lg font-semibold text-emerald-950">
-            {formatPrice(plant.price, plant.currency)}
+            {formatPrice(price, plant.currency)}
           </p>
         </section>
 
@@ -45,8 +50,9 @@ export default async function CheckoutPage({ params, searchParams }: CheckoutPag
             plantId={plantId}
             plantName={plant.name}
             plantStatus={plant.status}
-            priceDisplay={formatPrice(plant.price, plant.currency)}
+            priceDisplay={formatPrice(price, plant.currency)}
             locationId={locationForLinks ?? null}
+            spotSlug={legacyPosSpotMatch?.posSpot.spotSlug}
           />
         </section>
       </div>

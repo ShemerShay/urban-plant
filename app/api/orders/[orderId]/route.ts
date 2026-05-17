@@ -5,28 +5,17 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { markInventoryAvailable, markInventorySold } from "@/lib/inventoryStorage";
-import { deleteOrderById, readOrders, replaceOrder } from "@/lib/ordersStorage";
+import { randomUUID } from "crypto";
+
+import { appendEvent } from "@/lib/eventStorage";
+import { readOrders, replaceOrder } from "@/lib/ordersStorage";
 import type { SavedOrder } from "@/lib/orderTypes";
+import { findLegacyPosSpot, setPosSpotStatus } from "@/lib/posSpotStorage";
 import type { OrderStatus } from "@/lib/status";
 import { isOrderStatus, parseOrderStatus } from "@/lib/status";
 
 interface RouteParams {
   params: Promise<{ orderId: string }>;
-}
-
-async function syncShelfToOrderStatus(
-  plantId: string,
-  locationId: string | null,
-  status: OrderStatus,
-): Promise<void> {
-  if (status === "pending_payment") return;
-  if (status === "available") {
-    await markInventoryAvailable(plantId, locationId);
-    return;
-  }
-  // `sold`, `picked_up`, and `delivered` all keep the physical unit off the shelf.
-  await markInventorySold(plantId, locationId);
 }
 
 function nextOrderWithStatus(prev: SavedOrder, status: OrderStatus): SavedOrder {
@@ -37,6 +26,9 @@ function nextOrderWithStatus(prev: SavedOrder, status: OrderStatus): SavedOrder 
   };
   delete base.deliveredAt;
   delete base.pickedUpAt;
+  delete base.cancelledAt;
+  delete base.cancelledBy;
+  delete base.cancellationReason;
   if (status === "delivered") {
     base.deliveredAt = now;
   } else if (status === "picked_up") {
@@ -45,7 +37,30 @@ function nextOrderWithStatus(prev: SavedOrder, status: OrderStatus): SavedOrder 
   return base;
 }
 
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function appendManualStatusEvent(prev: SavedOrder, updated: SavedOrder): Promise<void> {
+  await appendEvent({
+    id: randomUUID(),
+    type: "manual_status_update",
+    ...(updated.posSpotId ? { posSpotId: updated.posSpotId } : {}),
+    ...(updated.offerId ? { offerId: updated.offerId } : {}),
+    orderId: updated.orderId,
+    productId: updated.plantId,
+    ...(updated.locationId ? { partnerLocationId: updated.locationId } : {}),
+    createdAt: new Date().toISOString(),
+    createdBy: "admin",
+    data: {
+      previousStatus: prev.orderStatus,
+      nextStatus: updated.orderStatus,
+    },
+  });
+}
+
+async function relatedPosSpotId(order: SavedOrder): Promise<string | undefined> {
+  if (order.posSpotId) return order.posSpotId;
+  return (await findLegacyPosSpot(order.plantId, order.locationId))?.posSpot.id;
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const { orderId } = await params;
   if (!orderId) {
     return NextResponse.json({ error: "orderId is required" }, { status: 400 });
@@ -57,12 +72,47 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  await deleteOrderById(orderId);
-  if (prev.orderStatus !== "pending_payment") {
-    await markInventoryAvailable(prev.plantId, prev.locationId);
+  let cancellationReason = "Cancelled by admin";
+  try {
+    const body = (await request.json()) as unknown;
+    if (body && typeof body === "object") {
+      const raw = (body as Record<string, unknown>).cancellationReason;
+      if (typeof raw === "string" && raw.trim()) cancellationReason = raw.trim();
+    }
+  } catch {
+    // DELETE with no JSON body is still a valid cancel request.
   }
 
-  return NextResponse.json({ ok: true });
+  const cancelledAt = new Date().toISOString();
+  const updated: SavedOrder = {
+    ...prev,
+    orderStatus: "cancelled",
+    cancelledAt,
+    cancelledBy: "admin",
+    cancellationReason,
+  };
+  delete updated.deliveredAt;
+  delete updated.pickedUpAt;
+
+  await replaceOrder(updated);
+  const posSpotId = await relatedPosSpotId(updated);
+  if (posSpotId) await setPosSpotStatus(posSpotId, "available");
+  await appendEvent({
+    id: randomUUID(),
+    type: "order_cancelled",
+    ...(posSpotId ? { posSpotId } : {}),
+    ...(updated.offerId ? { offerId: updated.offerId } : {}),
+    orderId: updated.orderId,
+    productId: updated.plantId,
+    ...(updated.locationId ? { partnerLocationId: updated.locationId } : {}),
+    createdAt: cancelledAt,
+    createdBy: "admin",
+    data: {
+      cancellationReason,
+    },
+  });
+
+  return NextResponse.json({ ok: true, order: updated });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
@@ -82,7 +132,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const { action, orderStatus: orderStatusRaw, deliveryStatus } = body as Record<
+  const { action, orderStatus: orderStatusRaw, deliveryStatus, cancellationReason } = body as Record<
     string,
     unknown
   >;
@@ -99,7 +149,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(
       {
         error:
-          'Invalid order status. Send orderStatus: "pending_payment" | "available" | "sold" | "picked_up" | "delivered" (or legacy action: "markDelivered").',
+          'Invalid order status. Send orderStatus: "sold" | "picked_up" | "delivered" | "cancelled" (or legacy action: "markDelivered").',
       },
       { status: 400 },
     );
@@ -112,8 +162,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const updated = nextOrderWithStatus(prev, requested);
+  if (requested === "cancelled") {
+    updated.cancelledAt = new Date().toISOString();
+    updated.cancelledBy = "admin";
+    updated.cancellationReason =
+      typeof cancellationReason === "string" && cancellationReason.trim()
+        ? cancellationReason.trim()
+        : "Cancelled by admin";
+  }
   await replaceOrder(updated);
-  await syncShelfToOrderStatus(updated.plantId, updated.locationId, requested);
+  const posSpotId = await relatedPosSpotId(updated);
+  if (posSpotId) await setPosSpotStatus(posSpotId, requested === "cancelled" ? "available" : "sold");
+  await appendManualStatusEvent(prev, updated);
 
   return NextResponse.json({ ok: true, order: updated });
 }

@@ -20,14 +20,12 @@ interface AdminOrderCardProps {
 
 function statusBadgeClass(status: OrderStatus): string {
   switch (status) {
-    case "pending_payment":
-      return "bg-violet-100 text-violet-950";
     case "delivered":
       return "bg-emerald-100 text-emerald-900";
     case "picked_up":
       return "bg-amber-100 text-amber-950";
-    case "available":
-      return "bg-sky-100 text-sky-950";
+    case "cancelled":
+      return "bg-red-100 text-red-900";
     default:
       return "bg-slate-100 text-slate-900";
   }
@@ -35,20 +33,35 @@ function statusBadgeClass(status: OrderStatus): string {
 
 export function AdminOrderCard({ order }: AdminOrderCardProps) {
   const router = useRouter();
-  const [busy, setBusy] = useState<"delete" | "patch" | null>(null);
+  const [busy, setBusy] = useState<"cancel" | "patch" | null>(null);
 
-  const currency = getPlantById(order.plantId)?.currency ?? "ILS";
+  const productId = order.snapshot?.productId ?? order.plantId;
+  const plantName = order.snapshot?.productName ?? order.plantName;
+  const price = order.snapshot?.consumerPrice ?? order.price;
+  const currency = getPlantById(productId)?.currency ?? "ILS";
+  const locationId = order.snapshot?.partnerLocationId ?? order.locationId;
+  const locationName = order.snapshot?.partnerLocationName ?? order.locationName;
+  const posSpotDescription = order.snapshot?.posSpotDescription;
+  const spotSlug = order.snapshot?.spotSlug;
 
-  async function handleDelete() {
-    if (!window.confirm("Delete this order? This cannot be undone.")) return;
-    setBusy("delete");
+  async function handleCancel() {
+    const cancellationReason = window.prompt("Cancellation reason");
+    if (cancellationReason === null) return;
+    const trimmedReason = cancellationReason.trim();
+    if (!trimmedReason) {
+      window.alert("Cancellation reason is required.");
+      return;
+    }
+    setBusy("cancel");
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancellationReason: trimmedReason }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        window.alert(data.error ?? "Could not delete order.");
+        window.alert(data.error ?? "Could not cancel order.");
         return;
       }
       router.refresh();
@@ -130,17 +143,29 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
           Scan / partner location
         </p>
-        {order.locationId === null ? (
+        {locationId === null || locationId === undefined ? (
           <p className="mt-1 text-sm text-slate-600">Not specified</p>
         ) : (
           <>
             <p className="mt-1 text-sm font-medium text-emerald-950">
-              {order.locationName ?? "Unknown location"}
+              {locationName ?? "Unknown location"}
             </p>
+            {posSpotDescription ? (
+              <p className="mt-0.5 text-xs text-slate-600">
+                <span className="text-slate-500">POS Spot: </span>
+                {posSpotDescription}
+              </p>
+            ) : null}
             <p className="mt-0.5 text-xs text-slate-600">
               <span className="text-slate-500">Location ID: </span>
-              {order.locationId}
+              {locationId}
             </p>
+            {spotSlug ? (
+              <p className="mt-0.5 text-xs text-slate-600">
+                <span className="text-slate-500">Spot slug: </span>
+                {spotSlug}
+              </p>
+            ) : null}
             <p className="mt-0.5 text-xs text-slate-600">
               <span className="text-slate-500">Address: </span>
               {order.locationAddress ?? "—"}
@@ -151,11 +176,11 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
 
       <p className="mt-2 text-sm text-slate-700">
         <span className="text-slate-500">Plant: </span>
-        {order.plantName}
+        {plantName}
       </p>
       <p className="mt-1 text-sm text-slate-700">
         <span className="text-slate-500">Price: </span>
-        {formatPrice(order.price, currency)}
+        {formatPrice(price, currency)}
       </p>
 
       {status === "delivered" && order.deliveredAt ? (
@@ -168,15 +193,21 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           Sold &amp; Taken: {new Date(order.pickedUpAt).toLocaleString()}
         </p>
       ) : null}
+      {status === "cancelled" && order.cancelledAt ? (
+        <p className="mt-2 text-xs text-slate-500">
+          Cancelled: {new Date(order.cancelledAt).toLocaleString()}
+          {order.cancellationReason ? ` - ${order.cancellationReason}` : ""}
+        </p>
+      ) : null}
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <button
           type="button"
           disabled={busy !== null}
-          onClick={() => void handleDelete()}
+          onClick={() => void handleCancel()}
           className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60"
         >
-          {busy === "delete" ? "Deleting…" : "Delete"}
+          {busy === "cancel" ? "Cancelling…" : "Cancel order"}
         </button>
       </div>
     </li>

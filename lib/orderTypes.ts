@@ -2,19 +2,38 @@ import type { OrderStatus } from "./status";
 
 export type FulfillmentMethod = "delivery" | "pickup";
 
-/** CardCom / checkout payment lifecycle (separate from operational `orderStatus`). */
-export type PaymentStatus = "pending_payment" | "paid" | "payment_failed";
-
-export function parsePaymentStatus(value: unknown): PaymentStatus | undefined {
-  if (value === "pending_payment" || value === "paid" || value === "payment_failed") {
-    return value;
-  }
-  return undefined;
+export interface OrderSnapshot {
+  productId: string;
+  productName: string;
+  productFamily?: string;
+  productImage?: string;
+  productDescription: string;
+  offerId: string;
+  consumerPrice: number;
+  supplierPrice?: number;
+  supplierName?: string;
+  partnerLocationId?: string;
+  partnerLocationName?: string;
+  posSpotId?: string;
+  posSpotDescription?: string;
+  spotSlug?: string;
+  fulfillmentType: FulfillmentMethod;
+  care: {
+    light?: string;
+    wateringDays?: string;
+    averageSize?: "small" | "medium" | "large";
+    maintenanceConditions?: string;
+    careInstructions?: string[];
+  };
 }
 
 /** Persisted order shape for prototype JSON storage */
 export interface SavedOrder {
+  id?: string;
   orderId: string;
+  checkoutSessionId?: string;
+  posSpotId?: string;
+  offerId?: string;
   plantId: string;
   plantName: string;
   /** QR partner slug; null when checkout had no ?location= */
@@ -33,12 +52,13 @@ export interface SavedOrder {
   apartmentOrNotes: string;
   fulfillmentMethod: FulfillmentMethod;
   createdAt: string;
-  /** Fulfillment tracking; `available` = released back to shelf. */
+  /** Fulfillment tracking for completed orders. */
   orderStatus: OrderStatus;
-  /** Payment gateway lifecycle; omitted on legacy rows (treated as completed). */
-  paymentStatus?: PaymentStatus;
-  lowProfileId?: string;
-  cardcomTransactionId?: string;
+  source?: "online" | "manual" | "admin";
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancellationReason?: string;
+  snapshot?: OrderSnapshot;
   deliveredAt?: string;
   pickedUpAt?: string;
 }
