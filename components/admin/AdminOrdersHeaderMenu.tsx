@@ -43,7 +43,7 @@ export function AdminOrdersHeaderMenu() {
   }, [open]);
 
   return (
-    <div className="relative flex items-center" ref={rootRef}>
+    <div className="relative flex items-center" id="admin-orders-header-menu" ref={rootRef}>
       <button
         type="button"
         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-800 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/45"
@@ -64,15 +64,15 @@ export function AdminOrdersHeaderMenu() {
           <Link
             href="/admin/qr"
             role="menuitem"
-            className="block px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-slate-50"
+            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}
           >
-            QR codes
+            + pos spot
           </Link>
           <Link
             href="/admin/orders/new"
             role="menuitem"
-            className="block px-4 py-2.5 text-sm font-semibold text-emerald-950 transition hover:bg-slate-50"
+            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}
           >
             Add New Order
@@ -81,7 +81,7 @@ export function AdminOrdersHeaderMenu() {
           <Link
             href="/"
             role="menuitem"
-            className="block px-4 py-2.5 text-sm font-medium text-emerald-700 transition hover:bg-slate-50"
+            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}
           >
             Home

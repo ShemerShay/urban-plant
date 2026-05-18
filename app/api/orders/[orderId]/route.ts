@@ -10,7 +10,7 @@ import { randomUUID } from "crypto";
 import { appendEvent } from "@/lib/eventStorage";
 import { readOrders, replaceOrder } from "@/lib/ordersStorage";
 import type { SavedOrder } from "@/lib/orderTypes";
-import { findLegacyPosSpot, setPosSpotStatus } from "@/lib/posSpotStorage";
+import { setPosSpotStatus } from "@/lib/posSpotStorage";
 import type { OrderStatus } from "@/lib/status";
 import { isOrderStatus, parseOrderStatus } from "@/lib/status";
 
@@ -55,9 +55,8 @@ async function appendManualStatusEvent(prev: SavedOrder, updated: SavedOrder): P
   });
 }
 
-async function relatedPosSpotId(order: SavedOrder): Promise<string | undefined> {
-  if (order.posSpotId) return order.posSpotId;
-  return (await findLegacyPosSpot(order.plantId, order.locationId))?.posSpot.id;
+function relatedPosSpotId(order: SavedOrder): string | undefined {
+  return order.posSpotId;
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
@@ -95,7 +94,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   delete updated.pickedUpAt;
 
   await replaceOrder(updated);
-  const posSpotId = await relatedPosSpotId(updated);
+  const posSpotId = relatedPosSpotId(updated);
   if (posSpotId) await setPosSpotStatus(posSpotId, "available");
   await appendEvent({
     id: randomUUID(),
@@ -171,7 +170,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         : "Cancelled by admin";
   }
   await replaceOrder(updated);
-  const posSpotId = await relatedPosSpotId(updated);
+  const posSpotId = relatedPosSpotId(updated);
   if (posSpotId) await setPosSpotStatus(posSpotId, requested === "cancelled" ? "available" : "sold");
   await appendManualStatusEvent(prev, updated);
 

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { isValidEmail, isValidPhone } from "@/lib/formValidation";
 import type { PlantCatalogStatus } from "@/lib/types";
 
 type FormFields = {
@@ -24,10 +25,8 @@ interface CheckoutFormProps {
   plantStatus: PlantCatalogStatus;
   /** Formatted price line for confirmation email (e.g. ₪89) */
   priceDisplay: string;
-  /** From QR `?location=`; null when not provided */
-  locationId: string | null;
-  /** Stable POS Spot slug for the new QR -> POS Spot flow. */
-  spotSlug?: string;
+  /** POS Spot slug from `/checkout/pos/{spotSlug}`. */
+  spotSlug: string;
 }
 
 const baseInputClass =
@@ -38,7 +37,6 @@ export function CheckoutForm({
   plantName,
   plantStatus,
   priceDisplay: _priceDisplay,
-  locationId,
   spotSlug,
 }: CheckoutFormProps) {
   const router = useRouter();
@@ -69,7 +67,6 @@ export function CheckoutForm({
     setFulfillmentMethod(next);
     setErrors((prev) => ({
       ...prev,
-      phone: next === "pickup" ? undefined : prev.phone,
       address: next === "pickup" ? undefined : prev.address,
     }));
     setSubmitError(null);
@@ -80,14 +77,21 @@ export function CheckoutForm({
     const nextErrors: FieldErrors = {};
 
     if (!fields.fullName.trim()) nextErrors.fullName = "Full name is required.";
+
     const emailTrim = fields.email.trim();
     if (!emailTrim) nextErrors.email = "Email is required.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+    else if (!isValidEmail(emailTrim)) {
       nextErrors.email = "Enter a valid email address.";
     }
-    if (fulfillmentMethod === "delivery") {
-      if (!fields.phone.trim()) nextErrors.phone = "Phone number is required.";
-      if (!fields.address.trim()) nextErrors.address = "Address is required.";
+
+    const phoneTrim = fields.phone.trim();
+    if (!phoneTrim) nextErrors.phone = "Phone number is required.";
+    else if (!isValidPhone(phoneTrim)) {
+      nextErrors.phone = "Enter a valid phone number.";
+    }
+
+    if (fulfillmentMethod === "delivery" && !fields.address.trim()) {
+      nextErrors.address = "Address is required.";
     }
 
     setErrors(nextErrors);
@@ -96,7 +100,7 @@ export function CheckoutForm({
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (plantStatus === "sold") return;
+    if (plantStatus === "sold" || !canSubmit) return;
     if (!validate()) return;
 
     setIsSubmitting(true);
@@ -112,7 +116,6 @@ export function CheckoutForm({
         body: JSON.stringify({
           orderId,
           plantId,
-          locationId,
           spotSlug,
           fulfillmentMethod,
           fullName: fields.fullName.trim(),
@@ -152,13 +155,12 @@ export function CheckoutForm({
     }
   }
 
-  const hasRequiredFields =
+  const canSubmit =
     fields.fullName.trim().length > 0 &&
-    fields.email.trim().length > 0 &&
-    (fulfillmentMethod === "pickup" ||
-      (fields.phone.trim().length > 0 && fields.address.trim().length > 0));
-  const isSubmitDisabled =
-    isSubmitting || !hasRequiredFields || plantStatus === "sold";
+    isValidEmail(fields.email) &&
+    isValidPhone(fields.phone) &&
+    (fulfillmentMethod === "pickup" || fields.address.trim().length > 0);
+  const isSubmitDisabled = isSubmitting || !canSubmit || plantStatus === "sold";
 
   return (
     <form id="checkout-form" onSubmit={onSubmit} className="space-y-4">
@@ -218,8 +220,9 @@ export function CheckoutForm({
         <input
           id="email"
           name="email"
-          type="text"
+          type="email"
           autoComplete="email"
+          inputMode="email"
           className={baseInputClass}
           value={fields.email}
           onChange={(event) => handleChange("email", event.target.value)}

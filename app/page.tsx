@@ -18,10 +18,10 @@ export default function Home() {
 
       <div className="space-y-3 pb-4">
         <Link
-          href="/plant/olive-01?location=chachos-shenkin"
+          href="/pos/cafe-noir-front-shelf"
           className="block rounded-2xl bg-emerald-700 px-6 py-4 text-center text-sm font-semibold text-white"
         >
-          Demo with QR location param
+          Demo POS Spot
         </Link>
         <p className="text-center text-xs text-slate-500">
           Start with one mock product and expand later.

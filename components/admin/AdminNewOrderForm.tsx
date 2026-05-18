@@ -8,8 +8,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { formatPrice, mockPlants } from "@/lib/mockPlants";
+
 const inputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
 export function AdminNewOrderForm() {
   const router = useRouter();
@@ -17,18 +19,38 @@ export function AdminNewOrderForm() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [apartmentOrNotes, setApartmentOrNotes] = useState("");
-  const [plantName, setPlantName] = useState("");
-  const [price, setPrice] = useState("");
+  const [plantId, setPlantId] = useState(mockPlants[0]?.id ?? "");
+  const [price, setPrice] = useState(
+    mockPlants[0] ? String(mockPlants[0].price) : "",
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function handlePlantChange(nextPlantId: string) {
+    setPlantId(nextPlantId);
+    const plant = mockPlants.find((item) => item.id === nextPlantId);
+    if (plant) setPrice(String(plant.price));
+  }
+
+  const priceNumber = Number(price);
+  const canSubmit = Boolean(
+    fullName.trim() &&
+      phone.trim() &&
+      address.trim() &&
+      plantId.trim() &&
+      price.trim() &&
+      !Number.isNaN(priceNumber) &&
+      priceNumber >= 0 &&
+      !isSubmitting,
+  );
 
   function validate(): boolean {
     const next: Record<string, string> = {};
     if (!fullName.trim()) next.fullName = "Full name is required.";
     if (!phone.trim()) next.phone = "Phone is required.";
     if (!address.trim()) next.address = "Address is required.";
-    if (!plantName.trim()) next.plantName = "Plant name is required.";
+    if (!plantId.trim()) next.plantId = "Plant is required.";
     if (!price.trim()) next.price = "Price is required.";
     else if (Number(price) < 0 || Number.isNaN(Number(price))) {
       next.price = "Enter a valid price.";
@@ -39,7 +61,7 @@ export function AdminNewOrderForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!validate()) return;
+    if (!canSubmit || !validate()) return;
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -53,7 +75,7 @@ export function AdminNewOrderForm() {
           phone: phone.trim(),
           address: address.trim(),
           apartmentOrNotes: apartmentOrNotes.trim(),
-          plantName: plantName.trim(),
+          plantId: plantId.trim(),
           price: Number(price),
         }),
       });
@@ -138,18 +160,23 @@ export function AdminNewOrderForm() {
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="admin-plantName" className="text-sm font-medium text-slate-700">
-          Plant name
+        <label htmlFor="admin-plantId" className="text-sm font-medium text-slate-700">
+          Plant
         </label>
-        <input
-          id="admin-plantName"
-          name="plantName"
-          type="text"
+        <select
+          id="admin-plantId"
+          name="plantId"
           className={inputClass}
-          value={plantName}
-          onChange={(ev) => setPlantName(ev.target.value)}
-        />
-        {errors.plantName ? <p className="text-xs text-red-600">{errors.plantName}</p> : null}
+          value={plantId}
+          onChange={(ev) => handlePlantChange(ev.target.value)}
+        >
+          {mockPlants.map((plant) => (
+            <option key={plant.id} value={plant.id} className="text-slate-900">
+              {plant.name} ({formatPrice(plant.price, plant.currency)})
+            </option>
+          ))}
+        </select>
+        {errors.plantId ? <p className="text-xs text-red-600">{errors.plantId}</p> : null}
       </div>
 
       <div className="space-y-2">
@@ -174,8 +201,8 @@ export function AdminNewOrderForm() {
 
       <button
         type="submit"
-        disabled={isSubmitting}
-        className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-60"
+        disabled={!canSubmit}
+        className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isSubmitting ? "Saving…" : "Save order"}
       </button>

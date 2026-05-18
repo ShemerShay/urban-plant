@@ -15,12 +15,13 @@ import {
   logOrderFlowStart,
 } from "@/lib/logOrderFlow";
 import { getLocationById, resolveLocationFields } from "@/lib/mockLocations";
+import { isValidEmail, isValidPhone } from "@/lib/formValidation";
 import { getPlantById } from "@/lib/mockPlants";
 import { getOfferById } from "@/lib/offerStorage";
 import type { Offer } from "@/lib/offerTypes";
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "@/lib/orderTypes";
 import { appendOrder } from "@/lib/ordersStorage";
-import { findLegacyPosSpot, getPosSpotBySpotSlug, setPosSpotStatus } from "@/lib/posSpotStorage";
+import { getPosSpotBySpotSlug, setPosSpotStatus } from "@/lib/posSpotStorage";
 import type { PosSpot } from "@/lib/posSpotTypes";
 import type { OrderStatus } from "@/lib/status";
 import type { PlantProduct } from "@/lib/types";
@@ -101,7 +102,7 @@ async function appendOrderCreatedEvent(order: SavedOrder): Promise<ActivityEvent
 
 function logOnlineOrderFlow(input: {
   requestPayload: Record<string, unknown>;
-  posSpot?: PosSpot;
+  posSpot: PosSpot;
   offer: Offer;
   product: PlantProduct;
   checkoutSessionDraft: ReturnType<typeof createPendingOrder> | null;
@@ -117,11 +118,8 @@ function logOnlineOrderFlow(input: {
     spotSlug: input.posSpot?.spotSlug ?? null,
   });
   logOrderFlowSection("CHECKOUT REQUEST PAYLOAD", input.requestPayload);
-  logOrderFlowSection(
-    "POS SPOT (resolved from QR / spotSlug)",
-    input.posSpot ?? { note: "No POS Spot — legacy catalog checkout path" },
-  );
-  logOrderFlowSection("currentOfferId", input.posSpot?.currentOfferId ?? input.offer.id);
+  logOrderFlowSection("POS SPOT (resolved from spotSlug)", input.posSpot);
+  logOrderFlowSection("currentOfferId", input.posSpot.currentOfferId);
   logOrderFlowSection("OFFER", input.offer);
   logOrderFlowSection("PRODUCT", input.product);
   logOrderFlowSection(
@@ -133,10 +131,7 @@ function logOnlineOrderFlow(input: {
   logOrderFlowSection("ORDER SNAPSHOT", input.snapshot);
   logOrderFlowSection("FINAL ORDER (before save)", input.orderBeforeSave);
   logOrderFlowSection("FINAL ORDER (after save)", input.orderAfterSave);
-  logOrderFlowSection(
-    "UPDATED POS SPOT (after sold)",
-    input.updatedPosSpot ?? { note: "POS Spot status unchanged — no spot on this order" },
-  );
+  logOrderFlowSection("UPDATED POS SPOT (after sold)", input.updatedPosSpot);
   logOrderFlowSection("order_created EVENT", input.orderCreatedEvent);
   logOrderFlowEnd();
 }
@@ -252,7 +247,9 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
   if (catalogPlant) {
     resolvedPlantId = catalogPlant.id;
     resolvedPlantName = catalogPlant.name;
-    resolvedPrice = catalogPlant.price;
+    const customPrice = parsePrice(price);
+    resolvedPrice =
+      customPrice !== null && customPrice >= 0 ? customPrice : catalogPlant.price;
   } else {
     const manualName = typeof plantName === "string" ? plantName.trim() : "";
     const manualPrice = parsePrice(price);
@@ -338,7 +335,6 @@ export async function POST(request: NextRequest) {
   const {
     orderId: orderIdRaw,
     plantId,
-    locationId: locationIdRaw,
     fullName,
     phone,
     address,
@@ -356,8 +352,11 @@ export async function POST(request: NextRequest) {
   const nameStr = typeof fullName === "string" ? fullName.trim() : "";
   const emailTrim =
     typeof customerEmailRaw === "string" ? customerEmailRaw.trim().toLowerCase() : "";
-  if (!emailTrim || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
-    return NextResponse.json({ error: "customerEmail is required" }, { status: 400 });
+  if (!emailTrim || !isValidEmail(emailTrim)) {
+    return NextResponse.json(
+      { error: "customerEmail is required and must be a valid email" },
+      { status: 400 },
+    );
   }
 
   const phoneStr = typeof phone === "string" ? phone.trim() : "";
@@ -367,8 +366,11 @@ export async function POST(request: NextRequest) {
   if (!nameStr) {
     return NextResponse.json({ error: "fullName is required" }, { status: 400 });
   }
-  if (fulfillmentMethod === "delivery" && !phoneStr) {
+  if (!phoneStr) {
     return NextResponse.json({ error: "phone is required" }, { status: 400 });
+  }
+  if (!isValidPhone(phoneStr)) {
+    return NextResponse.json({ error: "phone must be a valid phone number" }, { status: 400 });
   }
   if (fulfillmentMethod === "delivery" && !addressStr) {
     return NextResponse.json({ error: "address is required" }, { status: 400 });
@@ -377,18 +379,10 @@ export async function POST(request: NextRequest) {
   const notesStr =
     typeof apartmentOrNotes === "string" ? apartmentOrNotes.trim() : "";
 
-  let locationInput: string | null | undefined;
-  if (locationIdRaw === null) {
-    locationInput = null;
-  } else if (typeof locationIdRaw === "string") {
-    locationInput = locationIdRaw;
-  } else {
-    locationInput = undefined;
+  const spotSlug = typeof spotSlugRaw === "string" ? spotSlugRaw.trim() : "";
+  if (!spotSlug) {
+    return NextResponse.json({ error: "spotSlug is required" }, { status: 400 });
   }
-
-  const { locationId: resolvedLocationId } = resolveLocationFields(
-    locationInput === undefined ? undefined : locationInput,
-  );
 
   const catalogId = typeof plantId === "string" ? plantId.trim() : "";
   const catalogPlant = catalogId ? getPlantById(catalogId) : undefined;
@@ -404,29 +398,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const spotSlug = typeof spotSlugRaw === "string" ? spotSlugRaw.trim() : "";
-  let posSpot: PosSpot | undefined;
-  let offer: Offer | undefined;
-
-  if (spotSlug) {
-    posSpot = await getPosSpotBySpotSlug(spotSlug);
-    if (!posSpot) {
-      return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
-    }
-    offer = await getOfferById(posSpot.currentOfferId);
-  } else {
-    const legacy = await findLegacyPosSpot(catalogPlant.id, resolvedLocationId);
-    posSpot = legacy?.posSpot;
-    offer = legacy?.offer ?? (await getOfferById(`offer-${catalogPlant.id}`));
+  const posSpot = await getPosSpotBySpotSlug(spotSlug);
+  if (!posSpot) {
+    return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
   }
 
+  const offer = await getOfferById(posSpot.currentOfferId);
   if (!offer || offer.status !== "active") {
     return NextResponse.json({ error: "Offer is not available" }, { status: 400 });
   }
   if (offer.productId !== catalogPlant.id) {
     return NextResponse.json({ error: "Offer does not match selected product" }, { status: 400 });
   }
-  if (posSpot && posSpot.status !== "available") {
+  if (posSpot.status !== "available") {
     return NextResponse.json(
       { error: "This POS Spot is no longer available for purchase." },
       { status: 400 },
@@ -434,7 +418,7 @@ export async function POST(request: NextRequest) {
   }
 
   const createdAt = new Date().toISOString();
-  const partner = posSpot ? getLocationById(posSpot.partnerLocationId) : undefined;
+  const partner = getLocationById(posSpot.partnerLocationId);
   const order = completedOrder({
     orderId,
     plant: catalogPlant,
@@ -461,21 +445,20 @@ export async function POST(request: NextRequest) {
     phone: phoneStr,
     address: fulfillmentMethod === "delivery" ? addressStr : "",
     apartmentOrNotes: fulfillmentMethod === "delivery" ? notesStr : "",
-    locationId: posSpot?.partnerLocationId ?? resolvedLocationId,
+    locationId: posSpot.partnerLocationId,
     locationName: partner?.name ?? null,
     locationAddress: partner?.address ?? null,
   });
 
   await appendOrder(order);
-  const updatedPosSpot = posSpot ? await setPosSpotStatus(posSpot.id, "sold") : undefined;
+  const updatedPosSpot = await setPosSpotStatus(posSpot.id, "sold");
   const orderCreatedEvent = await appendOrderCreatedEvent(order);
 
   logOnlineOrderFlow({
     requestPayload: {
       orderId,
       plantId: catalogId,
-      locationId: locationInput,
-      spotSlug: spotSlug || null,
+      spotSlug,
       fulfillmentMethod,
       fullName: nameStr,
       customerEmail: emailTrim,
@@ -490,7 +473,7 @@ export async function POST(request: NextRequest) {
     orderBeforeSave: order,
     snapshot,
     orderAfterSave: order,
-    updatedPosSpot: updatedPosSpot ?? undefined,
+    updatedPosSpot: updatedPosSpot ?? posSpot,
     orderCreatedEvent,
   });
 

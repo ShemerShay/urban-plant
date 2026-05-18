@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const spotSlug = posSpotSlugPart(rawSpotSlug);
   const posNumber = cleanString(record.posNumber);
   const placementNotes = cleanString(record.placementNotes);
-  const placedAt = cleanString(record.placedAt) || new Date().toISOString();
+  const placedAt = new Date().toISOString();
   const status = normalizeStatus(record.status);
 
   if (!partnerLocationId) {
