@@ -8,7 +8,7 @@ import { ORDER_STATUS_LABELS } from "@/lib/status";
 const ORDER_STATUSES: OrderStatus[] = ["sold", "picked_up", "delivered", "cancelled"];
 
 const selectClass =
-  "h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-sm font-medium text-emerald-950 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+  "h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
 export interface FilterOption {
   value: string;
@@ -64,9 +64,11 @@ export function AdminOrdersFilters({
             router.push(ordersQueryUrl(v, currentLocation, currentPlant));
           }}
         >
-          <option value="all">All</option>
+          <option value="all" className="text-slate-900">
+            All
+          </option>
           {ORDER_STATUSES.map((s) => (
-            <option key={s} value={s}>
+            <option key={s} value={s} className="text-slate-900">
               {ORDER_STATUS_LABELS[s]}
             </option>
           ))}
@@ -85,9 +87,11 @@ export function AdminOrdersFilters({
             router.push(ordersQueryUrl(currentStatus, v, currentPlant));
           }}
         >
-          <option value="all">All</option>
+          <option value="all" className="text-slate-900">
+            All
+          </option>
           {locationOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+            <option key={opt.value} value={opt.value} className="text-slate-900">
               {opt.label}
             </option>
           ))}
@@ -106,9 +110,11 @@ export function AdminOrdersFilters({
             router.push(ordersQueryUrl(currentStatus, currentLocation, v));
           }}
         >
-          <option value="all">All</option>
+          <option value="all" className="text-slate-900">
+            All
+          </option>
           {plantOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+            <option key={opt.value} value={opt.value} className="text-slate-900">
               {opt.label}
             </option>
           ))}

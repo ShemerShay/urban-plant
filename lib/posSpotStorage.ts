@@ -5,10 +5,6 @@
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
-import { readInventory } from "./inventoryStorage";
-import { getLocationById } from "./mockLocations";
-import { defaultOfferIdForProduct, readOffers } from "./offerStorage";
-import type { Offer } from "./offerTypes";
 import type { MaintenanceStatus, PosSpot, PosSpotStatus } from "./posSpotTypes";
 
 const POS_SPOTS_FILE = path.join(process.cwd(), "data", "pos-spots.json");
@@ -106,35 +102,16 @@ function normalizePosSpot(entry: unknown): PosSpot | null {
   };
 }
 
-async function legacyInventoryAsPosSpots(): Promise<PosSpot[]> {
-  const rows = await readInventory();
-  return rows.map((row, index) => {
-    const partner = getLocationById(row.locationId);
-    return {
-      id: defaultPosSpotId(row.locationId, row.plantId),
-      partnerLocationId: row.locationId,
-      posNumber: String(index + 1),
-      spotDescription: partner ? `${partner.name} display spot` : "Display spot",
-      spotSlug: defaultSpotSlug(row.locationId, row.plantId),
-      currentOfferId: defaultOfferIdForProduct(row.plantId),
-      status: row.status,
-      placedAt: SEED_CREATED_AT,
-      createdAt: SEED_CREATED_AT,
-    };
-  });
-}
-
 export async function readPosSpots(): Promise<PosSpot[]> {
   try {
     const raw = await readFile(POS_SPOTS_FILE, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return legacyInventoryAsPosSpots();
-    const spots = parsed
+    if (!Array.isArray(parsed)) return [];
+    return parsed
       .map((item) => normalizePosSpot(item))
       .filter((x): x is PosSpot => x !== null);
-    return spots.length > 0 ? spots : legacyInventoryAsPosSpots();
   } catch {
-    return legacyInventoryAsPosSpots();
+    return [];
   }
 }
 
@@ -152,22 +129,6 @@ export async function getPosSpotBySpotSlug(spotSlug: string): Promise<PosSpot | 
   const trimmed = spotSlug.trim();
   const spots = await readPosSpots();
   return spots.find((spot) => spot.spotSlug === trimmed || spot.id === trimmed);
-}
-
-export async function findLegacyPosSpot(
-  productId: string,
-  partnerLocationId: string | null | undefined,
-): Promise<{ posSpot: PosSpot; offer: Offer } | null> {
-  if (!partnerLocationId?.trim()) return null;
-  const offers = await readOffers();
-  const byId = new Map(offers.map((offer) => [offer.id, offer]));
-  const spots = await readPosSpots();
-  for (const posSpot of spots) {
-    if (posSpot.partnerLocationId !== partnerLocationId.trim()) continue;
-    const offer = byId.get(posSpot.currentOfferId);
-    if (offer?.productId === productId) return { posSpot, offer };
-  }
-  return null;
 }
 
 export async function setPosSpotStatus(id: string, status: PosSpotStatus): Promise<PosSpot | null> {

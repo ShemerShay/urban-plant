@@ -1,46 +1,24 @@
 [
   {
-    "id": "pos-cafe-noir-monstera",
+    "id": "pos-cafe-noir-front-shelf",
     "partnerLocationId": "cafe-noir",
     "posNumber": "1",
-    "spotDescription": "Cafe Noir display spot",
-    "spotSlug": "cafe-noir-monstera",
+    "spotDescription": "front shelf",
+    "spotSlug": "cafe-noir-front-shelf",
     "currentOfferId": "offer-monstera",
-    "status": "available",
-    "placedAt": "2026-05-17T00:00:00.000Z",
-    "createdAt": "2026-05-17T00:00:00.000Z"
-  },
-  {
-    "id": "pos-chachos-shenkin-olive-01",
-    "partnerLocationId": "chachos-shenkin",
-    "posNumber": "2",
-    "spotDescription": "Chachos display spot",
-    "spotSlug": "chachos-shenkin-olive-01",
-    "currentOfferId": "offer-olive-01",
     "status": "sold",
-    "placedAt": "2026-05-17T00:00:00.000Z",
-    "createdAt": "2026-05-17T00:00:00.000Z"
+    "placedAt": "2026-05-18T08:12:01.126Z",
+    "createdAt": "2026-05-18T08:12:01.129Z"
   },
   {
-    "id": "pos-cafe-lev-haair-alocasia",
-    "partnerLocationId": "cafe-lev-haair",
-    "posNumber": "3",
-    "spotDescription": "Café Lev HaIr display spot",
-    "spotSlug": "cafe-lev-haair-alocasia",
-    "currentOfferId": "offer-alocasia",
-    "status": "available",
-    "placedAt": "2026-05-17T00:00:00.000Z",
-    "createdAt": "2026-05-17T00:00:00.000Z"
-  },
-  {
-    "id": "pos-partner-01-asparagus",
+    "id": "pos-partner-01-corner",
     "partnerLocationId": "partner-01",
     "posNumber": "4",
-    "spotDescription": "Partner 01 asparagus validation spot",
-    "spotSlug": "partner-01-asparagus",
-    "currentOfferId": "offer-asparagus-partner-01",
+    "spotDescription": "cortner",
+    "spotSlug": "partner-01-corner",
+    "currentOfferId": "offer-asparagus",
     "status": "available",
-    "placedAt": "2026-05-17T12:00:00.000Z",
-    "createdAt": "2026-05-17T12:00:00.000Z"
+    "placedAt": "2026-05-18T08:16:32.889Z",
+    "createdAt": "2026-05-18T08:16:32.898Z"
   }
 ]

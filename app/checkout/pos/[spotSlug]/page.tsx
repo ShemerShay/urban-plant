@@ -43,7 +43,6 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
             plantName={plant.name}
             plantStatus={plant.status}
             priceDisplay={formatPrice(offer.consumerPrice, plant.currency)}
-            locationId={posSpot.partnerLocationId}
             spotSlug={posSpot.spotSlug}
           />
         </section>

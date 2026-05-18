@@ -43,5 +43,70 @@
         ]
       }
     }
+  },
+  {
+    "id": "e520f506-43d9-49c6-86cc-0ddd5d9382c9",
+    "orderId": "e520f506-43d9-49c6-86cc-0ddd5d9382c9",
+    "offerId": "manual-offer",
+    "plantId": "manual",
+    "plantName": "Olive",
+    "locationId": null,
+    "locationName": null,
+    "locationAddress": null,
+    "price": 323,
+    "fullName": "Asaf fg",
+    "phone": "48646338355",
+    "address": "Hammacabim 28",
+    "apartmentOrNotes": "",
+    "fulfillmentMethod": "delivery",
+    "createdAt": "2026-05-18T08:22:14.655Z",
+    "orderStatus": "picked_up",
+    "source": "admin",
+    "pickedUpAt": "2026-05-18T08:42:19.214Z"
+  },
+  {
+    "id": "68b95882-3d8e-4326-8744-f1537528dcf7",
+    "orderId": "68b95882-3d8e-4326-8744-f1537528dcf7",
+    "posSpotId": "pos-cafe-noir-front-shelf",
+    "offerId": "offer-monstera",
+    "plantId": "monstera",
+    "plantName": "Monstera Deliciosa",
+    "locationId": "cafe-noir",
+    "locationName": "Cafe Noir",
+    "locationAddress": "Tel Aviv",
+    "price": 89,
+    "fullName": "Yoav",
+    "customerEmail": "sdfsfd@sad.com",
+    "phone": "32432424",
+    "address": "",
+    "apartmentOrNotes": "",
+    "fulfillmentMethod": "pickup",
+    "createdAt": "2026-05-18T08:47:15.934Z",
+    "orderStatus": "picked_up",
+    "source": "online",
+    "snapshot": {
+      "productId": "monstera",
+      "productName": "Monstera Deliciosa",
+      "productImage": "https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=1200&q=80",
+      "productDescription": "A calm, sculptural plant that adds fresh character to indoor spaces. Great for creating a soft natural presence at home.",
+      "offerId": "offer-monstera",
+      "consumerPrice": 89,
+      "partnerLocationId": "cafe-noir",
+      "partnerLocationName": "Cafe Noir",
+      "posSpotId": "pos-cafe-noir-front-shelf",
+      "posSpotDescription": "front shelf",
+      "spotSlug": "cafe-noir-front-shelf",
+      "fulfillmentType": "pickup",
+      "care": {
+        "light": "Indirect bright light",
+        "wateringDays": "Every 4–6 days",
+        "careInstructions": [
+          "Bright indirect light; avoid harsh midday sun on leaves.",
+          "Water when the top soil feels dry.",
+          "Wipe leaves occasionally for shine."
+        ]
+      }
+    },
+    "pickedUpAt": "2026-05-18T08:47:15.934Z"
   }
 ]

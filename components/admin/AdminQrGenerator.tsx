@@ -42,7 +42,6 @@ export function AdminQrGenerator() {
   const [placementNotes, setPlacementNotes] = useState("");
   const [spotSlug, setSpotSlug] = useState("");
   const [status, setStatus] = useState<PosSpotStatus>("available");
-  const [placedAt, setPlacedAt] = useState("");
   const [copyHint, setCopyHint] = useState<string | null>(null);
   const [saveHint, setSaveHint] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -90,10 +89,21 @@ export function AdminQrGenerator() {
   const canSave = Boolean(
     partnerLocationId.trim() &&
     currentOfferId.trim() &&
+    posNumber.trim() &&
     spotDescription.trim() &&
     spotSlug.trim() &&
     !isSaving,
   );
+
+  function resetForm() {
+    setPosNumber("");
+    setSpotDescription("");
+    setPlacementNotes("");
+    setSpotSlug("");
+    setStatus("available");
+    setPartnerLocationId(locations[0]?.id ?? "");
+    setCurrentOfferId(offers[0]?.id ?? "");
+  }
 
   async function handleCopyUrl() {
     if (!fullUrl) return;
@@ -144,7 +154,6 @@ export function AdminQrGenerator() {
           spotSlug: spotSlug.trim(),
           currentOfferId,
           status,
-          placedAt: placedAt.trim(),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -153,6 +162,7 @@ export function AdminQrGenerator() {
         return;
       }
       setSaveHint("POS Spot saved");
+      resetForm();
     } catch {
       setSaveHint("Network error. Try again.");
     } finally {
@@ -178,7 +188,7 @@ export function AdminQrGenerator() {
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
               {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
+                <option key={loc.id} value={loc.id} className="text-slate-900">
                   {loc.name} — {loc.partnerType}
                 </option>
               ))}
@@ -193,7 +203,7 @@ export function AdminQrGenerator() {
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
               {offers.map((item) => (
-                <option key={item.id} value={item.id}>
+                <option key={item.id} value={item.id} className="text-slate-900">
                   {item.productName} ({formatPrice(item.consumerPrice, item.currency)})
                 </option>
               ))}
@@ -237,20 +247,16 @@ export function AdminQrGenerator() {
               onChange={(e) => setStatus(e.target.value as PosSpotStatus)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
-              <option value="available">Available</option>
-              <option value="sold">Sold</option>
-              <option value="inactive">Inactive</option>
+              <option value="available" className="text-slate-900">
+                Available
+              </option>
+              <option value="sold" className="text-slate-900">
+                Sold
+              </option>
+              <option value="inactive" className="text-slate-900">
+                Inactive
+              </option>
             </select>
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Placed at</span>
-            <input
-              value={placedAt}
-              onChange={(e) => setPlacedAt(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="Leave empty to use now"
-            />
           </label>
 
           <label className="block space-y-2">

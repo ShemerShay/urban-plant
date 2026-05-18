@@ -46,16 +46,112 @@
   {
     "id": "214c3f07-7ee0-4b26-ab2a-d5a19c0975cf",
     "type": "plant_placed",
+    "createdAt": "2026-05-17T14:27:06.024Z",
     "posSpotId": "pos-cafe-left-shelf",
     "offerId": "offer-monstera",
     "productId": "monstera",
     "partnerLocationId": "cafe-noir",
-    "createdAt": "2026-05-17T14:27:06.024Z",
     "createdBy": "admin",
     "data": {
       "spotSlug": "cafe-left-shelf",
       "spotDescription": "on the left shelf at the entrance",
       "status": "available"
+    }
+  },
+  {
+    "id": "9a6a1b84-681c-4b52-9d0a-b59028e9a54b",
+    "type": "plant_placed",
+    "createdAt": "2026-05-18T08:12:01.129Z",
+    "posSpotId": "pos-cafe-noir-front-shelf",
+    "offerId": "offer-monstera",
+    "productId": "monstera",
+    "partnerLocationId": "cafe-noir",
+    "createdBy": "admin",
+    "data": {
+      "spotSlug": "cafe-noir-front-shelf",
+      "spotDescription": "front shelf",
+      "status": "available"
+    }
+  },
+  {
+    "id": "67234896-53c0-4993-bcc3-708a1b60eb13",
+    "type": "plant_placed",
+    "createdAt": "2026-05-18T08:16:32.898Z",
+    "posSpotId": "pos-partner-01-corner",
+    "offerId": "offer-asparagus",
+    "productId": "asparagus",
+    "partnerLocationId": "partner-01",
+    "createdBy": "admin",
+    "data": {
+      "spotSlug": "partner-01-corner",
+      "spotDescription": "cortner",
+      "status": "available"
+    }
+  },
+  {
+    "id": "fff416b6-5022-4662-b845-5d0b4e2bb40f",
+    "type": "order_created",
+    "createdAt": "2026-05-18T08:22:14.655Z",
+    "offerId": "manual-offer",
+    "orderId": "e520f506-43d9-49c6-86cc-0ddd5d9382c9",
+    "productId": "manual",
+    "createdBy": "admin",
+    "data": {
+      "fulfillmentMethod": "delivery",
+      "orderStatus": "sold"
+    }
+  },
+  {
+    "id": "6b1fe45f-aeb3-4b9e-8870-f882e3eeb89a",
+    "type": "order_cancelled",
+    "createdAt": "2026-05-18T08:22:26.135Z",
+    "offerId": "manual-offer",
+    "orderId": "e520f506-43d9-49c6-86cc-0ddd5d9382c9",
+    "productId": "manual",
+    "createdBy": "admin",
+    "data": {
+      "cancellationReason": "yes"
+    }
+  },
+  {
+    "id": "ebb45a08-f6a2-4a42-942a-2691623443c7",
+    "type": "manual_status_update",
+    "createdAt": "2026-05-18T08:42:14.842Z",
+    "offerId": "manual-offer",
+    "orderId": "e520f506-43d9-49c6-86cc-0ddd5d9382c9",
+    "productId": "manual",
+    "createdBy": "admin",
+    "data": {
+      "previousStatus": "cancelled",
+      "nextStatus": "delivered"
+    }
+  },
+  {
+    "id": "08f0debb-0d2b-49cf-8989-b8e1a052b632",
+    "type": "manual_status_update",
+    "createdAt": "2026-05-18T08:42:19.223Z",
+    "offerId": "manual-offer",
+    "orderId": "e520f506-43d9-49c6-86cc-0ddd5d9382c9",
+    "productId": "manual",
+    "createdBy": "admin",
+    "data": {
+      "previousStatus": "delivered",
+      "nextStatus": "picked_up"
+    }
+  },
+  {
+    "id": "30d5700a-cf0f-471e-9bfe-3bcf5c25cb4b",
+    "type": "order_created",
+    "posSpotId": "pos-cafe-noir-front-shelf",
+    "offerId": "offer-monstera",
+    "orderId": "68b95882-3d8e-4326-8744-f1537528dcf7",
+    "productId": "monstera",
+    "partnerLocationId": "cafe-noir",
+    "createdAt": "2026-05-18T08:47:15.934Z",
+    "createdBy": "online",
+    "data": {
+      "fulfillmentMethod": "pickup",
+      "orderStatus": "picked_up"
     }
   }
 ]

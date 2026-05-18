@@ -25,3 +25,12 @@ body {
 * {
   -webkit-tap-highlight-color: transparent;
 }
+
+select,
+select option {
+  color: #0f172a;
+}
+
+select option {
+  background-color: #ffffff;
+}
