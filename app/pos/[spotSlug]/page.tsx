@@ -30,7 +30,7 @@ export default async function PosPage({ params }: PosPageProps) {
   const plant = getPlantById(offer.productId);
   if (!plant) notFound();
 
-  const knownPartner = getLocationById(posSpot.partnerLocationId);
+  const knownPartner = await getLocationById(posSpot.partnerLocationId);
   const ctaText = formatBuyCta(offer.consumerPrice, plant.currency);
   const purchaseEnabled = plant.status !== "sold" && (await canPurchasePosSpot(posSpot.spotSlug));
 

@@ -7,9 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "setup:env": "node scripts/ensure-env-local.mjs"
+    "setup:env": "node scripts/ensure-env-local.mjs",
+    "db:cleanup-qr-slug": "node scripts/cleanup-qr-slug-in-json.mjs",
+    "db:migrate": "node scripts/run-migration.mjs",
+    "db:seed": "node scripts/seed-from-json.mjs",
+    "db:verify-storage": "npx tsx scripts/verify-db-storage.ts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "embla-carousel-react": "^8.6.0",
     "next": "16.2.4",
     "posthog-js": "^1.372.6",
