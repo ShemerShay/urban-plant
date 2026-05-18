@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { appendEvent } from "@/lib/eventStorage";
-import { locations } from "@/lib/mockLocations";
+import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/mockPlants";
 import { readOffers } from "@/lib/offerStorage";
 import { appendPosSpot, posSpotSlugPart, readPosSpots } from "@/lib/posSpotStorage";
@@ -18,7 +18,11 @@ function cleanString(value: unknown): string {
 }
 
 export async function GET() {
-  const [offers, posSpots] = await Promise.all([readOffers(), readPosSpots()]);
+  const [offers, posSpots, locations] = await Promise.all([
+    readOffers(),
+    readPosSpots(),
+    readPartnerLocations(),
+  ]);
   return NextResponse.json({
     offers: offers.map((offer) => {
       const product = getPlantById(offer.productId);
@@ -58,6 +62,7 @@ export async function POST(request: NextRequest) {
   if (!partnerLocationId) {
     return NextResponse.json({ error: "partnerLocationId is required" }, { status: 400 });
   }
+  const locations = await readPartnerLocations();
   if (!locations.some((loc) => loc.id === partnerLocationId)) {
     return NextResponse.json({ error: "Partner Location not found" }, { status: 404 });
   }

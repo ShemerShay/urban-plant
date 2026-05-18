@@ -2,12 +2,11 @@
  * POS Spots are the stable physical QR anchors. Local availability lives here.
  */
 
-import { mkdir, readFile, writeFile } from "fs/promises";
-import path from "path";
+import { sql } from "@/lib/db";
+import { toIsoString } from "@/lib/storageUtils";
 
 import type { MaintenanceStatus, PosSpot, PosSpotStatus } from "./posSpotTypes";
 
-const POS_SPOTS_FILE = path.join(process.cwd(), "data", "pos-spots.json");
 const SEED_CREATED_AT = "2026-05-17T00:00:00.000Z";
 
 function slugPart(value: string): string {
@@ -30,68 +29,63 @@ export function defaultSpotSlug(partnerLocationId: string, productId: string): s
   return `${slugPart(partnerLocationId)}-${slugPart(productId)}`;
 }
 
-function normalizeMaintenanceStatus(value: unknown): MaintenanceStatus | undefined {
+type PosSpotRow = {
+  id: string;
+  partner_location_id: string;
+  pos_number: string | null;
+  spot_description: string;
+  placement_notes: string | null;
+  spot_slug: string;
+  current_offer_id: string;
+  status: string;
+  placed_at: string | Date | null;
+  latest_maintenance_status: string | null;
+  last_checked_at: string | Date | null;
+  last_watered_at: string | Date | null;
+  last_handled_at: string | Date | null;
+  last_handled_by: string | null;
+  created_at: string | Date;
+};
+
+function normalizeStatus(value: string): PosSpotStatus {
+  if (value === "sold" || value === "inactive") return value;
+  return "available";
+}
+
+function normalizeMaintenanceStatus(value: string | null): MaintenanceStatus | undefined {
   if (value === "checked" || value === "needs_watering" || value === "needs_treatment") {
     return value;
   }
   return undefined;
 }
 
-function normalizeStatus(value: unknown): PosSpotStatus {
-  if (value === "sold" || value === "inactive") return value;
-  return "available";
-}
-
-function normalizePosSpot(entry: unknown): PosSpot | null {
-  if (!entry || typeof entry !== "object") return null;
-  const o = entry as Record<string, unknown>;
-  const id = typeof o.id === "string" ? o.id.trim() : "";
-  const partnerLocationId =
-    typeof o.partnerLocationId === "string" ? o.partnerLocationId.trim() : "";
-  const spotSlug =
-    typeof o.spotSlug === "string" && o.spotSlug.trim()
-      ? o.spotSlug.trim()
-      : typeof o.qrSlug === "string"
-        ? o.qrSlug.trim()
-        : "";
-  const currentOfferId = typeof o.currentOfferId === "string" ? o.currentOfferId.trim() : "";
-  const spotDescription =
-    typeof o.spotDescription === "string" && o.spotDescription.trim()
-      ? o.spotDescription.trim()
-      : "Display spot";
-  const createdAt = typeof o.createdAt === "string" && o.createdAt ? o.createdAt : SEED_CREATED_AT;
-
-  if (!id || !partnerLocationId || !spotSlug || !currentOfferId) return null;
-
+function mapPosSpotRow(row: PosSpotRow): PosSpot {
+  const latestMaintenanceStatus = normalizeMaintenanceStatus(row.latest_maintenance_status);
+  const placedAt = toIsoString(row.placed_at);
+  const lastCheckedAt = toIsoString(row.last_checked_at);
+  const lastWateredAt = toIsoString(row.last_watered_at);
+  const lastHandledAt = toIsoString(row.last_handled_at);
+  const createdAt = toIsoString(row.created_at) ?? SEED_CREATED_AT;
   const posNumber =
-    typeof o.posNumber === "string" && o.posNumber.trim() ? o.posNumber.trim() : undefined;
+    typeof row.pos_number === "string" && row.pos_number.trim() ? row.pos_number.trim() : undefined;
   const placementNotes =
-    typeof o.placementNotes === "string" && o.placementNotes.trim()
-      ? o.placementNotes.trim()
+    typeof row.placement_notes === "string" && row.placement_notes.trim()
+      ? row.placement_notes.trim()
       : undefined;
-  const placedAt =
-    typeof o.placedAt === "string" && o.placedAt ? o.placedAt : undefined;
-  const latestMaintenanceStatus = normalizeMaintenanceStatus(o.latestMaintenanceStatus);
-  const lastCheckedAt =
-    typeof o.lastCheckedAt === "string" && o.lastCheckedAt ? o.lastCheckedAt : undefined;
-  const lastWateredAt =
-    typeof o.lastWateredAt === "string" && o.lastWateredAt ? o.lastWateredAt : undefined;
-  const lastHandledAt =
-    typeof o.lastHandledAt === "string" && o.lastHandledAt ? o.lastHandledAt : undefined;
   const lastHandledBy =
-    typeof o.lastHandledBy === "string" && o.lastHandledBy.trim()
-      ? o.lastHandledBy.trim()
+    typeof row.last_handled_by === "string" && row.last_handled_by.trim()
+      ? row.last_handled_by.trim()
       : undefined;
 
   return {
-    id,
-    partnerLocationId,
+    id: row.id,
+    partnerLocationId: row.partner_location_id,
     ...(posNumber ? { posNumber } : {}),
-    spotDescription,
+    spotDescription: row.spot_description,
     ...(placementNotes ? { placementNotes } : {}),
-    spotSlug,
-    currentOfferId,
-    status: normalizeStatus(o.status),
+    spotSlug: row.spot_slug,
+    currentOfferId: row.current_offer_id,
+    status: normalizeStatus(row.status),
     ...(placedAt ? { placedAt } : {}),
     ...(latestMaintenanceStatus ? { latestMaintenanceStatus } : {}),
     ...(lastCheckedAt ? { lastCheckedAt } : {}),
@@ -103,50 +97,166 @@ function normalizePosSpot(entry: unknown): PosSpot | null {
 }
 
 export async function readPosSpots(): Promise<PosSpot[]> {
-  try {
-    const raw = await readFile(POS_SPOTS_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item) => normalizePosSpot(item))
-      .filter((x): x is PosSpot => x !== null);
-  } catch {
-    return [];
-  }
+  const rows = await sql`
+    SELECT
+      id,
+      partner_location_id,
+      pos_number,
+      spot_description,
+      placement_notes,
+      spot_slug,
+      current_offer_id,
+      status,
+      placed_at,
+      latest_maintenance_status,
+      last_checked_at,
+      last_watered_at,
+      last_handled_at,
+      last_handled_by,
+      created_at
+    FROM pos_spots
+    ORDER BY created_at ASC
+  `;
+  return (rows as PosSpotRow[]).map(mapPosSpotRow);
 }
 
 export async function savePosSpots(spots: PosSpot[]): Promise<void> {
-  await mkdir(path.dirname(POS_SPOTS_FILE), { recursive: true });
-  await writeFile(POS_SPOTS_FILE, `${JSON.stringify(spots, null, 2)}\n`, "utf-8");
+  await sql`DELETE FROM pos_spots`;
+  for (const spot of spots) {
+    await insertPosSpot(spot);
+  }
+}
+
+async function insertPosSpot(posSpot: PosSpot): Promise<void> {
+  await sql`
+    INSERT INTO pos_spots (
+      id,
+      partner_location_id,
+      pos_number,
+      spot_description,
+      placement_notes,
+      spot_slug,
+      current_offer_id,
+      status,
+      placed_at,
+      latest_maintenance_status,
+      last_checked_at,
+      last_watered_at,
+      last_handled_at,
+      last_handled_by,
+      created_at
+    )
+    VALUES (
+      ${posSpot.id},
+      ${posSpot.partnerLocationId},
+      ${posSpot.posNumber ?? null},
+      ${posSpot.spotDescription},
+      ${posSpot.placementNotes ?? null},
+      ${posSpot.spotSlug},
+      ${posSpot.currentOfferId},
+      ${posSpot.status},
+      ${posSpot.placedAt ?? null}::timestamptz,
+      ${posSpot.latestMaintenanceStatus ?? null},
+      ${posSpot.lastCheckedAt ?? null}::timestamptz,
+      ${posSpot.lastWateredAt ?? null}::timestamptz,
+      ${posSpot.lastHandledAt ?? null}::timestamptz,
+      ${posSpot.lastHandledBy ?? null},
+      ${posSpot.createdAt}::timestamptz
+    )
+  `;
 }
 
 export async function getPosSpotById(id: string): Promise<PosSpot | undefined> {
-  const spots = await readPosSpots();
-  return spots.find((spot) => spot.id === id);
+  const trimmed = id.trim();
+  if (!trimmed) return undefined;
+  const rows = await sql`
+    SELECT
+      id,
+      partner_location_id,
+      pos_number,
+      spot_description,
+      placement_notes,
+      spot_slug,
+      current_offer_id,
+      status,
+      placed_at,
+      latest_maintenance_status,
+      last_checked_at,
+      last_watered_at,
+      last_handled_at,
+      last_handled_by,
+      created_at
+    FROM pos_spots
+    WHERE id = ${trimmed}
+    LIMIT 1
+  `;
+  const row = (rows as PosSpotRow[])[0];
+  return row ? mapPosSpotRow(row) : undefined;
 }
 
 export async function getPosSpotBySpotSlug(spotSlug: string): Promise<PosSpot | undefined> {
   const trimmed = spotSlug.trim();
-  const spots = await readPosSpots();
-  return spots.find((spot) => spot.spotSlug === trimmed || spot.id === trimmed);
+  if (!trimmed) return undefined;
+  const rows = await sql`
+    SELECT
+      id,
+      partner_location_id,
+      pos_number,
+      spot_description,
+      placement_notes,
+      spot_slug,
+      current_offer_id,
+      status,
+      placed_at,
+      latest_maintenance_status,
+      last_checked_at,
+      last_watered_at,
+      last_handled_at,
+      last_handled_by,
+      created_at
+    FROM pos_spots
+    WHERE spot_slug = ${trimmed} OR id = ${trimmed}
+    LIMIT 1
+  `;
+  const row = (rows as PosSpotRow[])[0];
+  return row ? mapPosSpotRow(row) : undefined;
 }
 
 export async function setPosSpotStatus(id: string, status: PosSpotStatus): Promise<PosSpot | null> {
-  const spots = await readPosSpots();
-  const idx = spots.findIndex((spot) => spot.id === id);
-  if (idx === -1) return null;
-  const updated = { ...spots[idx], status };
-  spots[idx] = updated;
-  await savePosSpots(spots);
-  return updated;
+  const rows = await sql`
+    UPDATE pos_spots
+    SET status = ${status}
+    WHERE id = ${id}
+    RETURNING
+      id,
+      partner_location_id,
+      pos_number,
+      spot_description,
+      placement_notes,
+      spot_slug,
+      current_offer_id,
+      status,
+      placed_at,
+      latest_maintenance_status,
+      last_checked_at,
+      last_watered_at,
+      last_handled_at,
+      last_handled_by,
+      created_at
+  `;
+  const row = (rows as PosSpotRow[])[0];
+  return row ? mapPosSpotRow(row) : null;
 }
 
 export async function appendPosSpot(posSpot: PosSpot): Promise<PosSpot> {
-  const spots = await readPosSpots();
-  if (spots.some((spot) => spot.id === posSpot.id || spot.spotSlug === posSpot.spotSlug)) {
+  const existing = await sql`
+    SELECT id FROM pos_spots
+    WHERE id = ${posSpot.id} OR spot_slug = ${posSpot.spotSlug}
+    LIMIT 1
+  `;
+  if ((existing as { id: string }[]).length > 0) {
     throw new Error("POS Spot id or spot slug already exists");
   }
-  spots.push(posSpot);
-  await savePosSpots(spots);
+  await insertPosSpot(posSpot);
   return posSpot;
 }

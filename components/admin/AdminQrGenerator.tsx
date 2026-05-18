@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import QRCode from "react-qr-code";
 
-import { locations } from "@/lib/mockLocations";
+import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
 import { posSpotPath } from "@/lib/qrNavigation";
 
@@ -35,8 +35,9 @@ export function AdminQrGenerator() {
   const qrHostRef = useRef<HTMLDivElement>(null);
   const origin = useClientOrigin();
   const [offers, setOffers] = useState<OfferOption[]>([]);
+  const [locations, setLocations] = useState<PartnerLocation[]>([]);
   const [currentOfferId, setCurrentOfferId] = useState("");
-  const [partnerLocationId, setPartnerLocationId] = useState(locations[0]?.id ?? "");
+  const [partnerLocationId, setPartnerLocationId] = useState("");
   const [posNumber, setPosNumber] = useState("");
   const [spotDescription, setSpotDescription] = useState("");
   const [placementNotes, setPlacementNotes] = useState("");
@@ -51,10 +52,16 @@ export function AdminQrGenerator() {
     async function loadOptions() {
       const res = await fetch("/api/pos-spots", { cache: "no-store" });
       if (!res.ok) return;
-      const data = (await res.json()) as { offers?: OfferOption[] };
+      const data = (await res.json()) as {
+        offers?: OfferOption[];
+        locations?: PartnerLocation[];
+      };
       if (cancelled) return;
       const activeOffers = (data.offers ?? []).filter((offer) => offer.status === "active");
+      const nextLocations = data.locations ?? [];
       setOffers(activeOffers);
+      setLocations(nextLocations);
+      setPartnerLocationId((prev) => prev || nextLocations[0]?.id || "");
       setCurrentOfferId((prev) => prev || activeOffers[0]?.id || "");
     }
     void loadOptions();

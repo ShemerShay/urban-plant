@@ -41,14 +41,14 @@ function parsePrice(value: unknown): number | null {
   return null;
 }
 
-function buildSnapshot(input: {
+async function buildSnapshot(input: {
   plant: PlantProduct;
   offer: Offer;
   posSpot?: PosSpot;
   fulfillmentMethod: FulfillmentMethod;
-}): OrderSnapshot {
+}): Promise<OrderSnapshot> {
   const { plant, offer, posSpot, fulfillmentMethod } = input;
-  const partner = posSpot ? getLocationById(posSpot.partnerLocationId) : undefined;
+  const partner = posSpot ? await getLocationById(posSpot.partnerLocationId) : undefined;
   return {
     productId: plant.id,
     productName: plant.name,
@@ -136,7 +136,7 @@ function logOnlineOrderFlow(input: {
   logOrderFlowEnd();
 }
 
-function completedOrder(input: {
+async function completedOrder(input: {
   orderId: string;
   plant: PlantProduct;
   offer: Offer;
@@ -149,8 +149,8 @@ function completedOrder(input: {
   fulfillmentMethod: FulfillmentMethod;
   createdAt: string;
   source: "online" | "manual" | "admin";
-}): SavedOrder {
-  const partner = input.posSpot ? getLocationById(input.posSpot.partnerLocationId) : undefined;
+}): Promise<SavedOrder> {
+  const partner = input.posSpot ? await getLocationById(input.posSpot.partnerLocationId) : undefined;
   const orderStatus: OrderStatus =
     input.fulfillmentMethod === "pickup" ? "picked_up" : "sold";
   return {
@@ -173,7 +173,7 @@ function completedOrder(input: {
     createdAt: input.createdAt,
     orderStatus,
     source: input.source,
-    snapshot: buildSnapshot({
+    snapshot: await buildSnapshot({
       plant: input.plant,
       offer: input.offer,
       posSpot: input.posSpot,
@@ -233,7 +233,7 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
     locationId: resolvedLocationId,
     locationName: resolvedLocationName,
     locationAddress: resolvedLocationAddress,
-  } = resolveLocationFields(
+  } = await resolveLocationFields(
     locationInput === undefined ? undefined : locationInput,
   );
 
@@ -418,8 +418,8 @@ export async function POST(request: NextRequest) {
   }
 
   const createdAt = new Date().toISOString();
-  const partner = getLocationById(posSpot.partnerLocationId);
-  const order = completedOrder({
+  const partner = await getLocationById(posSpot.partnerLocationId);
+  const order = await completedOrder({
     orderId,
     plant: catalogPlant,
     offer,

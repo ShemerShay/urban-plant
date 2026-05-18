@@ -1,14 +1,13 @@
 /**
- * Reusable sale offers (prototype JSON). Product/Offer creation is manual source data for now.
+ * Sale offers backed by Neon Postgres. Product/Offer creation is manual source data for now.
  */
 
-import { mkdir, readFile, writeFile } from "fs/promises";
-import path from "path";
+import { sql } from "@/lib/db";
+import { mockPlants } from "@/lib/mockPlants";
+import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
-import { mockPlants } from "./mockPlants";
 import type { Offer, OfferStatus } from "./offerTypes";
 
-const OFFERS_FILE = path.join(process.cwd(), "data", "offers.json");
 const SEED_CREATED_AT = "2026-05-17T00:00:00.000Z";
 
 export function defaultOfferIdForProduct(productId: string): string {
@@ -29,31 +28,30 @@ function defaultOffers(): Offer[] {
   }));
 }
 
-function normalizeOffer(entry: unknown): Offer | null {
-  if (!entry || typeof entry !== "object") return null;
-  const o = entry as Record<string, unknown>;
-  const id = typeof o.id === "string" ? o.id.trim() : "";
-  const productId = typeof o.productId === "string" ? o.productId.trim() : "";
-  const consumerPrice =
-    typeof o.consumerPrice === "number" && Number.isFinite(o.consumerPrice)
-      ? o.consumerPrice
-      : null;
-  const status: OfferStatus = o.status === "inactive" ? "inactive" : "active";
-  const createdAt = typeof o.createdAt === "string" && o.createdAt ? o.createdAt : SEED_CREATED_AT;
+type OfferRow = {
+  id: string;
+  product_id: string;
+  consumer_price: string | number;
+  supplier_price: string | number | null;
+  supplier_name: string | null;
+  status: string;
+  created_at: string | Date;
+};
+
+function mapOfferRow(row: OfferRow): Offer {
+  const status: OfferStatus = row.status === "inactive" ? "inactive" : "active";
+  const createdAt = toIsoString(row.created_at) ?? SEED_CREATED_AT;
   const supplierPrice =
-    typeof o.supplierPrice === "number" && Number.isFinite(o.supplierPrice)
-      ? o.supplierPrice
-      : undefined;
+    row.supplier_price != null ? parseNumeric(row.supplier_price) : undefined;
   const supplierName =
-    typeof o.supplierName === "string" && o.supplierName.trim()
-      ? o.supplierName.trim()
+    typeof row.supplier_name === "string" && row.supplier_name.trim()
+      ? row.supplier_name.trim()
       : undefined;
 
-  if (!id || !productId || consumerPrice === null) return null;
   return {
-    id,
-    productId,
-    consumerPrice,
+    id: row.id,
+    productId: row.product_id,
+    consumerPrice: parseNumeric(row.consumer_price),
     ...(supplierPrice !== undefined ? { supplierPrice } : {}),
     ...(supplierName ? { supplierName } : {}),
     status,
@@ -62,25 +60,45 @@ function normalizeOffer(entry: unknown): Offer | null {
 }
 
 export async function readOffers(): Promise<Offer[]> {
-  try {
-    const raw = await readFile(OFFERS_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return defaultOffers();
-    const offers = parsed
-      .map((item) => normalizeOffer(item))
-      .filter((x): x is Offer => x !== null);
-    return offers.length > 0 ? offers : defaultOffers();
-  } catch {
-    return defaultOffers();
-  }
+  const rows = await sql`
+    SELECT id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+    FROM offers
+    ORDER BY created_at ASC
+  `;
+  const offers = (rows as OfferRow[]).map(mapOfferRow);
+  return offers.length > 0 ? offers : defaultOffers();
 }
 
 export async function saveOffers(offers: Offer[]): Promise<void> {
-  await mkdir(path.dirname(OFFERS_FILE), { recursive: true });
-  await writeFile(OFFERS_FILE, `${JSON.stringify(offers, null, 2)}\n`, "utf-8");
+  await sql`DELETE FROM offers`;
+  for (const offer of offers) {
+    await sql`
+      INSERT INTO offers (
+        id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+      )
+      VALUES (
+        ${offer.id},
+        ${offer.productId},
+        ${offer.consumerPrice},
+        ${offer.supplierPrice ?? null},
+        ${offer.supplierName ?? null},
+        ${offer.status},
+        ${offer.createdAt}::timestamptz
+      )
+    `;
+  }
 }
 
 export async function getOfferById(id: string): Promise<Offer | undefined> {
-  const offers = await readOffers();
-  return offers.find((offer) => offer.id === id);
+  const trimmed = id.trim();
+  if (!trimmed) return undefined;
+  const rows = await sql`
+    SELECT id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+    FROM offers
+    WHERE id = ${trimmed}
+    LIMIT 1
+  `;
+  const row = (rows as OfferRow[])[0];
+  if (row) return mapOfferRow(row);
+  return (await readOffers()).find((offer) => offer.id === trimmed);
 }

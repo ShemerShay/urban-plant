@@ -1,23 +1,19 @@
 /**
- * Local JSON order management is only for prototype/testing and should be replaced
- * with a real database before production.
+ * Order persistence backed by Neon Postgres.
  */
 
-import { mkdir, readFile, writeFile } from "fs/promises";
-import path from "path";
+import { sql } from "@/lib/db";
+import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
 import type { OrderStatus } from "./status";
 import { isOrderStatus } from "./status";
 
-const ORDERS_FILE = path.join(process.cwd(), "data", "orders.json");
-
-function normalizeLegacyOrderStatus(raw: unknown, source: "orderStatus" | "deliveryStatus"): OrderStatus {
+function normalizeLegacyOrderStatus(
+  raw: unknown,
+  source: "orderStatus" | "deliveryStatus",
+): OrderStatus {
   if (isOrderStatus(raw)) return raw;
-  /**
-   * Legacy `deliveryStatus` only: "available"/"pending" meant order placed, awaiting fulfillment.
-   * Legacy `orderStatus: "available"` is no longer an Order state; preserve the order as sold.
-   */
   if (
     (source === "deliveryStatus" && (raw === "available" || raw === "pending")) ||
     raw === "available" ||
@@ -66,19 +62,23 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       ? { supplierPrice: o.supplierPrice }
       : {}),
     ...(typeof o.supplierName === "string" && o.supplierName ? { supplierName: o.supplierName } : {}),
-    ...(typeof o.partnerLocationId === "string" && o.partnerLocationId ? { partnerLocationId: o.partnerLocationId } : {}),
-    ...(typeof o.partnerLocationName === "string" && o.partnerLocationName ? { partnerLocationName: o.partnerLocationName } : {}),
+    ...(typeof o.partnerLocationId === "string" && o.partnerLocationId
+      ? { partnerLocationId: o.partnerLocationId }
+      : {}),
+    ...(typeof o.partnerLocationName === "string" && o.partnerLocationName
+      ? { partnerLocationName: o.partnerLocationName }
+      : {}),
     ...(typeof o.posSpotId === "string" && o.posSpotId ? { posSpotId: o.posSpotId } : {}),
-    ...(typeof o.posSpotDescription === "string" && o.posSpotDescription ? { posSpotDescription: o.posSpotDescription } : {}),
-    ...(typeof o.spotSlug === "string" && o.spotSlug
-      ? { spotSlug: o.spotSlug }
-      : typeof o.qrSlug === "string" && o.qrSlug
-        ? { spotSlug: o.qrSlug }
-        : {}),
+    ...(typeof o.posSpotDescription === "string" && o.posSpotDescription
+      ? { posSpotDescription: o.posSpotDescription }
+      : {}),
+    ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
     care: {
       ...(typeof careRaw.light === "string" && careRaw.light ? { light: careRaw.light } : {}),
-      ...(typeof careRaw.wateringDays === "string" && careRaw.wateringDays ? { wateringDays: careRaw.wateringDays } : {}),
+      ...(typeof careRaw.wateringDays === "string" && careRaw.wateringDays
+        ? { wateringDays: careRaw.wateringDays }
+        : {}),
       ...(averageSize ? { averageSize } : {}),
       ...(typeof careRaw.maintenanceConditions === "string" && careRaw.maintenanceConditions
         ? { maintenanceConditions: careRaw.maintenanceConditions }
@@ -88,134 +88,193 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
   };
 }
 
-/** Normalize persisted rows (supports legacy `deliveryStatus` field name). */
-function normalizeOrder(entry: unknown): SavedOrder | null {
-  if (!entry || typeof entry !== "object") return null;
-  const o = entry as Record<string, unknown>;
+type OrderRow = {
+  order_id: string;
+  checkout_session_id: string | null;
+  pos_spot_id: string | null;
+  offer_id: string | null;
+  product_id: string;
+  product_name: string;
+  partner_location_id: string | null;
+  partner_location_name: string | null;
+  partner_location_address: string | null;
+  price: string | number;
+  full_name: string;
+  customer_email: string | null;
+  phone: string;
+  address: string;
+  apartment_or_notes: string;
+  fulfillment_method: string;
+  order_status: string;
+  source: string | null;
+  cancelled_at: string | Date | null;
+  cancelled_by: string | null;
+  cancellation_reason: string | null;
+  delivered_at: string | Date | null;
+  picked_up_at: string | Date | null;
+  snapshot: unknown;
+  created_at: string | Date;
+};
 
-  const orderId = typeof o.orderId === "string" ? o.orderId : null;
-  const id = typeof o.id === "string" && o.id ? o.id : undefined;
-  const checkoutSessionId =
-    typeof o.checkoutSessionId === "string" && o.checkoutSessionId ? o.checkoutSessionId : undefined;
-  const posSpotId = typeof o.posSpotId === "string" && o.posSpotId ? o.posSpotId : undefined;
-  const offerId = typeof o.offerId === "string" && o.offerId ? o.offerId : undefined;
-  const plantId = typeof o.plantId === "string" ? o.plantId : null;
-  const plantName = typeof o.plantName === "string" ? o.plantName : null;
+function mapOrderRow(row: OrderRow): SavedOrder {
+  const orderId = String(row.order_id);
+  const fulfillmentMethod: FulfillmentMethod =
+    row.fulfillment_method === "pickup" ? "pickup" : "delivery";
+  const orderStatus = normalizeLegacyOrderStatus(row.order_status, "orderStatus");
+  const snapshot = normalizeSnapshot(row.snapshot);
 
-  const locationId: string | null =
-    typeof o.locationId === "string" && o.locationId.trim()
-      ? o.locationId.trim()
+  const locationId =
+    typeof row.partner_location_id === "string" && row.partner_location_id.trim()
+      ? row.partner_location_id.trim()
       : null;
-
-  let locationName: string | null =
-    typeof o.locationName === "string" ? o.locationName : null;
+  let locationName =
+    typeof row.partner_location_name === "string" ? row.partner_location_name : null;
   if (locationName !== null && locationName.trim() === "") locationName = null;
-
-  let locationAddress: string | null =
-    typeof o.locationAddress === "string" ? o.locationAddress : null;
+  let locationAddress =
+    typeof row.partner_location_address === "string" ? row.partner_location_address : null;
   if (locationAddress !== null && locationAddress.trim() === "") locationAddress = null;
 
-  const price = typeof o.price === "number" && Number.isFinite(o.price) ? o.price : null;
-  const fullName = typeof o.fullName === "string" ? o.fullName : null;
-  const phone = typeof o.phone === "string" ? o.phone : null;
-  const address = typeof o.address === "string" ? o.address : null;
-  const apartmentOrNotes =
-    typeof o.apartmentOrNotes === "string" ? o.apartmentOrNotes : "";
-  const fulfillmentMethod: FulfillmentMethod =
-    o.fulfillmentMethod === "pickup" ? "pickup" : "delivery";
-  const createdAt = typeof o.createdAt === "string" ? o.createdAt : null;
-
-  let orderStatus: OrderStatus;
-  if (o.orderStatus !== undefined) {
-    orderStatus = normalizeLegacyOrderStatus(o.orderStatus, "orderStatus");
-  } else if (o.deliveryStatus !== undefined) {
-    orderStatus = normalizeLegacyOrderStatus(o.deliveryStatus, "deliveryStatus");
-  } else {
-    orderStatus = "sold";
-  }
-
-  const deliveredAt =
-    typeof o.deliveredAt === "string" && o.deliveredAt ? o.deliveredAt : undefined;
-  const pickedUpAt =
-    typeof o.pickedUpAt === "string" && o.pickedUpAt ? o.pickedUpAt : undefined;
-
   const customerEmail =
-    typeof o.customerEmail === "string" && o.customerEmail.trim()
-      ? o.customerEmail.trim()
+    typeof row.customer_email === "string" && row.customer_email.trim()
+      ? row.customer_email.trim()
       : undefined;
-  const source = o.source === "manual" || o.source === "admin" || o.source === "online" ? o.source : undefined;
-  const cancelledAt =
-    typeof o.cancelledAt === "string" && o.cancelledAt ? o.cancelledAt : undefined;
-  const cancelledBy =
-    typeof o.cancelledBy === "string" && o.cancelledBy ? o.cancelledBy : undefined;
-  const cancellationReason =
-    typeof o.cancellationReason === "string" && o.cancellationReason ? o.cancellationReason : undefined;
-  const snapshot = normalizeSnapshot(o.snapshot);
-
-  if (
-    !orderId ||
-    !plantId ||
-    !plantName ||
-    price === null ||
-    !fullName ||
-    (fulfillmentMethod === "delivery" && (!phone || !address)) ||
-    !createdAt
-  ) {
-    return null;
-  }
+  const source =
+    row.source === "manual" || row.source === "admin" || row.source === "online"
+      ? row.source
+      : undefined;
 
   return {
-    ...(id ? { id } : {}),
+    id: orderId,
     orderId,
-    ...(checkoutSessionId ? { checkoutSessionId } : {}),
-    ...(posSpotId ? { posSpotId } : {}),
-    ...(offerId ? { offerId } : {}),
-    plantId,
-    plantName,
+    ...(row.checkout_session_id ? { checkoutSessionId: row.checkout_session_id } : {}),
+    ...(row.pos_spot_id ? { posSpotId: row.pos_spot_id } : {}),
+    ...(row.offer_id ? { offerId: row.offer_id } : {}),
+    plantId: row.product_id,
+    plantName: row.product_name,
     locationId,
     locationName,
     locationAddress,
-    price,
-    fullName,
+    price: parseNumeric(row.price),
+    fullName: row.full_name,
     ...(customerEmail ? { customerEmail } : {}),
-    phone: phone ?? "",
-    address: address ?? "",
-    apartmentOrNotes,
+    phone: row.phone ?? "",
+    address: row.address ?? "",
+    apartmentOrNotes: row.apartment_or_notes ?? "",
     fulfillmentMethod,
-    createdAt,
+    createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     orderStatus,
     ...(source ? { source } : {}),
-    ...(cancelledAt ? { cancelledAt } : {}),
-    ...(cancelledBy ? { cancelledBy } : {}),
-    ...(cancellationReason ? { cancellationReason } : {}),
+    ...(toIsoString(row.cancelled_at) ? { cancelledAt: toIsoString(row.cancelled_at) } : {}),
+    ...(row.cancelled_by ? { cancelledBy: row.cancelled_by } : {}),
+    ...(row.cancellation_reason ? { cancellationReason: row.cancellation_reason } : {}),
     ...(snapshot ? { snapshot } : {}),
-    ...(deliveredAt ? { deliveredAt } : {}),
-    ...(pickedUpAt ? { pickedUpAt } : {}),
+    ...(toIsoString(row.delivered_at) ? { deliveredAt: toIsoString(row.delivered_at) } : {}),
+    ...(toIsoString(row.picked_up_at) ? { pickedUpAt: toIsoString(row.picked_up_at) } : {}),
   };
 }
 
+async function insertOrder(order: SavedOrder): Promise<void> {
+  await sql`
+    INSERT INTO orders (
+      order_id,
+      checkout_session_id,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at
+    )
+    VALUES (
+      ${order.orderId}::uuid,
+      ${order.checkoutSessionId ?? null},
+      ${order.posSpotId ?? null},
+      ${order.offerId ?? null},
+      ${order.plantId},
+      ${order.plantName},
+      ${order.locationId},
+      ${order.locationName},
+      ${order.locationAddress},
+      ${order.price},
+      ${order.fullName},
+      ${order.customerEmail ?? null},
+      ${order.phone},
+      ${order.address},
+      ${order.apartmentOrNotes},
+      ${order.fulfillmentMethod},
+      ${order.orderStatus},
+      ${order.source ?? null},
+      ${order.cancelledAt ?? null}::timestamptz,
+      ${order.cancelledBy ?? null},
+      ${order.cancellationReason ?? null},
+      ${order.deliveredAt ?? null}::timestamptz,
+      ${order.pickedUpAt ?? null}::timestamptz,
+      ${order.snapshot ? JSON.stringify(order.snapshot) : null}::jsonb,
+      ${order.createdAt}::timestamptz
+    )
+  `;
+}
+
 export async function readOrders(): Promise<SavedOrder[]> {
-  try {
-    const raw = await readFile(ORDERS_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item) => normalizeOrder(item))
-      .filter((x): x is SavedOrder => x !== null);
-  } catch {
-    return [];
-  }
+  const rows = await sql`
+    SELECT
+      order_id,
+      checkout_session_id,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at
+    FROM orders
+    ORDER BY created_at DESC
+  `;
+  return (rows as OrderRow[]).map(mapOrderRow);
 }
 
 export async function saveOrders(orders: SavedOrder[]): Promise<void> {
-  await mkdir(path.dirname(ORDERS_FILE), { recursive: true });
-  await writeFile(ORDERS_FILE, `${JSON.stringify(orders, null, 2)}\n`, "utf-8");
+  await sql`DELETE FROM orders`;
+  for (const order of orders) {
+    await insertOrder(order);
+  }
 }
 
 export async function appendOrder(order: SavedOrder): Promise<void> {
-  const orders = await readOrders();
-  orders.push(order);
-  await saveOrders(orders);
+  await insertOrder(order);
 }
 
 export async function patchOrderById(
@@ -232,25 +291,110 @@ export async function patchOrderById(
     >
   >,
 ): Promise<SavedOrder | null> {
-  const orders = await readOrders();
-  const idx = orders.findIndex((o) => o.orderId === orderId);
-  if (idx === -1) return null;
+  const existing = await getOrderById(orderId);
+  if (!existing) return null;
 
   const updated: SavedOrder = {
-    ...orders[idx],
+    ...existing,
     ...patch,
   };
 
-  orders[idx] = updated;
-  await saveOrders(orders);
+  await replaceOrder(updated);
   return updated;
 }
 
+async function getOrderById(orderId: string): Promise<SavedOrder | null> {
+  const rows = await sql`
+    SELECT
+      order_id,
+      checkout_session_id,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at
+    FROM orders
+    WHERE order_id = ${orderId}::uuid
+    LIMIT 1
+  `;
+  const row = (rows as OrderRow[])[0];
+  return row ? mapOrderRow(row) : null;
+}
+
 export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null> {
-  const orders = await readOrders();
-  const idx = orders.findIndex((o) => o.orderId === order.orderId);
-  if (idx === -1) return null;
-  orders[idx] = order;
-  await saveOrders(orders);
-  return order;
+  const rows = await sql`
+    UPDATE orders
+    SET
+      checkout_session_id = ${order.checkoutSessionId ?? null},
+      pos_spot_id = ${order.posSpotId ?? null},
+      offer_id = ${order.offerId ?? null},
+      product_id = ${order.plantId},
+      product_name = ${order.plantName},
+      partner_location_id = ${order.locationId},
+      partner_location_name = ${order.locationName},
+      partner_location_address = ${order.locationAddress},
+      price = ${order.price},
+      full_name = ${order.fullName},
+      customer_email = ${order.customerEmail ?? null},
+      phone = ${order.phone},
+      address = ${order.address},
+      apartment_or_notes = ${order.apartmentOrNotes},
+      fulfillment_method = ${order.fulfillmentMethod},
+      order_status = ${order.orderStatus},
+      source = ${order.source ?? null},
+      cancelled_at = ${order.cancelledAt ?? null}::timestamptz,
+      cancelled_by = ${order.cancelledBy ?? null},
+      cancellation_reason = ${order.cancellationReason ?? null},
+      delivered_at = ${order.deliveredAt ?? null}::timestamptz,
+      picked_up_at = ${order.pickedUpAt ?? null}::timestamptz,
+      snapshot = ${order.snapshot ? JSON.stringify(order.snapshot) : null}::jsonb,
+      created_at = ${order.createdAt}::timestamptz
+    WHERE order_id = ${order.orderId}::uuid
+    RETURNING
+      order_id,
+      checkout_session_id,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at
+  `;
+  const row = (rows as OrderRow[])[0];
+  return row ? mapOrderRow(row) : null;
 }
