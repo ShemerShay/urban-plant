@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { parsePartnerPayments, type PartnerPaymentRecord } from "@/lib/partnerPayment";
 import { toIsoString } from "@/lib/storageUtils";
 
 export interface PartnerLocation {
@@ -6,7 +7,9 @@ export interface PartnerLocation {
   name: string;
   address: string;
   type: string;
+  /** @deprecated Use `type`; mirrored for callers not yet migrated off `partnerType`. */
   partnerType: string;
+  payments: PartnerPaymentRecord[];
   createdAt?: string;
 }
 
@@ -15,7 +18,7 @@ type PartnerLocationRow = {
   name: string;
   address: string;
   type: string;
-  partner_type: string;
+  payments: unknown;
   created_at: string | Date;
 };
 
@@ -26,14 +29,15 @@ function mapPartnerLocationRow(row: PartnerLocationRow): PartnerLocation {
     name: row.name,
     address: row.address,
     type: row.type,
-    partnerType: row.partner_type,
+    partnerType: row.type,
+    payments: parsePartnerPayments(row.payments),
     ...(createdAt ? { createdAt } : {}),
   };
 }
 
 export async function readPartnerLocations(): Promise<PartnerLocation[]> {
   const rows = await sql`
-    SELECT id, name, address, type, partner_type, created_at
+    SELECT id, name, address, type, payments, created_at
     FROM partner_locations
     ORDER BY name ASC
   `;
@@ -46,11 +50,29 @@ export async function getPartnerLocationById(
   const trimmed = id.trim();
   if (!trimmed) return undefined;
   const rows = await sql`
-    SELECT id, name, address, type, partner_type, created_at
+    SELECT id, name, address, type, payments, created_at
     FROM partner_locations
     WHERE id = ${trimmed}
     LIMIT 1
   `;
   const row = (rows as PartnerLocationRow[])[0];
   return row ? mapPartnerLocationRow(row) : undefined;
+}
+
+/** Updates street address for a partner location (shared by all POS spots at that site). */
+export async function updatePartnerLocationAddress(
+  id: string,
+  address: string,
+): Promise<PartnerLocation | null> {
+  const trimmedId = id.trim();
+  const trimmedAddress = address.trim();
+  if (!trimmedId || !trimmedAddress) return null;
+  const rows = await sql`
+    UPDATE partner_locations
+    SET address = ${trimmedAddress}
+    WHERE id = ${trimmedId}
+    RETURNING id, name, address, type, payments, created_at
+  `;
+  const row = (rows as PartnerLocationRow[])[0];
+  return row ? mapPartnerLocationRow(row) : null;
 }

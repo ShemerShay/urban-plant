@@ -1,6 +1,8 @@
 /**
- * Sale offers backed by Neon Postgres. Product/Offer creation is manual source data for now.
+ * Sale offers backed by Neon Postgres. New rows get UUID primary keys (legacy slug ids may remain until replaced).
  */
+
+import { randomUUID } from "crypto";
 
 import { sql } from "@/lib/db";
 import { mockPlants } from "@/lib/mockPlants";
@@ -10,13 +12,17 @@ import type { Offer, OfferStatus } from "./offerTypes";
 
 const SEED_CREATED_AT = "2026-05-17T00:00:00.000Z";
 
-export function defaultOfferIdForProduct(productId: string): string {
-  return `offer-${productId}`;
-}
+export type NewOfferInput = {
+  productId: string;
+  consumerPrice: number;
+  supplierPrice?: number;
+  supplierName?: string;
+  status?: OfferStatus;
+};
 
 function defaultOffers(): Offer[] {
   return mockPlants.map((plant) => ({
-    id: defaultOfferIdForProduct(plant.id),
+    id: randomUUID(),
     productId: plant.id,
     consumerPrice: plant.price,
     ...(typeof plant.baseSupplierPrice === "number"
@@ -101,4 +107,37 @@ export async function getOfferById(id: string): Promise<Offer | undefined> {
   const row = (rows as OfferRow[])[0];
   if (row) return mapOfferRow(row);
   return (await readOffers()).find((offer) => offer.id === trimmed);
+}
+
+/** Inserts a new offer; always assigns a fresh UUID (client must not send slug-style ids). */
+export async function appendOffer(input: NewOfferInput): Promise<Offer> {
+  const productId = input.productId.trim();
+  const status: OfferStatus = input.status === "inactive" ? "inactive" : "active";
+  const createdAt = new Date().toISOString();
+  const offer: Offer = {
+    id: randomUUID(),
+    productId,
+    consumerPrice: input.consumerPrice,
+    ...(typeof input.supplierPrice === "number" ? { supplierPrice: input.supplierPrice } : {}),
+    ...(input.supplierName?.trim() ? { supplierName: input.supplierName.trim() } : {}),
+    status,
+    createdAt,
+  };
+
+  await sql`
+    INSERT INTO offers (
+      id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+    )
+    VALUES (
+      ${offer.id},
+      ${offer.productId},
+      ${offer.consumerPrice},
+      ${offer.supplierPrice ?? null},
+      ${offer.supplierName ?? null},
+      ${offer.status},
+      ${offer.createdAt}::timestamptz
+    )
+  `;
+
+  return offer;
 }

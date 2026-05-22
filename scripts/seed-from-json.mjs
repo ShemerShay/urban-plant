@@ -6,6 +6,7 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { neon } from "@neondatabase/serverless";
 
@@ -79,20 +80,19 @@ async function seedPartnerLocations() {
   let count = 0;
   for (const loc of partnerLocations) {
     await sql`
-      INSERT INTO partner_locations (id, name, address, type, partner_type, created_at)
+      INSERT INTO partner_locations (id, name, address, type, payments, created_at)
       VALUES (
         ${loc.id},
         ${loc.name},
         ${loc.address},
-        ${loc.type},
-        ${loc.partnerType},
+        ${loc.type ?? loc.partnerType},
+        '[]'::jsonb,
         ${loc.createdAt ?? SEED_CREATED_AT}::timestamptz
       )
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         address = EXCLUDED.address,
-        type = EXCLUDED.type,
-        partner_type = EXCLUDED.partner_type
+        type = EXCLUDED.type
     `;
     count += 1;
   }
@@ -164,26 +164,40 @@ async function seedOffers(rows) {
 
 async function seedPosSpots(rows) {
   const spotIds = new Set();
+  /** Maps legacy text ids from JSON to seeded UUIDs (for orders/events). */
+  const legacySpotIdMap = new Map();
   let count = 0;
 
   for (const raw of rows) {
     const context = `pos-spots.json id=${raw.id ?? "?"}`;
     const spotSlug = requireSpotSlug(raw, context);
-    const id = typeof raw.id === "string" ? raw.id.trim() : "";
+    const legacyId = typeof raw.id === "string" ? raw.id.trim() : "";
+    const id =
+      legacyId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(legacyId)
+        ? legacyId
+        : randomUUID();
+    const spotName =
+      typeof raw.spotName === "string" && raw.spotName.trim()
+        ? raw.spotName.trim()
+        : legacyId || spotSlug;
     const partnerLocationId =
       typeof raw.partnerLocationId === "string" ? raw.partnerLocationId.trim() : "";
     const currentOfferId =
       typeof raw.currentOfferId === "string" ? raw.currentOfferId.trim() : "";
-    const spotDescription =
+    const rawDesc =
       typeof raw.spotDescription === "string" && raw.spotDescription.trim()
         ? raw.spotDescription.trim()
         : "Display spot";
+    const rawName = typeof raw.posName === "string" && raw.posName.trim() ? raw.posName.trim() : "";
+    const posName = rawName || rawDesc;
+    const spotDescriptionSql = rawName ? (rawDesc !== rawName ? rawDesc : null) : null;
+
     const status =
       raw.status === "sold" || raw.status === "inactive" ? raw.status : "available";
     const createdAt =
       typeof raw.createdAt === "string" && raw.createdAt ? raw.createdAt : SEED_CREATED_AT;
 
-    if (!id || !partnerLocationId || !currentOfferId) {
+    if (!legacyId || !partnerLocationId || !currentOfferId) {
       throw new Error(`${context}: missing id, partnerLocationId, or currentOfferId`);
     }
 
@@ -193,81 +207,94 @@ async function seedPosSpots(rows) {
       typeof raw.placementNotes === "string" && raw.placementNotes.trim()
         ? raw.placementNotes.trim()
         : null;
-    const placedAt =
-      typeof raw.placedAt === "string" && raw.placedAt ? raw.placedAt : null;
-    const latestMaintenanceStatus =
-      raw.latestMaintenanceStatus === "checked" ||
-      raw.latestMaintenanceStatus === "needs_watering" ||
-      raw.latestMaintenanceStatus === "needs_treatment"
-        ? raw.latestMaintenanceStatus
+    const offerPlacedAtRaw =
+      typeof raw.offerPlacedAt === "string" && raw.offerPlacedAt
+        ? raw.offerPlacedAt
+        : typeof raw.placedAt === "string" && raw.placedAt
+          ? raw.placedAt
+          : null;
+    const checkStatus = raw.checkStatus === true;
+    const checkBy =
+      typeof raw.checkBy === "string" && raw.checkBy.trim() ? raw.checkBy.trim() : null;
+    const nextCheck =
+      typeof raw.nextCheck === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.nextCheck.trim())
+        ? raw.nextCheck.trim()
         : null;
-    const lastCheckedAt =
-      typeof raw.lastCheckedAt === "string" && raw.lastCheckedAt ? raw.lastCheckedAt : null;
-    const lastWateredAt =
-      typeof raw.lastWateredAt === "string" && raw.lastWateredAt ? raw.lastWateredAt : null;
-    const lastHandledAt =
-      typeof raw.lastHandledAt === "string" && raw.lastHandledAt ? raw.lastHandledAt : null;
-    const lastHandledBy =
-      typeof raw.lastHandledBy === "string" && raw.lastHandledBy.trim()
-        ? raw.lastHandledBy.trim()
+    const posWeeklyNote =
+      typeof raw.posWeeklyNote === "string" && raw.posWeeklyNote.trim()
+        ? raw.posWeeklyNote.trim()
         : null;
+    const pocket =
+      typeof raw.pocket === "string" && raw.pocket.trim() ? raw.pocket.trim() : null;
+    const pocketOther =
+      typeof raw.pocketOther === "string" && raw.pocketOther.trim() ? raw.pocketOther.trim() : null;
 
     await sql`
       INSERT INTO pos_spots (
         id,
+        spot_name,
         partner_location_id,
         pos_number,
+        pocket,
+        pocket_other,
+        pos_name,
         spot_description,
         placement_notes,
         spot_slug,
         current_offer_id,
         status,
-        placed_at,
-        latest_maintenance_status,
-        last_checked_at,
-        last_watered_at,
-        last_handled_at,
-        last_handled_by,
+        offer_placed_at,
+        check_status,
+        check_by,
+        next_check,
+        pos_weekly_note,
         created_at
       )
       VALUES (
-        ${id},
+        ${id}::uuid,
+        ${spotName},
         ${partnerLocationId},
         ${posNumber},
-        ${spotDescription},
+        ${pocket},
+        ${pocketOther},
+        ${posName},
+        ${spotDescriptionSql},
         ${placementNotes},
         ${spotSlug},
         ${currentOfferId},
         ${status},
-        ${placedAt}::timestamptz,
-        ${latestMaintenanceStatus},
-        ${lastCheckedAt}::timestamptz,
-        ${lastWateredAt}::timestamptz,
-        ${lastHandledAt}::timestamptz,
-        ${lastHandledBy},
+        ${offerPlacedAtRaw}::timestamptz,
+        ${checkStatus},
+        ${checkBy},
+        ${nextCheck}::date,
+        ${posWeeklyNote},
         ${createdAt}::timestamptz
       )
       ON CONFLICT (id) DO UPDATE SET
+        spot_name = EXCLUDED.spot_name,
         partner_location_id = EXCLUDED.partner_location_id,
         pos_number = EXCLUDED.pos_number,
+        pocket = EXCLUDED.pocket,
+        pocket_other = EXCLUDED.pocket_other,
+        pos_name = EXCLUDED.pos_name,
         spot_description = EXCLUDED.spot_description,
         placement_notes = EXCLUDED.placement_notes,
         spot_slug = EXCLUDED.spot_slug,
         current_offer_id = EXCLUDED.current_offer_id,
         status = EXCLUDED.status,
-        placed_at = EXCLUDED.placed_at,
-        latest_maintenance_status = EXCLUDED.latest_maintenance_status,
-        last_checked_at = EXCLUDED.last_checked_at,
-        last_watered_at = EXCLUDED.last_watered_at,
-        last_handled_at = EXCLUDED.last_handled_at,
-        last_handled_by = EXCLUDED.last_handled_by,
+        offer_placed_at = EXCLUDED.offer_placed_at,
+        check_status = EXCLUDED.check_status,
+        check_by = EXCLUDED.check_by,
+        next_check = EXCLUDED.next_check,
+        pos_weekly_note = EXCLUDED.pos_weekly_note,
         created_at = EXCLUDED.created_at
     `;
     spotIds.add(id);
+    legacySpotIdMap.set(legacyId, id);
     count += 1;
   }
 
-  return { count, spotIds };
+  return { count, spotIds, legacySpotIdMap };
 }
 
 function sanitizeSnapshot(snapshot) {
@@ -282,7 +309,7 @@ function sanitizeSnapshot(snapshot) {
   return snapshot;
 }
 
-async function seedOrders(rows, spotIds, offerIds) {
+async function seedOrders(rows, spotIds, legacySpotIdMap, offerIds) {
   const warnings = [];
   let count = 0;
 
@@ -311,6 +338,9 @@ async function seedOrders(rows, spotIds, offerIds) {
 
     let posSpotId =
       typeof raw.posSpotId === "string" && raw.posSpotId.trim() ? raw.posSpotId.trim() : null;
+    if (posSpotId && legacySpotIdMap.has(posSpotId)) {
+      posSpotId = legacySpotIdMap.get(posSpotId);
+    }
     if (posSpotId && !spotIds.has(posSpotId)) {
       warnings.push(`order ${orderId}: pos_spot_id ${posSpotId} not in pos-spots seed — storing NULL`);
       posSpotId = null;
@@ -367,7 +397,7 @@ async function seedOrders(rows, spotIds, offerIds) {
       VALUES (
         ${orderId}::uuid,
         ${typeof raw.checkoutSessionId === "string" ? raw.checkoutSessionId : null},
-        ${posSpotId},
+        ${posSpotId}::uuid,
         ${offerId},
         ${plantId},
         ${plantName},
@@ -438,7 +468,7 @@ function sanitizeEventData(data, context) {
   return data;
 }
 
-async function seedEvents(rows) {
+async function seedEvents(rows, legacySpotIdMap) {
   let count = 0;
 
   for (const raw of rows) {
@@ -451,6 +481,12 @@ async function seedEvents(rows) {
     }
 
     const data = sanitizeEventData(raw.data, `events.json id=${id}`);
+
+    let posSpotId =
+      typeof raw.posSpotId === "string" && raw.posSpotId.trim() ? raw.posSpotId.trim() : null;
+    if (posSpotId && legacySpotIdMap.has(posSpotId)) {
+      posSpotId = legacySpotIdMap.get(posSpotId);
+    }
 
     await sql`
       INSERT INTO events (
@@ -468,7 +504,7 @@ async function seedEvents(rows) {
       VALUES (
         ${id}::uuid,
         ${type},
-        ${typeof raw.posSpotId === "string" && raw.posSpotId.trim() ? raw.posSpotId.trim() : null},
+        ${posSpotId}::uuid,
         ${typeof raw.offerId === "string" && raw.offerId.trim() ? raw.offerId.trim() : null},
         ${typeof raw.orderId === "string" && raw.orderId.trim() ? raw.orderId : null}::uuid,
         ${typeof raw.productId === "string" && raw.productId.trim() ? raw.productId.trim() : null},
@@ -534,20 +570,21 @@ const offerIds = new Set([
 console.log(`offers: ${offerCount} row(s) (includes manual-offer if missing)`);
 
 const posSpotRows = await readJsonArray("pos-spots.json");
-const { count: posSpotCount, spotIds } = await seedPosSpots(posSpotRows);
+const { count: posSpotCount, spotIds, legacySpotIdMap } = await seedPosSpots(posSpotRows);
 console.log(`pos_spots: ${posSpotCount} row(s)`);
 
 const orderRows = await readJsonArray("orders.json");
 const { count: orderCount, warnings: orderWarnings } = await seedOrders(
   orderRows,
   spotIds,
+  legacySpotIdMap,
   offerIds,
 );
 console.log(`orders: ${orderCount} row(s)`);
 for (const w of orderWarnings) console.warn(`  warn: ${w}`);
 
 const eventRows = await readJsonArray("events.json");
-const eventCount = await seedEvents(eventRows);
+const eventCount = await seedEvents(eventRows, legacySpotIdMap);
 console.log(`events: ${eventCount} row(s)`);
 
 console.log("\nTable counts:");

@@ -18,7 +18,7 @@ export default function Home() {
 
       <div className="space-y-3 pb-4">
         <Link
-          href="/pos/cafe-noir-front-shelf"
+          href="/pos/caf_lev_hair_9_waiting_area"
           className="block rounded-2xl bg-emerald-700 px-6 py-4 text-center text-sm font-semibold text-white"
         >
           Demo POS Spot

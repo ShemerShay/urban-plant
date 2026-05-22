@@ -41,15 +41,6 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
     return undefined;
   }
 
-  const careRaw = o.care && typeof o.care === "object" ? (o.care as Record<string, unknown>) : {};
-  const careInstructions = Array.isArray(careRaw.careInstructions)
-    ? careRaw.careInstructions.filter((x): x is string => typeof x === "string")
-    : undefined;
-  const averageSize =
-    careRaw.averageSize === "small" || careRaw.averageSize === "medium" || careRaw.averageSize === "large"
-      ? careRaw.averageSize
-      : undefined;
-
   return {
     productId,
     productName,
@@ -74,17 +65,6 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       : {}),
     ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
-    care: {
-      ...(typeof careRaw.light === "string" && careRaw.light ? { light: careRaw.light } : {}),
-      ...(typeof careRaw.wateringDays === "string" && careRaw.wateringDays
-        ? { wateringDays: careRaw.wateringDays }
-        : {}),
-      ...(averageSize ? { averageSize } : {}),
-      ...(typeof careRaw.maintenanceConditions === "string" && careRaw.maintenanceConditions
-        ? { maintenanceConditions: careRaw.maintenanceConditions }
-        : {}),
-      ...(careInstructions && careInstructions.length > 0 ? { careInstructions } : {}),
-    },
   };
 }
 
@@ -205,7 +185,7 @@ async function insertOrder(order: SavedOrder): Promise<void> {
     VALUES (
       ${order.orderId}::uuid,
       ${order.checkoutSessionId ?? null},
-      ${order.posSpotId ?? null},
+      ${order.posSpotId ?? null}::uuid,
       ${order.offerId ?? null},
       ${order.plantId},
       ${order.plantName},
@@ -344,7 +324,7 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
     UPDATE orders
     SET
       checkout_session_id = ${order.checkoutSessionId ?? null},
-      pos_spot_id = ${order.posSpotId ?? null},
+      pos_spot_id = ${order.posSpotId ?? null}::uuid,
       offer_id = ${order.offerId ?? null},
       product_id = ${order.plantId},
       product_name = ${order.plantName},

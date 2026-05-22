@@ -6,6 +6,8 @@ import QRCode from "react-qr-code";
 
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
+import { POS_SPOT_POCKETS, type PosSpotPocketValue } from "@/lib/posSpotPocket";
+import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
 import { posSpotPath } from "@/lib/qrNavigation";
 
 type OfferOption = {
@@ -39,13 +41,15 @@ export function AdminQrGenerator() {
   const [currentOfferId, setCurrentOfferId] = useState("");
   const [partnerLocationId, setPartnerLocationId] = useState("");
   const [posNumber, setPosNumber] = useState("");
+  const [pocket, setPocket] = useState<PosSpotPocketValue | "">("");
+  const [pocketOther, setPocketOther] = useState("");
   const [spotDescription, setSpotDescription] = useState("");
   const [placementNotes, setPlacementNotes] = useState("");
-  const [spotSlug, setSpotSlug] = useState("");
   const [status, setStatus] = useState<PosSpotStatus>("available");
   const [copyHint, setCopyHint] = useState<string | null>(null);
   const [saveHint, setSaveHint] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [pocketOtherError, setPocketOtherError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,46 +74,47 @@ export function AdminQrGenerator() {
     };
   }, []);
 
-  function slugify(value: string): string {
-    return value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-  }
+  const location = locations.find((l) => l.id === partnerLocationId);
 
-  function handlePartnerChange(next: string) {
-    setPartnerLocationId(next);
-    if (!spotSlug && spotDescription) setSpotSlug(slugify(`${next}-${spotDescription}`));
-  }
-
-  function handleDescriptionChange(next: string) {
-    setSpotDescription(next);
-    if (!spotSlug) setSpotSlug(slugify(`${partnerLocationId}-${next}`));
-  }
+  const { spotName, spotSlug } = useMemo(() => {
+    if (!location?.name || !posNumber.trim() || !pocket) {
+      return { spotName: "", spotSlug: "" };
+    }
+    if (pocket === "other" && !pocketOther.trim()) {
+      return { spotName: "", spotSlug: "" };
+    }
+    return buildPosSpotNameAndSlug(location.name, posNumber, pocket, pocketOther);
+  }, [location?.name, posNumber, pocket, pocketOther]);
 
   const relativePath = useMemo(() => (spotSlug ? posSpotPath(spotSlug) : ""), [spotSlug]);
   const fullUrl = origin && relativePath ? `${origin}${relativePath}` : "";
 
   const offer = offers.find((item) => item.id === currentOfferId);
-  const location = locations.find((l) => l.id === partnerLocationId);
+  const pocketLabel =
+    pocket === "other"
+      ? pocketOther.trim() || "Other"
+      : POS_SPOT_POCKETS.find((p) => p.value === pocket)?.label ?? "";
+
   const canSave = Boolean(
     partnerLocationId.trim() &&
-    currentOfferId.trim() &&
-    posNumber.trim() &&
-    spotDescription.trim() &&
-    spotSlug.trim() &&
-    !isSaving,
+      currentOfferId.trim() &&
+      posNumber.trim() &&
+      pocket &&
+      (pocket !== "other" || pocketOther.trim()) &&
+      spotSlug.trim() &&
+      !isSaving,
   );
 
   function resetForm() {
     setPosNumber("");
+    setPocket("");
+    setPocketOther("");
     setSpotDescription("");
     setPlacementNotes("");
-    setSpotSlug("");
     setStatus("available");
     setPartnerLocationId(locations[0]?.id ?? "");
     setCurrentOfferId(offers[0]?.id ?? "");
+    setPocketOtherError(false);
   }
 
   async function handleCopyUrl() {
@@ -146,6 +151,11 @@ export function AdminQrGenerator() {
   }
 
   async function handleSavePosSpot() {
+    if (pocket === "other" && !pocketOther.trim()) {
+      setPocketOtherError(true);
+      setSaveHint("Custom pocket description is required when Other is selected.");
+      return;
+    }
     if (!canSave) return;
     setIsSaving(true);
     setSaveHint(null);
@@ -156,9 +166,10 @@ export function AdminQrGenerator() {
         body: JSON.stringify({
           partnerLocationId,
           posNumber: posNumber.trim(),
-          spotDescription: spotDescription.trim(),
+          pocket,
+          ...(pocket === "other" ? { pocketOther: pocketOther.trim() } : {}),
+          ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
           placementNotes: placementNotes.trim(),
-          spotSlug: spotSlug.trim(),
           currentOfferId,
           status,
         }),
@@ -191,7 +202,7 @@ export function AdminQrGenerator() {
             <span className="text-sm font-medium text-slate-700">Partner Location</span>
             <select
               value={partnerLocationId}
-              onChange={(e) => handlePartnerChange(e.target.value)}
+              onChange={(e) => setPartnerLocationId(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
               {locations.map((loc) => (
@@ -223,29 +234,82 @@ export function AdminQrGenerator() {
               value={posNumber}
               onChange={(e) => setPosNumber(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="1"
+              placeholder="3"
             />
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">POS Spot description</span>
+            <span className="text-sm font-medium text-slate-700">Pocket</span>
+            <select
+              value={pocket}
+              onChange={(e) => {
+                setPocket(e.target.value as PosSpotPocketValue | "");
+                if (e.target.value !== "other") setPocketOtherError(false);
+              }}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
+            >
+              <option value="" className="text-slate-900">
+                Select pocket…
+              </option>
+              {POS_SPOT_POCKETS.map((item) => (
+                <option key={item.value} value={item.value} className="text-slate-900">
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {pocket === "other" ? (
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">Custom pocket</span>
+              <input
+                value={pocketOther}
+                onChange={(e) => {
+                  setPocketOther(e.target.value);
+                  if (e.target.value.trim()) setPocketOtherError(false);
+                }}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
+                placeholder="Describe the placement"
+                aria-invalid={pocketOtherError && !pocketOther.trim()}
+              />
+              {pocketOtherError && !pocketOther.trim() ? (
+                <span className="text-sm text-red-700">Custom pocket is required.</span>
+              ) : null}
+            </label>
+          ) : null}
+
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-slate-700">POS Description (optional)</span>
             <input
               value={spotDescription}
-              onChange={(e) => handleDescriptionChange(e.target.value)}
+              onChange={(e) => setSpotDescription(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="Front window shelf"
+              placeholder="Extra notes for staff — not used in the slug"
             />
           </label>
 
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Spot slug</span>
-            <input
-              value={spotSlug}
-              onChange={(e) => setSpotSlug(slugify(e.target.value))}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="cafe-nahat-front-window"
-            />
-          </label>
+          <div className="rounded-2xl bg-slate-50/80 px-3 py-3 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Auto-generated identifiers
+            </p>
+            <div className="space-y-1 text-sm">
+              {spotName ? (
+                <p>
+                  <span className="font-medium text-slate-500">Spot name </span>
+                  <span className="font-mono text-slate-900">{spotName}</span>
+                </p>
+              ) : null}
+              {spotSlug ? (
+                <p>
+                  <span className="font-medium text-slate-500">Spot slug </span>
+                  <span className="font-mono text-slate-900">{spotSlug}</span>
+                </p>
+              ) : null}
+            </div>
+            <span className="text-xs text-slate-500">
+              Built from partner name, spot number, and pocket ({pocketLabel || "select pocket"}).
+            </span>
+          </div>
 
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-700">Initial POS Spot status</span>
@@ -301,8 +365,22 @@ export function AdminQrGenerator() {
             <dd className="text-slate-900">{location?.name ?? partnerLocationId}</dd>
           </div>
           <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">POS Spot</dt>
-            <dd className="text-slate-900">{spotDescription || "Not specified"}</dd>
+            <dt className="font-medium text-slate-500">Spot number</dt>
+            <dd className="text-slate-900">{posNumber || "—"}</dd>
+          </div>
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="font-medium text-slate-500">Pocket</dt>
+            <dd className="text-slate-900">{pocketLabel || "—"}</dd>
+          </div>
+          {spotName ? (
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="font-medium text-slate-500">Spot name</dt>
+              <dd className="font-mono text-slate-900">{spotName}</dd>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="font-medium text-slate-500">POS Description</dt>
+            <dd className="text-slate-900">{spotDescription || "—"}</dd>
           </div>
           <div className="pt-2">
             <dt className="font-medium text-slate-500">Generated URL</dt>
