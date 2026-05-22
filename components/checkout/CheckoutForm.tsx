@@ -3,20 +3,28 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { isValidEmail, isValidPhone } from "@/lib/formValidation";
+import {
+  DeliveryAddressFields,
+  type DeliveryAddressFieldErrors,
+  type DeliveryAddressFieldValues,
+} from "@/components/checkout/DeliveryAddressFields";
+import {
+  canSubmitCheckout,
+  getCheckoutFieldErrors,
+  getVisibleCheckoutFieldErrors,
+  type CheckoutFieldKey,
+  type CheckoutFulfillmentMethod,
+} from "@/lib/checkoutValidation";
+import { normalizeIsraeliMobilePhoneInput } from "@/lib/formValidation";
 import type { PlantCatalogStatus } from "@/lib/types";
 
 type FormFields = {
   fullName: string;
   email: string;
   phone: string;
-  address: string;
-  apartmentOrNotes: string;
-};
+} & DeliveryAddressFieldValues;
 
-type FulfillmentMethod = "delivery" | "pickup";
-
-type FieldErrors = Partial<Record<keyof FormFields, string>>;
+type FulfillmentMethod = CheckoutFulfillmentMethod;
 
 interface CheckoutFormProps {
   plantId: string;
@@ -45,63 +53,63 @@ export function CheckoutForm({
   const [fields, setFields] = useState<FormFields>({
     fullName: "",
     email: "",
-    phone: "",
-    address: "",
+    phone: "05",
+    deliveryStreet: "",
+    deliveryHouseNumber: "",
     apartmentOrNotes: "",
   });
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const [touched, setTouched] = useState<Partial<Record<CheckoutFieldKey, boolean>>>({});
+  const [showAllErrors, setShowAllErrors] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [prepMessage, setPrepMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   void _priceDisplay;
 
+  function markTouched(field: CheckoutFieldKey) {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  }
+
   function handleChange(field: keyof FormFields, value: string) {
     setFields((prev) => ({ ...prev, [field]: value }));
-    setErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (field !== "apartmentOrNotes") {
+      markTouched(field);
+    }
     setSubmitError(null);
     setPrepMessage(null);
   }
 
   function handleFulfillmentChange(next: FulfillmentMethod) {
     setFulfillmentMethod(next);
-    setErrors((prev) => ({
-      ...prev,
-      address: next === "pickup" ? undefined : prev.address,
-    }));
+    if (next === "pickup") {
+      setTouched((prev) => {
+        const {
+          deliveryStreet: _s,
+          deliveryHouseNumber: _h,
+          ...rest
+        } = prev;
+        return rest;
+      });
+    }
     setSubmitError(null);
     setPrepMessage(null);
   }
 
-  function validate() {
-    const nextErrors: FieldErrors = {};
-
-    if (!fields.fullName.trim()) nextErrors.fullName = "Full name is required.";
-
-    const emailTrim = fields.email.trim();
-    if (!emailTrim) nextErrors.email = "Email is required.";
-    else if (!isValidEmail(emailTrim)) {
-      nextErrors.email = "Enter a valid email address.";
-    }
-
-    const phoneTrim = fields.phone.trim();
-    if (!phoneTrim) nextErrors.phone = "Phone number is required.";
-    else if (!isValidPhone(phoneTrim)) {
-      nextErrors.phone = "Enter a valid phone number.";
-    }
-
-    if (fulfillmentMethod === "delivery" && !fields.address.trim()) {
-      nextErrors.address = "Address is required.";
-    }
-
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+  function revealValidationErrors() {
+    setShowAllErrors(true);
   }
+
+  const fieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
+  const errors = getVisibleCheckoutFieldErrors(fieldErrors, touched, showAllErrors);
+  const canSubmit = canSubmitCheckout(fields, fulfillmentMethod);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (plantStatus === "sold" || !canSubmit) return;
-    if (!validate()) return;
+    if (plantStatus === "sold") return;
+    if (!canSubmit) {
+      revealValidationErrors();
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -121,12 +129,13 @@ export function CheckoutForm({
           fullName: fields.fullName.trim(),
           customerEmail: fields.email.trim(),
           phone: fields.phone.trim(),
-          address:
-            fulfillmentMethod === "delivery" ? fields.address.trim() : "",
-          apartmentOrNotes:
-            fulfillmentMethod === "delivery"
-              ? fields.apartmentOrNotes.trim()
-              : "",
+          ...(fulfillmentMethod === "delivery"
+            ? {
+                deliveryStreet: fields.deliveryStreet.trim(),
+                deliveryHouseNumber: fields.deliveryHouseNumber.trim(),
+                apartmentOrNotes: fields.apartmentOrNotes.trim(),
+              }
+            : {}),
         }),
       });
 
@@ -155,12 +164,14 @@ export function CheckoutForm({
     }
   }
 
-  const canSubmit =
-    fields.fullName.trim().length > 0 &&
-    isValidEmail(fields.email) &&
-    isValidPhone(fields.phone) &&
-    (fulfillmentMethod === "pickup" || fields.address.trim().length > 0);
   const isSubmitDisabled = isSubmitting || !canSubmit || plantStatus === "sold";
+  const showValidationOverlay =
+    !isSubmitting && plantStatus !== "sold" && !canSubmit;
+
+  const deliveryErrors: DeliveryAddressFieldErrors = {
+    deliveryStreet: errors.deliveryStreet,
+    deliveryHouseNumber: errors.deliveryHouseNumber,
+  };
 
   return (
     <form id="checkout-form" onSubmit={onSubmit} className="space-y-4">
@@ -209,6 +220,7 @@ export function CheckoutForm({
           className={baseInputClass}
           value={fields.fullName}
           onChange={(event) => handleChange("fullName", event.target.value)}
+          onBlur={() => markTouched("fullName")}
           placeholder="Jane Doe"
         />
         {errors.fullName ? <p className="text-xs text-red-600">{errors.fullName}</p> : null}
@@ -226,6 +238,7 @@ export function CheckoutForm({
           className={baseInputClass}
           value={fields.email}
           onChange={(event) => handleChange("email", event.target.value)}
+          onBlur={() => markTouched("email")}
           placeholder="jane.doe@example.com"
         />
         {errors.email ? <p className="text-xs text-red-600">{errors.email}</p> : null}
@@ -239,49 +252,32 @@ export function CheckoutForm({
           id="phone"
           name="phone"
           type="tel"
+          inputMode="numeric"
           autoComplete="tel"
           className={baseInputClass}
           value={fields.phone}
-          onChange={(event) => handleChange("phone", event.target.value)}
-          placeholder="+972 50 000 0000"
+          onChange={(event) => {
+            const normalized = normalizeIsraeliMobilePhoneInput(event.target.value);
+            handleChange("phone", normalized);
+          }}
+          onBlur={() => markTouched("phone")}
+          placeholder="0521234567"
+          maxLength={10}
         />
         {errors.phone ? <p className="text-xs text-red-600">{errors.phone}</p> : null}
       </div>
 
       {fulfillmentMethod === "delivery" ? (
-        <>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700" htmlFor="address">
-              Address
-            </label>
-            <input
-              id="address"
-              name="address"
-              type="text"
-              autoComplete="street-address"
-              className={baseInputClass}
-              value={fields.address}
-              onChange={(event) => handleChange("address", event.target.value)}
-              placeholder="Street and number"
-            />
-            {errors.address ? <p className="text-xs text-red-600">{errors.address}</p> : null}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700" htmlFor="apartmentOrNotes">
-              Apartment / floor / notes (optional)
-            </label>
-            <textarea
-              id="apartmentOrNotes"
-              name="apartmentOrNotes"
-              className={baseInputClass}
-              value={fields.apartmentOrNotes}
-              onChange={(event) => handleChange("apartmentOrNotes", event.target.value)}
-              rows={3}
-              placeholder="Door code, floor, delivery details..."
-            />
-          </div>
-        </>
+        <DeliveryAddressFields
+          values={{
+            deliveryStreet: fields.deliveryStreet,
+            deliveryHouseNumber: fields.deliveryHouseNumber,
+            apartmentOrNotes: fields.apartmentOrNotes,
+          }}
+          errors={deliveryErrors}
+          onChange={handleChange}
+          onFieldBlur={markTouched}
+        />
       ) : null}
 
       <div className="rounded-2xl bg-emerald-50/80 p-4">
@@ -297,13 +293,24 @@ export function CheckoutForm({
       {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
       {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}
 
-      <button
-        type="submit"
-        disabled={isSubmitDisabled}
-        className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
-      >
-        {isSubmitting ? "Processing…" : "Complete Order"}
-      </button>
+      <div className="relative">
+        {showValidationOverlay ? (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Show what is required to complete your order"
+            className="absolute inset-0 z-10 cursor-not-allowed rounded-2xl"
+            onClick={revealValidationErrors}
+          />
+        ) : null}
+        <button
+          type="submit"
+          disabled={isSubmitDisabled}
+          className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
+        >
+          {isSubmitting ? "Processing…" : "Complete Order"}
+        </button>
+      </div>
     </form>
   );
 }

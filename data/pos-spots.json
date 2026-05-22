@@ -7,7 +7,8 @@
     "spotSlug": "cafe-noir-front-shelf",
     "currentOfferId": "offer-monstera",
     "status": "sold",
-    "placedAt": "2026-05-18T08:12:01.126Z",
+    "offerPlacedAt": "2026-05-18T08:12:01.126Z",
+    "checkStatus": false,
     "createdAt": "2026-05-18T08:12:01.129Z"
   },
   {
@@ -18,7 +19,8 @@
     "spotSlug": "partner-01-corner",
     "currentOfferId": "offer-asparagus",
     "status": "available",
-    "placedAt": "2026-05-18T08:16:32.889Z",
+    "offerPlacedAt": "2026-05-18T08:16:32.889Z",
+    "checkStatus": false,
     "createdAt": "2026-05-18T08:16:32.898Z"
   }
 ]

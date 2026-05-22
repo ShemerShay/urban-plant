@@ -62,6 +62,14 @@ export function AdminOrdersHeaderMenu() {
           aria-orientation="vertical"
         >
           <Link
+            href="/admin/pos-spots"
+            role="menuitem"
+            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+            onClick={() => setOpen(false)}
+          >
+            POS Spots
+          </Link>
+          <Link
             href="/admin/qr"
             role="menuitem"
             className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"

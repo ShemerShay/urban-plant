@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createPendingOrder } from "@/lib/createPendingOrder";
+import { resolveDeliveryAddressFromRequest } from "@/lib/deliveryAddress";
 import { appendEvent } from "@/lib/eventStorage";
 import type { ActivityEvent } from "@/lib/eventTypes";
 import {
@@ -61,18 +62,9 @@ async function buildSnapshot(input: {
     ...(offer.supplierName ? { supplierName: offer.supplierName } : {}),
     ...(posSpot ? { partnerLocationId: posSpot.partnerLocationId } : {}),
     ...(partner ? { partnerLocationName: partner.name } : {}),
-    ...(posSpot ? { posSpotId: posSpot.id, posSpotDescription: posSpot.spotDescription } : {}),
+    ...(posSpot ? { posSpotId: posSpot.id, posSpotDescription: posSpot.posName } : {}),
     ...(posSpot ? { spotSlug: posSpot.spotSlug } : {}),
     fulfillmentType: fulfillmentMethod,
-    care: {
-      light: plant.light,
-      wateringDays: plant.water,
-      ...(plant.averageSize ? { averageSize: plant.averageSize } : {}),
-      ...(plant.maintenanceConditions
-        ? { maintenanceConditions: plant.maintenanceConditions }
-        : {}),
-      careInstructions: plant.careInstructions,
-    },
   };
 }
 
@@ -201,7 +193,6 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
 
   const nameStr = typeof fullName === "string" ? fullName.trim() : "";
   const phoneStr = typeof phone === "string" ? phone.trim() : "";
-  const addressStr = typeof address === "string" ? address.trim() : "";
   const fulfillmentMethod: FulfillmentMethod =
     fulfillmentMethodRaw === "pickup" ? "pickup" : "delivery";
   const orderStatus: OrderStatus =
@@ -213,8 +204,14 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
   if (fulfillmentMethod === "delivery" && !phoneStr) {
     return NextResponse.json({ error: "phone is required" }, { status: 400 });
   }
-  if (fulfillmentMethod === "delivery" && !addressStr) {
-    return NextResponse.json({ error: "address is required" }, { status: 400 });
+
+  let addressStr = "";
+  if (fulfillmentMethod === "delivery") {
+    const resolved = resolveDeliveryAddressFromRequest(record);
+    if (resolved.error) {
+      return NextResponse.json({ error: resolved.error }, { status: 400 });
+    }
+    addressStr = resolved.address;
   }
 
   const notesStr =
@@ -360,7 +357,6 @@ export async function POST(request: NextRequest) {
   }
 
   const phoneStr = typeof phone === "string" ? phone.trim() : "";
-  const addressStr = typeof address === "string" ? address.trim() : "";
   const fulfillmentMethod = fulfillmentMethodRaw === "pickup" ? "pickup" : "delivery";
 
   if (!nameStr) {
@@ -372,8 +368,14 @@ export async function POST(request: NextRequest) {
   if (!isValidPhone(phoneStr)) {
     return NextResponse.json({ error: "phone must be a valid phone number" }, { status: 400 });
   }
-  if (fulfillmentMethod === "delivery" && !addressStr) {
-    return NextResponse.json({ error: "address is required" }, { status: 400 });
+
+  let addressStr = "";
+  if (fulfillmentMethod === "delivery") {
+    const resolved = resolveDeliveryAddressFromRequest(record);
+    if (resolved.error) {
+      return NextResponse.json({ error: resolved.error }, { status: 400 });
+    }
+    addressStr = resolved.address;
   }
 
   const notesStr =
@@ -463,8 +465,14 @@ export async function POST(request: NextRequest) {
       fullName: nameStr,
       customerEmail: emailTrim,
       phone: phoneStr,
-      address: fulfillmentMethod === "delivery" ? addressStr : "",
-      apartmentOrNotes: fulfillmentMethod === "delivery" ? notesStr : "",
+      ...(fulfillmentMethod === "delivery"
+        ? {
+            deliveryStreet: record.deliveryStreet,
+            deliveryHouseNumber: record.deliveryHouseNumber,
+            address: addressStr,
+            apartmentOrNotes: notesStr,
+          }
+        : {}),
     },
     posSpot,
     offer,

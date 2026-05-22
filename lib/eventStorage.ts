@@ -82,7 +82,7 @@ async function insertEvent(event: ActivityEvent): Promise<void> {
     VALUES (
       ${event.id}::uuid,
       ${event.type},
-      ${event.posSpotId ?? null},
+      ${event.posSpotId ?? null}::uuid,
       ${event.offerId ?? null},
       ${event.orderId ?? null}::uuid,
       ${event.productId ?? null},

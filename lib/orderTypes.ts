@@ -18,13 +18,6 @@ export interface OrderSnapshot {
   posSpotDescription?: string;
   spotSlug?: string;
   fulfillmentType: FulfillmentMethod;
-  care: {
-    light?: string;
-    wateringDays?: string;
-    averageSize?: "small" | "medium" | "large";
-    maintenanceConditions?: string;
-    careInstructions?: string[];
-  };
 }
 
 /** Persisted order shape for prototype JSON storage */

@@ -11,7 +11,7 @@ import { PlantProductInfoGrid } from "@/components/plant/PlantProductInfoGrid";
 import { getLocationById } from "@/lib/mockLocations";
 import { formatBuyCta, getPlantById } from "@/lib/mockPlants";
 import { getOfferById } from "@/lib/offerStorage";
-import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
+import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
 import { canPurchasePosSpot } from "@/lib/purchaseEligibility";
 import { posSpotCheckoutPath } from "@/lib/qrNavigation";
 
@@ -19,9 +19,23 @@ interface PosPageProps {
   params: Promise<{ spotSlug: string }>;
 }
 
+function formatNextVisitDate(isoYmd: string): string {
+  const parts = isoYmd.split("-").map(Number);
+  if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return isoYmd;
+  const [y, m, d] = parts;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export default async function PosPage({ params }: PosPageProps) {
   const { spotSlug } = await params;
-  const posSpot = await getPosSpotBySpotSlug(spotSlug);
+  const posSpot = await getPosSpotBySpotSlugEnsuringNextVisit(spotSlug);
   if (!posSpot) notFound();
 
   const offer = await getOfferById(posSpot.currentOfferId);
@@ -31,8 +45,12 @@ export default async function PosPage({ params }: PosPageProps) {
   if (!plant) notFound();
 
   const knownPartner = await getLocationById(posSpot.partnerLocationId);
+  const partnerName = knownPartner?.name?.trim() ?? "";
   const ctaText = formatBuyCta(offer.consumerPrice, plant.currency);
   const purchaseEnabled = plant.status !== "sold" && (await canPurchasePosSpot(posSpot.spotSlug));
+  const whatsAppMessage = partnerName
+    ? `Hi Urban Plant — I have a question about “${plant.name}” at ${partnerName}.`
+    : `Hi Urban Plant — I have a question about “${plant.name}”.`;
 
   return (
     <main
@@ -53,6 +71,15 @@ export default async function PosPage({ params }: PosPageProps) {
 
         <PlantHero name={plant.name} subtitle={plant.subtitle} />
 
+        {posSpot.nextCheck ? (
+          <p className="text-center text-sm text-slate-600">
+            Next visit:{" "}
+            <time className="font-medium text-slate-800" dateTime={posSpot.nextCheck}>
+              {formatNextVisitDate(posSpot.nextCheck)}
+            </time>
+          </p>
+        ) : null}
+
         <PlantProductInfoGrid
           light={plant.light}
           water={plant.water}
@@ -63,9 +90,7 @@ export default async function PosPage({ params }: PosPageProps) {
         <PlantProductAbout description={plant.description} />
       </div>
 
-      <PlantPageContactLink
-        whatsAppMessage={`Hi Urban Plant — I have a question about “${plant.name}”.`}
-      />
+      <PlantPageContactLink whatsAppMessage={whatsAppMessage} />
 
       <FixedBottomCTA
         href={posSpotCheckoutPath(posSpot.spotSlug)}

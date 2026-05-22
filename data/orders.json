@@ -31,17 +31,7 @@
       "posSpotId": "pos-chachos-shenkin-olive-01",
       "posSpotDescription": "Chachos display spot",
       "spotSlug": "chachos-shenkin-olive-01",
-      "fulfillmentType": "delivery",
-      "care": {
-        "light": "Indirect bright light",
-        "wateringDays": "Every 5-7 days",
-        "careInstructions": [
-          "Keep in bright indirect sun for at least 6 hours daily.",
-          "Let the top 2-3 cm of soil dry between watering.",
-          "Rotate the pot weekly for balanced growth.",
-          "Wipe leaves gently once a month to remove dust."
-        ]
-      }
+      "fulfillmentType": "delivery"
     }
   },
   {
@@ -96,16 +86,7 @@
       "posSpotId": "pos-cafe-noir-front-shelf",
       "posSpotDescription": "front shelf",
       "spotSlug": "cafe-noir-front-shelf",
-      "fulfillmentType": "pickup",
-      "care": {
-        "light": "Indirect bright light",
-        "wateringDays": "Every 4–6 days",
-        "careInstructions": [
-          "Bright indirect light; avoid harsh midday sun on leaves.",
-          "Water when the top soil feels dry.",
-          "Wipe leaves occasionally for shine."
-        ]
-      }
+      "fulfillmentType": "pickup"
     },
     "pickedUpAt": "2026-05-18T08:47:15.934Z"
   }

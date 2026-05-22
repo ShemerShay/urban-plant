@@ -1,5 +1,5 @@
 -- Urban Plant — initial Postgres schema (Neon)
--- spot_slug / spotSlug only — no qrSlug columns or fields
+-- POS spots: pos_name (required label), optional spot_description; spot_slug for URLs only.
 
 BEGIN;
 
@@ -11,8 +11,10 @@ CREATE TABLE partner_locations (
   name            text NOT NULL,
   address         text NOT NULL,
   type            text NOT NULL,
-  partner_type    text NOT NULL,
-  created_at      timestamptz NOT NULL DEFAULT now()
+  payments        jsonb NOT NULL DEFAULT '[]'::jsonb,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT partner_locations_payments_is_array
+    CHECK (jsonb_typeof(payments) = 'array')
 );
 
 -- ---------------------------------------------------------------------------
@@ -37,10 +39,14 @@ CREATE INDEX offers_status_idx ON offers (status) WHERE status = 'active';
 -- pos_spots
 -- ---------------------------------------------------------------------------
 CREATE TABLE pos_spots (
-  id                        text PRIMARY KEY,
+  id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  spot_name                 text NOT NULL,
   partner_location_id       text NOT NULL REFERENCES partner_locations (id),
   pos_number                text,
-  spot_description          text NOT NULL,
+  pocket                    text,
+  pocket_other              text,
+  pos_name                  text NOT NULL,
+  spot_description          text,
   placement_notes           text,
   spot_slug                 text NOT NULL,
   current_offer_id          text NOT NULL REFERENCES offers (id),
@@ -71,7 +77,7 @@ CREATE INDEX pos_spots_status_idx ON pos_spots (status);
 CREATE TABLE orders (
   order_id                  uuid PRIMARY KEY,
   checkout_session_id       text,
-  pos_spot_id               text REFERENCES pos_spots (id),
+  pos_spot_id               uuid REFERENCES pos_spots (id),
   offer_id                  text REFERENCES offers (id),
   product_id                text NOT NULL,
   product_name              text NOT NULL,
@@ -112,7 +118,7 @@ CREATE INDEX orders_pos_spot_id_idx ON orders (pos_spot_id) WHERE pos_spot_id IS
 CREATE TABLE events (
   id                    uuid PRIMARY KEY,
   type                  text NOT NULL,
-  pos_spot_id           text,
+  pos_spot_id           uuid,
   offer_id              text,
   order_id              uuid,
   product_id            text,

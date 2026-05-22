@@ -6,10 +6,11 @@
  */
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { AdminOrderStatusSelect } from "@/components/admin/AdminOrderStatusSelect";
 import { formatPrice, getPlantById } from "@/lib/mockPlants";
+import { formatOrderDeliveryAddressDisplay } from "@/lib/deliveryAddress";
 import type { SavedOrder } from "@/lib/orderTypes";
 import type { OrderStatus } from "@/lib/status";
 import { ORDER_STATUS_LABELS } from "@/lib/status";
@@ -25,10 +26,134 @@ function statusBadgeClass(status: OrderStatus): string {
     case "picked_up":
       return "bg-amber-100 text-amber-950";
     case "cancelled":
-      return "bg-red-100 text-red-900";
+      return "bg-red-50 text-red-700 ring-1 ring-red-100";
     default:
       return "bg-slate-100 text-slate-900";
   }
+}
+
+function IconCalendar({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M6.5 2.75v1.5M13.5 2.75v1.5M4.25 7.25h11.5M5.5 4.25h9c.69 0 1.25.56 1.25 1.25v10.5c0 .69-.56 1.25-1.25 1.25h-9a1.25 1.25 0 01-1.25-1.25V5.5c0-.69.56-1.25 1.25-1.25z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconCancel({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M6 6l8 8M14 6l-8 8"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconMail({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M3.5 6.75l6.35 4.23a1.25 1.25 0 001.3 0L17.5 6.75M4.75 15.25h10.5c.69 0 1.25-.56 1.25-1.25V6c0-.69-.56-1.25-1.25-1.25H4.75A1.25 1.25 0 003.5 6v8c0 .69.56 1.25 1.25 1.25z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconPhone({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M6.25 3.5h2.1c.55 0 1.02.38 1.14.92l.45 2.02a1.25 1.25 0 01-.34 1.14l-1.1 1.1a11.5 11.5 0 005.53 5.53l1.1-1.1a1.25 1.25 0 011.14-.34l2.02.45c.54.12.92.59.92 1.14v2.1c0 .69-.56 1.25-1.25 1.25C9.2 17.25 2.75 10.8 2.75 3.75c0-.69.56-1.25 1.25-1.25z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconMapPin({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M10 10.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M10 17.25s5.5-4.44 5.5-8.25a5.5 5.5 0 10-11 0c0 3.81 5.5 8.25 5.5 8.25z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconLeaf({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M16.25 8.75C14.5 13.25 10.75 16 6.5 16c0-4.25 2.75-8 7.25-9.75 0 4.5-2.25 8.25-7.25 9.75z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconTag({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden>
+      <path
+        d="M4.5 10.75V5.5a1 1 0 011-1h5.25M11.25 3.5l5.25 5.25-6.36 6.36a1.5 1.5 0 01-2.12 0l-3.02-3.02a1.5 1.5 0 010-2.12L11.25 3.5z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="8.25" cy="7.25" r="0.75" fill="currentColor" />
+    </svg>
+  );
+}
+
+function DetailRow({
+  icon,
+  children,
+  className,
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex gap-3 text-sm leading-relaxed text-slate-800 ${className ?? ""}`}>
+      <span className="mt-0.5 shrink-0 text-slate-400">{icon}</span>
+      <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{children}</span>
+    </div>
+  );
+}
+
+function SectionDivider() {
+  return <div className="border-t border-slate-100" role="presentation" />;
 }
 
 export function AdminOrderCard({ order }: AdminOrderCardProps) {
@@ -43,6 +168,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
   const locationName = order.snapshot?.partnerLocationName ?? order.locationName;
   const posSpotDescription = order.snapshot?.posSpotDescription;
   const spotSlug = order.snapshot?.spotSlug;
+  const partnerAddress = order.locationAddress;
 
   async function handleCancel() {
     const cancellationReason = window.prompt("Cancellation reason");
@@ -91,21 +217,31 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
   }
 
   const status = order.orderStatus;
+  const createdLabel = new Date(order.createdAt).toLocaleString();
+  const isCancelled = status === "cancelled";
 
   return (
-    <li className="rounded-2xl bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          {new Date(order.createdAt).toLocaleString()}
-        </p>
+    <li className="rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+      {/* 1. Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
+          <IconCalendar className="size-4 shrink-0 text-slate-400" />
+          <time className="min-w-0 break-words font-medium" dateTime={order.createdAt}>
+            {createdLabel}
+          </time>
+        </div>
         <span
-          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadgeClass(status)}`}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(status)}`}
         >
+          {isCancelled ? <IconCancel className="size-3" /> : null}
           {ORDER_STATUS_LABELS[status]}
         </span>
       </div>
 
-      <div className="mt-3">
+      <SectionDivider />
+
+      {/* 2. Order status */}
+      <section className="py-4">
         <label htmlFor={`order-status-${order.orderId}`} className="text-xs font-medium text-slate-500">
           Order status
         </label>
@@ -115,101 +251,109 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           disabled={busy !== null}
           onChange={(next) => void handleStatusChange(next)}
         />
-      </div>
+      </section>
 
-      <p className="mt-3 text-base font-semibold text-emerald-950">{order.fullName}</p>
-      {order.customerEmail ? (
-        <p className="mt-1 text-sm text-slate-700">
-          <span className="text-slate-500">Email: </span>
-          {order.customerEmail}
-        </p>
-      ) : null}
-      <p className="mt-1 text-sm text-slate-700">
-        <span className="text-slate-500">Phone: </span>
-        {order.phone}
-      </p>
-      <p className="mt-1 text-sm text-slate-700">
-        <span className="text-slate-500">Address: </span>
-        {order.address}
-      </p>
-      {order.apartmentOrNotes ? (
-        <p className="mt-1 text-sm text-slate-700">
-          <span className="text-slate-500">Notes: </span>
-          {order.apartmentOrNotes}
-        </p>
-      ) : null}
 
-      <div className="mt-3 rounded-xl bg-emerald-50/40 px-3 py-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-          Scan / partner location
-        </p>
-        {locationId === null || locationId === undefined ? (
-          <p className="mt-1 text-sm text-slate-600">Not specified</p>
-        ) : (
-          <>
-            <p className="mt-1 text-sm font-medium text-emerald-950">
-              {locationName ?? "Unknown location"}
-            </p>
-            {posSpotDescription ? (
-              <p className="mt-0.5 text-xs text-slate-600">
-                <span className="text-slate-500">POS Spot: </span>
-                {posSpotDescription}
+      {/* 3. Customer details */}
+      <section className="py-4">
+        <h3 className="text-base font-semibold text-emerald-950">{order.fullName}</h3>
+        <div className="mt-3 space-y-2.5">
+          {order.customerEmail ? (
+            <DetailRow icon={<IconMail className="size-4" />}>{order.customerEmail}</DetailRow>
+          ) : null}
+          <DetailRow icon={<IconPhone className="size-4" />}>{order.phone}</DetailRow>
+          {order.fulfillmentMethod === "delivery" &&
+          (order.address.trim() || order.apartmentOrNotes.trim()) ? (
+            <DetailRow icon={<IconMapPin className="size-4" />}>
+              {formatOrderDeliveryAddressDisplay(order)}
+            </DetailRow>
+          ) : null}
+        </div>
+      </section>
+
+      <SectionDivider />
+
+      {/* 4. Partner location */}
+      <section className="py-4">
+        <div className="flex items-center gap-2">
+          <IconMapPin className="size-4 shrink-0 text-emerald-600" />
+          <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700">
+            PARTNER LOCATION
+          </h3>
+        </div>
+        <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-800">
+          {locationId === null || locationId === undefined ? (
+            <p className="text-slate-600">Not specified</p>
+          ) : (
+            <>
+              <p className="font-medium text-emerald-950">{locationName ?? "Unknown location"}</p>
+              {posSpotDescription ? (
+                <p className="break-words [overflow-wrap:anywhere]">
+                  <span className="text-slate-500">POS Spot: </span>
+                  {posSpotDescription}
+                </p>
+              ) : null}
+              <p className="break-words font-mono text-xs text-slate-600 [overflow-wrap:anywhere]">
+                <span className="font-sans text-slate-500">Location ID: </span>
+                {locationId}
               </p>
-            ) : null}
-            <p className="mt-0.5 text-xs text-slate-600">
-              <span className="text-slate-500">Location ID: </span>
-              {locationId}
-            </p>
-            {spotSlug ? (
-              <p className="mt-0.5 text-xs text-slate-600">
-                <span className="text-slate-500">Spot slug: </span>
-                {spotSlug}
-              </p>
-            ) : null}
-            <p className="mt-0.5 text-xs text-slate-600">
-              <span className="text-slate-500">Address: </span>
-              {order.locationAddress ?? "—"}
-            </p>
-          </>
-        )}
-      </div>
+              {spotSlug ? (
+                <p className="break-words font-mono text-xs text-slate-600 [overflow-wrap:anywhere]">
+                  <span className="font-sans text-slate-500">Spot slug: </span>
+                  {spotSlug}
+                </p>
+              ) : null}
+              <div>
+                <p className="break-words [overflow-wrap:anywhere]">
+                  <span className="text-slate-500">Address: </span>
+                  {partnerAddress ?? "—"}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
 
-      <p className="mt-2 text-sm text-slate-700">
-        <span className="text-slate-500">Plant: </span>
-        {plantName}
-      </p>
-      <p className="mt-1 text-sm text-slate-700">
-        <span className="text-slate-500">Price: </span>
-        {formatPrice(price, currency)}
-      </p>
+      <SectionDivider />
 
-      {status === "delivered" && order.deliveredAt ? (
-        <p className="mt-2 text-xs text-slate-500">
-          Delivered: {new Date(order.deliveredAt).toLocaleString()}
-        </p>
-      ) : null}
-      {status === "picked_up" && order.pickedUpAt ? (
-        <p className="mt-2 text-xs text-slate-500">
-          Sold &amp; Taken: {new Date(order.pickedUpAt).toLocaleString()}
-        </p>
-      ) : null}
-      {status === "cancelled" && order.cancelledAt ? (
-        <p className="mt-2 text-xs text-slate-500">
-          Cancelled: {new Date(order.cancelledAt).toLocaleString()}
-          {order.cancellationReason ? ` - ${order.cancellationReason}` : ""}
-        </p>
-      ) : null}
+      {/* 5. Plant and price */}
+      <section className="space-y-2.5 py-4">
+        <DetailRow icon={<IconLeaf className="size-4" />}>{plantName}</DetailRow>
+        <DetailRow icon={<IconTag className="size-4" />}>{formatPrice(price, currency)}</DetailRow>
+      </section>
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <button
-          type="button"
-          disabled={busy !== null}
-          onClick={() => void handleCancel()}
-          className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60"
-        >
-          {busy === "cancel" ? "Cancelling…" : "Cancel order"}
-        </button>
-      </div>
+      {/* 6. Footer */}
+      <footer className="border-t border-slate-100 pt-4">
+        {status === "delivered" && order.deliveredAt ? (
+          <p className="text-xs leading-relaxed text-slate-500">
+            Delivered: {new Date(order.deliveredAt).toLocaleString()}
+          </p>
+        ) : null}
+        {status === "picked_up" && order.pickedUpAt ? (
+          <p className="text-xs leading-relaxed text-slate-500">
+            Sold &amp; Taken: {new Date(order.pickedUpAt).toLocaleString()}
+          </p>
+        ) : null}
+        {isCancelled && order.cancelledAt ? (
+          <p className="text-xs leading-relaxed text-slate-500">
+            Cancelled: {new Date(order.cancelledAt).toLocaleString()}
+            {order.cancellationReason ? ` — ${order.cancellationReason}` : ""}
+          </p>
+        ) : null}
+
+        {!isCancelled ? (
+          <div className={`${order.deliveredAt || order.pickedUpAt ? "mt-3" : ""}`}>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void handleCancel()}
+              className="w-full rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60 sm:w-auto"
+            >
+              {busy === "cancel" ? "Cancelling…" : "Cancel order"}
+            </button>
+          </div>
+        ) : null}
+      </footer>
     </li>
   );
 }

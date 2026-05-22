@@ -30,7 +30,7 @@ export default function AdminQrPage() {
         <h2 className="text-base font-semibold text-emerald-950">How to use</h2>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-600">
           <li>Select the Partner Location and existing Offer for this physical POS Spot.</li>
-          <li>Enter the POS Spot description and stable Spot slug.</li>
+          <li>Enter the required POS Name (used for the slug), optional POS Description, and spot slug.</li>
           <li>Save the POS Spot, then copy the URL and/or download the QR as SVG.</li>
           <li>Print the QR and attach it to the correct physical display point.</li>
           <li>
