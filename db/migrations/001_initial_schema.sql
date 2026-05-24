@@ -131,7 +131,13 @@ CREATE TABLE events (
       'order_created',
       'order_cancelled',
       'manual_status_update',
-      'plant_placed'
+      'plant_placed',
+      'plant_sold',
+      'plant_removed',
+      'plant_replaced',
+      'qr_scanned',
+      'plant_status_changed',
+      'location_visit'
     ))
 );
 

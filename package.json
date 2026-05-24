@@ -14,6 +14,7 @@
     "db:migrate:pos-uuid-pocket": "node scripts/apply-sql-file.mjs db/migrations/004_pos_spots_uuid_spot_name_pocket.sql",
     "db:migrate:events-pos-spot-uuid": "node scripts/apply-sql-file.mjs db/migrations/005_events_pos_spot_id_uuid_fixup.sql",
     "db:migrate:partner-payments": "node scripts/apply-sql-file.mjs db/migrations/006_partner_locations_payments_drop_partner_type.sql",
+    "db:migrate:event-types": "node scripts/apply-sql-file.mjs db/migrations/007_extend_event_types.sql",
     "db:seed": "node scripts/seed-from-json.mjs",
     "generate:tel-aviv-streets": "node scripts/generate-tel-aviv-streets.mjs",
     "db:verify-storage": "npx tsx scripts/verify-db-storage.ts"
