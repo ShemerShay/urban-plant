@@ -17,7 +17,7 @@ import {
 } from "@/lib/logOrderFlow";
 import { getLocationById, resolveLocationFields } from "@/lib/mockLocations";
 import { isValidEmail, isValidPhone } from "@/lib/formValidation";
-import { getPlantById } from "@/lib/mockPlants";
+import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import type { Offer } from "@/lib/offerTypes";
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "@/lib/orderTypes";
@@ -391,13 +391,6 @@ export async function POST(request: NextRequest) {
 
   if (!catalogPlant) {
     return NextResponse.json({ error: "plantId must match a catalog plant" }, { status: 400 });
-  }
-
-  if (catalogPlant.status === "sold") {
-    return NextResponse.json(
-      { error: "This plant is no longer available for purchase." },
-      { status: 400 },
-    );
   }
 
   const posSpot = await getPosSpotBySpotSlug(spotSlug);

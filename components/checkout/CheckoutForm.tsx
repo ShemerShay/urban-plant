@@ -16,8 +16,6 @@ import {
   type CheckoutFulfillmentMethod,
 } from "@/lib/checkoutValidation";
 import { normalizeIsraeliMobilePhoneInput } from "@/lib/formValidation";
-import type { PlantCatalogStatus } from "@/lib/types";
-
 type FormFields = {
   fullName: string;
   email: string;
@@ -29,8 +27,6 @@ type FulfillmentMethod = CheckoutFulfillmentMethod;
 interface CheckoutFormProps {
   plantId: string;
   plantName: string;
-  /** Catalog availability; when `sold`, the submit control stays disabled like other blocked purchases. */
-  plantStatus: PlantCatalogStatus;
   /** Formatted price line for confirmation email (e.g. ₪89) */
   priceDisplay: string;
   /** POS Spot slug from `/checkout/pos/{spotSlug}`. */
@@ -43,7 +39,6 @@ const baseInputClass =
 export function CheckoutForm({
   plantId,
   plantName,
-  plantStatus,
   priceDisplay: _priceDisplay,
   spotSlug,
 }: CheckoutFormProps) {
@@ -105,7 +100,6 @@ export function CheckoutForm({
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (plantStatus === "sold") return;
     if (!canSubmit) {
       revealValidationErrors();
       return;
@@ -164,9 +158,8 @@ export function CheckoutForm({
     }
   }
 
-  const isSubmitDisabled = isSubmitting || !canSubmit || plantStatus === "sold";
-  const showValidationOverlay =
-    !isSubmitting && plantStatus !== "sold" && !canSubmit;
+  const isSubmitDisabled = isSubmitting || !canSubmit;
+  const showValidationOverlay = !isSubmitting && !canSubmit;
 
   const deliveryErrors: DeliveryAddressFieldErrors = {
     deliveryStreet: errors.deliveryStreet,

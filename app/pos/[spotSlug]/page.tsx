@@ -9,7 +9,8 @@ import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
 import { PlantProductAbout } from "@/components/plant/PlantProductAbout";
 import { PlantProductInfoGrid } from "@/components/plant/PlantProductInfoGrid";
 import { getLocationById } from "@/lib/mockLocations";
-import { formatBuyCta, getPlantById } from "@/lib/mockPlants";
+import { formatBuyCta } from "@/lib/mockPlants";
+import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
 import { canPurchasePosSpot } from "@/lib/purchaseEligibility";
@@ -47,7 +48,7 @@ export default async function PosPage({ params }: PosPageProps) {
   const knownPartner = await getLocationById(posSpot.partnerLocationId);
   const partnerName = knownPartner?.name?.trim() ?? "";
   const ctaText = formatBuyCta(offer.consumerPrice, plant.currency);
-  const purchaseEnabled = plant.status !== "sold" && (await canPurchasePosSpot(posSpot.spotSlug));
+  const purchaseEnabled = await canPurchasePosSpot(posSpot.spotSlug);
   const whatsAppMessage = partnerName
     ? `Hi Urban Plant — I have a question about “${plant.name}” at ${partnerName}.`
     : `Hi Urban Plant — I have a question about “${plant.name}”.`;

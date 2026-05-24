@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
-import { formatPrice, getPlantById } from "@/lib/mockPlants";
+import { formatPrice } from "@/lib/mockPlants";
+import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import { posSpotPath } from "@/lib/qrNavigation";
@@ -41,7 +42,6 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
           <CheckoutForm
             plantId={plant.id}
             plantName={plant.name}
-            plantStatus={plant.status}
             priceDisplay={formatPrice(offer.consumerPrice, plant.currency)}
             spotSlug={posSpot.spotSlug}
           />

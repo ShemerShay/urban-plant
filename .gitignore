@@ -49,5 +49,9 @@ lerna-debug.log*
 # vercel
 .vercel
 
+# uploaded plant images (keep folder)
+/public/plant-library/*
+!/public/plant-library/.gitkeep
+
 # typescript
 *.tsbuildinfo

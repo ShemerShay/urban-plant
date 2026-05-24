@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getPlantById } from "@/lib/mockPlants";
+import { getPlantById } from "@/lib/plantCatalog";
 import { appendOffer, readOffers } from "@/lib/offerStorage";
 import type { OfferStatus } from "@/lib/offerTypes";
 

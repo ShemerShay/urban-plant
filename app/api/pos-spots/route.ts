@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { appendEvent } from "@/lib/eventStorage";
 import { readPartnerLocations } from "@/lib/mockLocations";
-import { getPlantById } from "@/lib/mockPlants";
+import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
 import { formatPosSpotDisplayName, isPosSpotPocketValue } from "@/lib/posSpotPocket";
 import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";

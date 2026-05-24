@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { getPlantById } from "@/lib/mockPlants";
+import { getPlantById } from "@/lib/plantCatalog";
 import { readOrders } from "@/lib/ordersStorage";
 
 interface SuccessPageProps {
