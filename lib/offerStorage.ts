@@ -20,6 +20,14 @@ export type NewOfferInput = {
   status?: OfferStatus;
 };
 
+export type UpdateOfferInput = {
+  productId?: string;
+  consumerPrice?: number;
+  supplierPrice?: number | null;
+  supplierName?: string | null;
+  status?: OfferStatus;
+};
+
 function defaultOffers(): Offer[] {
   return PLANTS_CATALOG_SEED.map((plant) => ({
     id: randomUUID(),
@@ -137,6 +145,65 @@ export async function appendOffer(input: NewOfferInput): Promise<Offer> {
       ${offer.status},
       ${offer.createdAt}::timestamptz
     )
+  `;
+
+  return offer;
+}
+
+export async function updateOffer(
+  id: string,
+  input: UpdateOfferInput,
+): Promise<Offer | undefined> {
+  const trimmed = id.trim();
+  if (!trimmed) return undefined;
+
+  const existing = await getOfferById(trimmed);
+  if (!existing) return undefined;
+
+  const productId =
+    input.productId !== undefined ? input.productId.trim() : existing.productId;
+  const consumerPrice = input.consumerPrice ?? existing.consumerPrice;
+  const status: OfferStatus =
+    input.status === "inactive" ? "inactive" : input.status === "active" ? "active" : existing.status;
+
+  let supplierPrice: number | undefined;
+  if (input.supplierPrice === null) {
+    supplierPrice = undefined;
+  } else if (typeof input.supplierPrice === "number") {
+    supplierPrice = input.supplierPrice;
+  } else {
+    supplierPrice = existing.supplierPrice;
+  }
+
+  let supplierName: string | undefined;
+  if (input.supplierName === null) {
+    supplierName = undefined;
+  } else if (input.supplierName !== undefined) {
+    const name = input.supplierName.trim();
+    supplierName = name ? name : undefined;
+  } else {
+    supplierName = existing.supplierName;
+  }
+
+  const offer: Offer = {
+    id: trimmed,
+    productId,
+    consumerPrice,
+    ...(supplierPrice !== undefined ? { supplierPrice } : {}),
+    ...(supplierName ? { supplierName } : {}),
+    status,
+    createdAt: existing.createdAt,
+  };
+
+  await sql`
+    UPDATE offers
+    SET
+      product_id = ${offer.productId},
+      consumer_price = ${offer.consumerPrice},
+      supplier_price = ${offer.supplierPrice ?? null},
+      supplier_name = ${offer.supplierName ?? null},
+      status = ${offer.status}
+    WHERE id = ${trimmed}
   `;
 
   return offer;

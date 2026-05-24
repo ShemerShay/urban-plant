@@ -28,6 +28,11 @@ const ADMIN_PAGES = [
     description: "View and edit the product catalog (names, care, images, prices).",
   },
   {
+    href: "/admin/offers",
+    label: "Offers",
+    description: "View and manage sale offers linked to catalog plants.",
+  },
+  {
     href: "/admin/partners",
     label: "Partners",
     description: "View and manage partner locations and payment records.",
@@ -56,7 +61,7 @@ export default function AdminIndexPage() {
       </div>
 
       <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        Choose a page to manage orders, POS spots, plants, and QR tooling.
+        Choose a page to manage orders, POS spots, plants, offers, and QR tooling.
       </p>
 
       <ul className="space-y-3">
