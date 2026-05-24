@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getPlantById } from "@/lib/plantCatalog";
+import { enrichOfferWithProduct, enrichOffersWithProduct } from "@/lib/offerEnrichment";
 import { appendOffer, readOffers } from "@/lib/offerStorage";
 import type { OfferStatus } from "@/lib/offerTypes";
 
@@ -8,20 +9,9 @@ function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function mapOffersForResponse(offers: Awaited<ReturnType<typeof readOffers>>) {
-  return offers.map((offer) => {
-    const product = getPlantById(offer.productId);
-    return {
-      ...offer,
-      productName: product?.name ?? offer.productId,
-      currency: product?.currency ?? "ILS",
-    };
-  });
-}
-
 export async function GET() {
   const offers = await readOffers();
-  return NextResponse.json({ offers: mapOffersForResponse(offers) });
+  return NextResponse.json({ offers: enrichOffersWithProduct(offers) });
 }
 
 export async function POST(request: NextRequest) {
@@ -97,15 +87,5 @@ export async function POST(request: NextRequest) {
     ...(status ? { status } : {}),
   });
 
-  const product = getPlantById(offer.productId);
-  return NextResponse.json(
-    {
-      offer: {
-        ...offer,
-        productName: product?.name ?? offer.productId,
-        currency: product?.currency ?? "ILS",
-      },
-    },
-    { status: 201 },
-  );
+  return NextResponse.json({ offer: enrichOfferWithProduct(offer) }, { status: 201 });
 }
