@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { readPartnerLocations } from "@/lib/mockLocations";
-import { getPlantById } from "@/lib/mockPlants";
+import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
 import { formatPosSpotDisplayName, isPosSpotPocketValue } from "@/lib/posSpotPocket";

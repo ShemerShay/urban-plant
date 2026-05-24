@@ -5,7 +5,7 @@
 import { randomUUID } from "crypto";
 
 import { sql } from "@/lib/db";
-import { mockPlants } from "@/lib/mockPlants";
+import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
 import type { Offer, OfferStatus } from "./offerTypes";
@@ -21,7 +21,7 @@ export type NewOfferInput = {
 };
 
 function defaultOffers(): Offer[] {
-  return mockPlants.map((plant) => ({
+  return PLANTS_CATALOG_SEED.map((plant) => ({
     id: randomUUID(),
     productId: plant.id,
     consumerPrice: plant.price,
@@ -29,7 +29,7 @@ function defaultOffers(): Offer[] {
       ? { supplierPrice: plant.baseSupplierPrice }
       : {}),
     ...(plant.supplierName ? { supplierName: plant.supplierName } : {}),
-    status: plant.status === "sold" ? "inactive" : "active",
+    status: "active",
     createdAt: plant.createdAt ?? SEED_CREATED_AT,
   }));
 }
