@@ -27,6 +27,11 @@ const ADMIN_PAGES = [
     label: "Plants",
     description: "View and edit the product catalog (names, care, images, prices).",
   },
+  {
+    href: "/admin/partners",
+    label: "Partners",
+    description: "View and manage partner locations and payment records.",
+  },
 ] as const;
 
 export default function AdminIndexPage() {

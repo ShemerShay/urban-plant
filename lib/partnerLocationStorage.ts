@@ -76,3 +76,55 @@ export async function updatePartnerLocationAddress(
   const row = (rows as PartnerLocationRow[])[0];
   return row ? mapPartnerLocationRow(row) : null;
 }
+
+export async function createPartnerLocation(
+  partner: PartnerLocation,
+): Promise<PartnerLocation> {
+  const existing = await getPartnerLocationById(partner.id);
+  if (existing) {
+    throw new Error(`Partner with id "${partner.id}" already exists`);
+  }
+
+  const paymentsJson = JSON.stringify(partner.payments);
+
+  const rows = await sql`
+    INSERT INTO partner_locations (id, name, address, type, payments, created_at)
+    VALUES (
+      ${partner.id},
+      ${partner.name},
+      ${partner.address},
+      ${partner.type},
+      ${paymentsJson}::jsonb,
+      ${partner.createdAt ?? new Date().toISOString()}::timestamptz
+    )
+    RETURNING id, name, address, type, payments, created_at
+  `;
+  const row = (rows as PartnerLocationRow[])[0];
+  if (!row) {
+    throw new Error("Could not create partner");
+  }
+  return mapPartnerLocationRow(row);
+}
+
+export async function updatePartnerLocation(
+  id: string,
+  partner: PartnerLocation,
+): Promise<PartnerLocation | null> {
+  const trimmedId = id.trim();
+  if (!trimmedId) return null;
+
+  const paymentsJson = JSON.stringify(partner.payments);
+
+  const rows = await sql`
+    UPDATE partner_locations
+    SET
+      name = ${partner.name},
+      address = ${partner.address},
+      type = ${partner.type},
+      payments = ${paymentsJson}::jsonb
+    WHERE id = ${trimmedId}
+    RETURNING id, name, address, type, payments, created_at
+  `;
+  const row = (rows as PartnerLocationRow[])[0];
+  return row ? mapPartnerLocationRow(row) : null;
+}
