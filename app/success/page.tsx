@@ -1,7 +1,9 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOrders } from "@/lib/ordersStorage";
+import { posSpotPath } from "@/lib/qrNavigation";
 
 interface SuccessPageProps {
   searchParams: Promise<{
@@ -10,6 +12,7 @@ interface SuccessPageProps {
     orderId?: string | string[];
     plantId?: string | string[];
     plantName?: string | string[];
+    spotSlug?: string | string[];
   }>;
 }
 
@@ -38,6 +41,11 @@ function readOrderId(raw: string | string[] | undefined): string {
   return v?.trim() || "";
 }
 
+function readSpotSlug(raw: string | string[] | undefined): string {
+  const v = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
+  return v?.trim() || "";
+}
+
 export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const sp = await searchParams;
   const emailFailed = readEmailFailed(sp.emailFailed);
@@ -45,19 +53,23 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const orderId = readOrderId(sp.orderId);
   const plantId = readPlantId(sp.plantId);
   const order = orderId ? (await readOrders()).find((o) => o.orderId === orderId) : undefined;
+  const plant = plantId ? await getPlantById(plantId) : undefined;
   const plantName =
     order?.snapshot?.productName ||
     order?.plantName ||
-    (plantId ? (await getPlantById(plantId))?.name : undefined) ||
+    plant?.name ||
     readPlantName(sp.plantName) ||
     "your plant";
+  const spotSlug = readSpotSlug(sp.spotSlug) || order?.snapshot?.spotSlug?.trim() || "";
+  const returnToPlantHref = spotSlug ? posSpotPath(spotSlug) : "/";
+  const plantImage = plant?.images[0] ?? order?.snapshot?.productImage;
 
   return (
     <main id="success-page" className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-10">
       <div className="flex-1 space-y-6">
         <section className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
           <Link
-            href="/"
+            href={returnToPlantHref}
             className="font-serif-display text-xl font-medium tracking-tight text-neutral-900 transition hover:opacity-70"
           >
             UrbanPlant
@@ -80,7 +92,18 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
 
         <section className="rounded-3xl bg-emerald-50 p-5">
           <p className="text-sm text-slate-600">Order summary</p>
-          <p className="mt-1 text-base font-semibold text-emerald-900">
+          {plantImage ? (
+            <div className="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-2xl bg-white">
+              <Image
+                src={plantImage}
+                alt={plantName}
+                fill
+                className="object-cover"
+                sizes="(max-width: 448px) 100vw, 448px"
+              />
+            </div>
+          ) : null}
+          <p className="mt-3 text-base font-semibold text-emerald-900">
             1x {plantName} {isPickup ? "pickup" : "delivery"}
           </p>
         </section>
@@ -88,10 +111,10 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
       </div>
 
       <Link
-        href="/"
+        href={returnToPlantHref}
         className="mt-8 block rounded-2xl bg-emerald-700 px-5 py-4 text-center text-sm font-semibold text-white"
       >
-        Return Home
+        Return to plant
       </Link>
     </main>
   );

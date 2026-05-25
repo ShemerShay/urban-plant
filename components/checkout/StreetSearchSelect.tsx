@@ -2,18 +2,10 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-import { TEL_AVIV_STREETS } from "@/lib/deliveryAddress";
+import { filterTelAvivStreetSuggestions } from "@/lib/telAvivStreetSearch";
 
 const baseInputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
-
-const MAX_RESULTS = 50;
-
-function filterStreets(query: string): string[] {
-  const q = query.trim();
-  if (!q) return [];
-  return TEL_AVIV_STREETS.filter((street) => street.includes(q)).slice(0, MAX_RESULTS);
-}
 
 interface StreetSearchSelectProps {
   id: string;
@@ -30,7 +22,7 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
   const [isOpen, setIsOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
 
-  const results = useMemo(() => filterStreets(query), [query]);
+  const results = useMemo(() => filterTelAvivStreetSuggestions(query), [query]);
 
   useEffect(() => {
     setQuery(value);
@@ -50,9 +42,9 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  function selectStreet(street: string) {
-    onChange(street);
-    setQuery(street);
+  function selectStreet(hebrewStreet: string) {
+    onChange(hebrewStreet);
+    setQuery(hebrewStreet);
     setIsOpen(false);
     setHighlightIndex(-1);
   }
@@ -93,7 +85,7 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
       setHighlightIndex((i) => (i <= 0 ? results.length - 1 : i - 1));
     } else if (event.key === "Enter" && highlightIndex >= 0) {
       event.preventDefault();
-      selectStreet(results[highlightIndex]);
+      selectStreet(results[highlightIndex].value);
     }
   }
 
@@ -130,18 +122,18 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
           role="listbox"
           className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg"
         >
-          {results.map((street, index) => (
-            <li key={street} role="option" aria-selected={street === value}>
+          {results.map((suggestion, index) => (
+            <li key={suggestion.value} role="option" aria-selected={suggestion.value === value}>
               <button
                 type="button"
                 className={`w-full px-4 py-2.5 text-start text-sm text-slate-800 transition hover:bg-emerald-50 ${
                   index === highlightIndex ? "bg-emerald-50" : ""
                 }`}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => selectStreet(street)}
+                onClick={() => selectStreet(suggestion.value)}
                 onMouseEnter={() => setHighlightIndex(index)}
               >
-                {street}
+                {suggestion.label}
               </button>
             </li>
           ))}

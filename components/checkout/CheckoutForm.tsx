@@ -143,6 +143,7 @@ export function CheckoutForm({
         orderId,
         plantId,
         plantName,
+        spotSlug,
         fulfillmentMethod,
       });
       router.replace(`/success?${successParams.toString()}`);
