@@ -15,9 +15,12 @@
     "db:migrate:events-pos-spot-uuid": "node scripts/apply-sql-file.mjs db/migrations/005_events_pos_spot_id_uuid_fixup.sql",
     "db:migrate:partner-payments": "node scripts/apply-sql-file.mjs db/migrations/006_partner_locations_payments_drop_partner_type.sql",
     "db:migrate:event-types": "node scripts/apply-sql-file.mjs db/migrations/007_extend_event_types.sql",
+    "db:migrate:plants": "node scripts/migrate-plants-from-json.mjs",
+    "db:migrate:plants-drop-base-supplier-price": "node scripts/apply-sql-file.mjs db/migrations/009_plants_drop_base_supplier_price.sql",
     "db:seed": "node scripts/seed-from-json.mjs",
     "generate:tel-aviv-streets": "node scripts/generate-tel-aviv-streets.mjs",
-    "db:verify-storage": "npx tsx scripts/verify-db-storage.ts"
+    "db:verify-storage": "npx tsx scripts/verify-db-storage.ts",
+    "db:verify-plants": "npx tsx scripts/verify-plants-storage.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

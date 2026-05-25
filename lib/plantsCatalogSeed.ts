@@ -1,14 +1,13 @@
 import type { PlantProduct } from "./types";
 
-/** Default catalog when `data/plants.json` is missing (seed / fallback). */
-export const PLANTS_CATALOG_SEED: PlantProduct[] = [
+const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
   {
     id: "monstera",
     name: "Monstera Deliciosa",
     subtitle: "Easy indoor plant",
     description:
       "A calm, sculptural plant that adds fresh character to indoor spaces. Great for creating a soft natural presence at home.",
-    price: 89,
+    supplierPrice: 89,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=1200&q=80",
@@ -33,7 +32,7 @@ export const PLANTS_CATALOG_SEED: PlantProduct[] = [
     subtitle: "Bold tropical contrast",
     description:
       "Arrow-shaped leaves with striking veins—an eye-catching accent that reads upscale and intentional.",
-    price: 169,
+    supplierPrice: 169,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1593691509543-c55fb32e7355?auto=format&fit=crop&w=1200&q=80",
@@ -60,7 +59,7 @@ export const PLANTS_CATALOG_SEED: PlantProduct[] = [
     averageSize: "small",
     description:
       "Feathery, delicate foliage that adds movement and a relaxed botanical vibe to tight spaces.",
-    price: 89,
+    supplierPrice: 89,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1463947628408-f8581a2f4aca?auto=format&fit=crop&w=1200&q=80",
@@ -85,7 +84,7 @@ export const PLANTS_CATALOG_SEED: PlantProduct[] = [
     subtitle: "Premium indoor tree",
     description:
       "A timeless olive tree that brings a soft Mediterranean character to cafés, living rooms, and workspaces.",
-    price: 249,
+    supplierPrice: 249,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1463320898484-cdee8141c787?auto=format&fit=crop&w=1200&q=80",
@@ -108,3 +107,9 @@ export const PLANTS_CATALOG_SEED: PlantProduct[] = [
       "A statement plant that instantly elevates your space with calm, natural elegance.",
   },
 ];
+
+/** Default catalog when DB is empty (seed / fallback). */
+export const PLANTS_CATALOG_SEED: PlantProduct[] = SEED_ENTRIES.map((plant) => ({
+  ...plant,
+  price: plant.supplierPrice,
+}));

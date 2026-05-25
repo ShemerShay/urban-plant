@@ -25,15 +25,18 @@ export async function GET() {
     readPosSpots(),
     readPartnerLocations(),
   ]);
-  return NextResponse.json({
-    offers: offers.map((offer) => {
-      const product = getPlantById(offer.productId);
+  const enrichedOffers = await Promise.all(
+    offers.map(async (offer) => {
+      const product = await getPlantById(offer.productId);
       return {
         ...offer,
         productName: product?.name ?? offer.productId,
         currency: product?.currency ?? "ILS",
       };
     }),
+  );
+  return NextResponse.json({
+    offers: enrichedOffers,
     locations,
     posSpots,
   });

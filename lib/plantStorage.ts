@@ -1,82 +1,180 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
-import path from "node:path";
+/**
+ * Plant catalog backed by Neon Postgres (`plants` table).
+ */
 
+import { sql } from "@/lib/db";
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
-import type { PlantProduct } from "@/lib/types";
+import { parseNumeric, toIsoString } from "@/lib/storageUtils";
+import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
 
-const PLANTS_FILE = path.join(process.cwd(), "data", "plants.json");
+type PlantRow = {
+  id: string;
+  name: string;
+  family: string | null;
+  subtitle: string;
+  description: string;
+  supplier_price: string | number;
+  currency: string;
+  images: unknown;
+  labels: unknown;
+  light: string;
+  water: string;
+  average_size: string | null;
+  maintenance_conditions: string | null;
+  supplier_name: string | null;
+  difficulty: string;
+  location: string;
+  pet_friendly: boolean;
+  care_instructions: unknown;
+  commercial_copy: string;
+  created_at: string | Date | null;
+};
 
-let cache: PlantProduct[] | null = null;
-
-function normalizePlantRecord(raw: unknown): PlantProduct {
-  if (!raw || typeof raw !== "object") {
-    throw new Error("Each plant must be a JSON object");
-  }
-  const { status: _legacyStatus, ...rest } = raw as Record<string, unknown>;
-  return rest as unknown as PlantProduct;
+function parseJsonStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
-function parsePlantsFile(raw: string): PlantProduct[] {
-  const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) {
-    throw new Error("plants.json must be a JSON array");
-  }
-  return parsed.map(normalizePlantRecord);
+function mapPlantRow(row: PlantRow): PlantProduct {
+  const supplierPrice = parseNumeric(row.supplier_price);
+  const createdAt = toIsoString(row.created_at);
+  const family =
+    typeof row.family === "string" && row.family.trim() ? row.family.trim() : undefined;
+  const supplierName =
+    typeof row.supplier_name === "string" && row.supplier_name.trim()
+      ? row.supplier_name.trim()
+      : undefined;
+  const maintenanceConditions =
+    typeof row.maintenance_conditions === "string" && row.maintenance_conditions.trim()
+      ? row.maintenance_conditions.trim()
+      : undefined;
+  const averageSizeRaw = row.average_size?.trim();
+  const averageSize =
+    averageSizeRaw === "small" || averageSizeRaw === "medium" || averageSizeRaw === "large"
+      ? averageSizeRaw
+      : undefined;
+
+  return {
+    id: row.id,
+    name: row.name,
+    subtitle: row.subtitle,
+    description: row.description,
+    supplierPrice,
+    price: supplierPrice,
+    currency: row.currency as PlantProduct["currency"],
+    images: parseJsonStringArray(row.images),
+    labels: parseJsonStringArray(row.labels),
+    light: row.light as LightLevel,
+    water: row.water,
+    difficulty: row.difficulty as CareLevel,
+    location: row.location,
+    petFriendly: row.pet_friendly,
+    careInstructions: parseJsonStringArray(row.care_instructions),
+    commercialCopy: row.commercial_copy,
+    ...(family ? { family } : {}),
+    ...(averageSize ? { averageSize } : {}),
+    ...(maintenanceConditions ? { maintenanceConditions } : {}),
+    ...(supplierName ? { supplierName } : {}),
+    ...(createdAt ? { createdAt } : {}),
+  };
 }
 
-async function persistPlants(plants: PlantProduct[]): Promise<void> {
-  await writeFile(PLANTS_FILE, `${JSON.stringify(plants, null, 2)}\n`, "utf-8");
-  cache = plants;
-}
-
-async function ensurePlantsFile(): Promise<PlantProduct[]> {
-  try {
-    const raw = await readFile(PLANTS_FILE, "utf-8");
-    const plants = parsePlantsFile(raw);
-    cache = plants;
-    return plants;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") throw error;
-    await persistPlants([...PLANTS_CATALOG_SEED]);
-    return cache ?? [...PLANTS_CATALOG_SEED];
-  }
+function seedPlantsWithSupplierPrice(): PlantProduct[] {
+  return PLANTS_CATALOG_SEED.map((plant) => {
+    const legacyPrice = (plant as PlantProduct & { price?: number }).price;
+    const supplierPrice =
+      typeof plant.supplierPrice === "number"
+        ? plant.supplierPrice
+        : typeof legacyPrice === "number"
+          ? legacyPrice
+          : 0;
+    return { ...plant, supplierPrice, price: supplierPrice };
+  });
 }
 
 export async function readPlants(): Promise<PlantProduct[]> {
-  if (cache) return cache;
-  return ensurePlantsFile();
-}
-
-export function readPlantsSync(): PlantProduct[] {
-  if (cache) return cache;
-  try {
-    const raw = readFileSync(PLANTS_FILE, "utf-8");
-    cache = parsePlantsFile(raw);
-    return cache;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return [...PLANTS_CATALOG_SEED];
-    throw error;
-  }
+  const rows = await sql`
+    SELECT
+      id, name, family, subtitle, description, supplier_price, currency,
+      images, labels, light, water, average_size, maintenance_conditions,
+      supplier_name, difficulty, location, pet_friendly,
+      care_instructions, commercial_copy, created_at
+    FROM plants
+    ORDER BY name ASC
+  `;
+  const plants = (rows as PlantRow[]).map(mapPlantRow);
+  return plants.length > 0 ? plants : seedPlantsWithSupplierPrice();
 }
 
 export async function getPlantByIdAsync(id: string): Promise<PlantProduct | undefined> {
   const trimmed = id.trim();
   if (!trimmed) return undefined;
-  const plants = await readPlants();
-  return plants.find((plant) => plant.id === trimmed);
+  const rows = await sql`
+    SELECT
+      id, name, family, subtitle, description, supplier_price, currency,
+      images, labels, light, water, average_size, maintenance_conditions,
+      supplier_name, difficulty, location, pet_friendly,
+      care_instructions, commercial_copy, created_at
+    FROM plants
+    WHERE id = ${trimmed}
+    LIMIT 1
+  `;
+  const row = (rows as PlantRow[])[0];
+  if (row) return mapPlantRow(row);
+  return (await readPlants()).find((plant) => plant.id === trimmed);
 }
 
 export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
-  const plants = await readPlants();
-  if (plants.some((item) => item.id === plant.id)) {
+  const existing = await getPlantByIdAsync(plant.id);
+  if (existing) {
     throw new Error("A plant with this id already exists");
   }
-  const next = [...plants, plant];
-  await persistPlants(next);
-  return plant;
+
+  const imagesJson = JSON.stringify(plant.images);
+  const labelsJson = JSON.stringify(plant.labels);
+  const careJson = JSON.stringify(plant.careInstructions);
+
+  const rows = await sql`
+    INSERT INTO plants (
+      id, name, family, subtitle, description, supplier_price, currency,
+      images, labels, light, water, average_size, maintenance_conditions,
+      supplier_name, difficulty, location, pet_friendly,
+      care_instructions, commercial_copy, created_at
+    )
+    VALUES (
+      ${plant.id},
+      ${plant.name},
+      ${plant.family ?? null},
+      ${plant.subtitle},
+      ${plant.description},
+      ${plant.supplierPrice},
+      ${plant.currency},
+      ${imagesJson}::jsonb,
+      ${labelsJson}::jsonb,
+      ${plant.light},
+      ${plant.water},
+      ${plant.averageSize ?? null},
+      ${plant.maintenanceConditions ?? null},
+      ${plant.supplierName ?? null},
+      ${plant.difficulty},
+      ${plant.location},
+      ${plant.petFriendly},
+      ${careJson}::jsonb,
+      ${plant.commercialCopy},
+      ${plant.createdAt ?? new Date().toISOString()}::timestamptz
+    )
+    RETURNING
+      id, name, family, subtitle, description, supplier_price, currency,
+      images, labels, light, water, average_size, maintenance_conditions,
+      supplier_name, difficulty, location, pet_friendly,
+      care_instructions, commercial_copy, created_at
+  `;
+  const row = (rows as PlantRow[])[0];
+  if (!row) throw new Error("Could not create plant");
+  return mapPlantRow(row);
 }
 
 export async function updatePlant(
@@ -84,14 +182,43 @@ export async function updatePlant(
   plant: PlantProduct,
 ): Promise<PlantProduct | null> {
   const trimmed = id.trim();
-  const plants = await readPlants();
-  const index = plants.findIndex((item) => item.id === trimmed);
-  if (index < 0) return null;
+  if (!trimmed) return null;
   if (plant.id !== trimmed) {
     throw new Error("Plant id cannot be changed");
   }
-  const next = [...plants];
-  next[index] = plant;
-  await persistPlants(next);
-  return plant;
+
+  const imagesJson = JSON.stringify(plant.images);
+  const labelsJson = JSON.stringify(plant.labels);
+  const careJson = JSON.stringify(plant.careInstructions);
+
+  const rows = await sql`
+    UPDATE plants
+    SET
+      name = ${plant.name},
+      family = ${plant.family ?? null},
+      subtitle = ${plant.subtitle},
+      description = ${plant.description},
+      supplier_price = ${plant.supplierPrice},
+      currency = ${plant.currency},
+      images = ${imagesJson}::jsonb,
+      labels = ${labelsJson}::jsonb,
+      light = ${plant.light},
+      water = ${plant.water},
+      average_size = ${plant.averageSize ?? null},
+      maintenance_conditions = ${plant.maintenanceConditions ?? null},
+      supplier_name = ${plant.supplierName ?? null},
+      difficulty = ${plant.difficulty},
+      location = ${plant.location},
+      pet_friendly = ${plant.petFriendly},
+      care_instructions = ${careJson}::jsonb,
+      commercial_copy = ${plant.commercialCopy}
+    WHERE id = ${trimmed}
+    RETURNING
+      id, name, family, subtitle, description, supplier_price, currency,
+      images, labels, light, water, average_size, maintenance_conditions,
+      supplier_name, difficulty, location, pet_friendly,
+      care_instructions, commercial_copy, created_at
+  `;
+  const row = (rows as PlantRow[])[0];
+  return row ? mapPlantRow(row) : null;
 }

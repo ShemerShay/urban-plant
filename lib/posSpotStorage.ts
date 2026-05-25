@@ -334,6 +334,8 @@ export async function updatePosSpot(
     updatePosWeeklyNote?: boolean;
     offerPlacedAt?: string | null;
     updateOfferPlacedAt?: boolean;
+    status?: PosSpotStatus;
+    updateStatus?: boolean;
   },
 ): Promise<PosSpot | null> {
   const trimmedId = id.trim();
@@ -369,6 +371,11 @@ export async function updatePosSpot(
   const updateCheck = Boolean(patch.updateCheckFields && typeof patch.checkStatus === "boolean");
   const clearingCheck = updateCheck && patch.checkStatus === false;
   const settingCheck = updateCheck && patch.checkStatus === true;
+
+  const statusIsValid =
+    patch.status === "available" || patch.status === "sold" || patch.status === "inactive";
+  const updateStatus = Boolean(patch.updateStatus && statusIsValid);
+  const statusForSql = updateStatus ? patch.status! : null;
 
   let nextCheckForSql: string | null = null;
   let checkByForSql: string | null | undefined;
@@ -415,6 +422,10 @@ export async function updatePosSpot(
       offer_placed_at = CASE
         WHEN ${patch.updateOfferPlacedAt ?? false} THEN ${patch.offerPlacedAt ?? null}::timestamptz
         ELSE offer_placed_at
+      END,
+      status = CASE
+        WHEN ${updateStatus} THEN ${statusForSql}
+        ELSE status
       END
     WHERE id = ${trimmedId}::uuid
     RETURNING ${POS_SPOT_ROW_SQL}

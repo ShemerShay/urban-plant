@@ -20,20 +20,6 @@ interface PosPageProps {
   params: Promise<{ spotSlug: string }>;
 }
 
-function formatNextVisitDate(isoYmd: string): string {
-  const parts = isoYmd.split("-").map(Number);
-  if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return isoYmd;
-  const [y, m, d] = parts;
-  const date = new Date(Date.UTC(y, m - 1, d));
-  return date.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 export default async function PosPage({ params }: PosPageProps) {
   const { spotSlug } = await params;
   const posSpot = await getPosSpotBySpotSlugEnsuringNextVisit(spotSlug);
@@ -42,7 +28,7 @@ export default async function PosPage({ params }: PosPageProps) {
   const offer = await getOfferById(posSpot.currentOfferId);
   if (!offer || offer.status !== "active") notFound();
 
-  const plant = getPlantById(offer.productId);
+  const plant = await getPlantById(offer.productId);
   if (!plant) notFound();
 
   const knownPartner = await getLocationById(posSpot.partnerLocationId);
@@ -71,16 +57,6 @@ export default async function PosPage({ params }: PosPageProps) {
         </div>
 
         <PlantHero name={plant.name} subtitle={plant.subtitle} />
-
-        {posSpot.nextCheck ? (
-          <p className="text-center text-sm text-slate-600">
-            Next visit:{" "}
-            <time className="font-medium text-slate-800" dateTime={posSpot.nextCheck}>
-              {formatNextVisitDate(posSpot.nextCheck)}
-            </time>
-          </p>
-        ) : null}
-
         <PlantProductInfoGrid
           light={plant.light}
           water={plant.water}

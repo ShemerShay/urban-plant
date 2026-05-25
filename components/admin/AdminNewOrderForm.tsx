@@ -8,60 +8,102 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { CheckoutCustomerFields } from "@/components/checkout/CheckoutCustomerFields";
+import { DeliveryAddressFields } from "@/components/checkout/DeliveryAddressFields";
+import type { DeliveryAddressFieldValues } from "@/components/checkout/DeliveryAddressFields";
 import { formatPrice, mockPlants } from "@/lib/mockPlants";
+import {
+  canSubmitAdminNewOrder,
+  canSubmitCheckout,
+  getAdminNewOrderFieldErrors,
+  getCheckoutFieldErrors,
+  getVisibleAdminNewOrderFieldErrors,
+  getVisibleCheckoutFieldErrors,
+  type AdminNewOrderFieldKey,
+  type CheckoutFieldKey,
+  type CheckoutFormValues,
+} from "@/lib/checkoutValidation";
 
-const inputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+const baseInputClass =
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+
+type CustomerFields = Pick<CheckoutFormValues, "fullName" | "email" | "phone"> &
+  DeliveryAddressFieldValues;
 
 export function AdminNewOrderForm() {
   const router = useRouter();
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [apartmentOrNotes, setApartmentOrNotes] = useState("");
+  const [fields, setFields] = useState<CustomerFields>({
+    fullName: "",
+    email: "",
+    phone: "05",
+    deliveryStreet: "",
+    deliveryHouseNumber: "",
+    apartmentOrNotes: "",
+  });
   const [plantId, setPlantId] = useState(mockPlants[0]?.id ?? "");
   const [price, setPrice] = useState(
     mockPlants[0] ? String(mockPlants[0].price) : "",
   );
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Partial<Record<CheckoutFieldKey, boolean>>>({});
+  const [adminTouched, setAdminTouched] = useState<
+    Partial<Record<AdminNewOrderFieldKey, boolean>>
+  >({});
+  const [showAllErrors, setShowAllErrors] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fulfillmentMethod = "delivery" as const;
 
   function handlePlantChange(nextPlantId: string) {
     setPlantId(nextPlantId);
     const plant = mockPlants.find((item) => item.id === nextPlantId);
     if (plant) setPrice(String(plant.price));
+    setAdminTouched((prev) => ({ ...prev, plantId: true }));
   }
 
-  const priceNumber = Number(price);
-  const canSubmit = Boolean(
-    fullName.trim() &&
-      phone.trim() &&
-      address.trim() &&
-      plantId.trim() &&
-      price.trim() &&
-      !Number.isNaN(priceNumber) &&
-      priceNumber >= 0 &&
-      !isSubmitting,
-  );
+  function markTouched(field: CheckoutFieldKey) {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  }
 
-  function validate(): boolean {
-    const next: Record<string, string> = {};
-    if (!fullName.trim()) next.fullName = "Full name is required.";
-    if (!phone.trim()) next.phone = "Phone is required.";
-    if (!address.trim()) next.address = "Address is required.";
-    if (!plantId.trim()) next.plantId = "Plant is required.";
-    if (!price.trim()) next.price = "Price is required.";
-    else if (Number(price) < 0 || Number.isNaN(Number(price))) {
-      next.price = "Enter a valid price.";
+  function markAdminTouched(field: AdminNewOrderFieldKey) {
+    setAdminTouched((prev) => ({ ...prev, [field]: true }));
+  }
+
+  function handleChange(field: keyof CustomerFields, value: string) {
+    setFields((prev) => ({ ...prev, [field]: value }));
+    if (field !== "apartmentOrNotes") {
+      markTouched(field);
     }
-    setErrors(next);
-    return Object.keys(next).length === 0;
+    setSubmitError(null);
   }
+
+  function revealValidationErrors() {
+    setShowAllErrors(true);
+  }
+
+  const checkoutFieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
+  const adminFieldErrors = getAdminNewOrderFieldErrors(plantId, price);
+  const checkoutErrors = getVisibleCheckoutFieldErrors(
+    checkoutFieldErrors,
+    touched,
+    showAllErrors,
+  );
+  const adminErrors = getVisibleAdminNewOrderFieldErrors(
+    adminFieldErrors,
+    adminTouched,
+    showAllErrors,
+  );
+  const canSubmit =
+    canSubmitCheckout(fields, fulfillmentMethod) &&
+    canSubmitAdminNewOrder(plantId, price) &&
+    !isSubmitting;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit || !validate()) return;
+    if (!canSubmit) {
+      revealValidationErrors();
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -71,10 +113,12 @@ export function AdminNewOrderForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fullName: fullName.trim(),
-          phone: phone.trim(),
-          address: address.trim(),
-          apartmentOrNotes: apartmentOrNotes.trim(),
+          fullName: fields.fullName.trim(),
+          customerEmail: fields.email.trim(),
+          phone: fields.phone.trim(),
+          deliveryStreet: fields.deliveryStreet.trim(),
+          deliveryHouseNumber: fields.deliveryHouseNumber.trim(),
+          apartmentOrNotes: fields.apartmentOrNotes.trim(),
           plantId: plantId.trim(),
           price: Number(price),
         }),
@@ -95,69 +139,41 @@ export function AdminNewOrderForm() {
     }
   }
 
+  const isSubmitDisabled = isSubmitting || !canSubmit;
+  const showValidationOverlay = !isSubmitting && !canSubmit;
+
   return (
     <form id="admin-new-order-form" onSubmit={onSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <label htmlFor="admin-fullName" className="text-sm font-medium text-slate-700">
-          Full name
-        </label>
-        <input
-          id="admin-fullName"
-          name="fullName"
-          type="text"
-          className={inputClass}
-          value={fullName}
-          onChange={(ev) => setFullName(ev.target.value)}
-        />
-        {errors.fullName ? <p className="text-xs text-red-600">{errors.fullName}</p> : null}
-      </div>
+      <h2 className="text-xl font-semibold text-emerald-950">Delivery details</h2>
 
-      <div className="space-y-2">
-        <label htmlFor="admin-phone" className="text-sm font-medium text-slate-700">
-          Phone
-        </label>
-        <input
-          id="admin-phone"
-          name="phone"
-          type="tel"
-          className={inputClass}
-          value={phone}
-          onChange={(ev) => setPhone(ev.target.value)}
-        />
-        {errors.phone ? <p className="text-xs text-red-600">{errors.phone}</p> : null}
-      </div>
+      <CheckoutCustomerFields
+        values={{
+          fullName: fields.fullName,
+          email: fields.email,
+          phone: fields.phone,
+        }}
+        errors={{
+          fullName: checkoutErrors.fullName,
+          email: checkoutErrors.email,
+          phone: checkoutErrors.phone,
+        }}
+        onChange={handleChange}
+        onFieldBlur={markTouched}
+      />
 
-      <div className="space-y-2">
-        <label htmlFor="admin-address" className="text-sm font-medium text-slate-700">
-          Address
-        </label>
-        <input
-          id="admin-address"
-          name="address"
-          type="text"
-          className={inputClass}
-          value={address}
-          onChange={(ev) => setAddress(ev.target.value)}
-        />
-        {errors.address ? <p className="text-xs text-red-600">{errors.address}</p> : null}
-      </div>
-
-      <div className="space-y-2">
-        <label
-          htmlFor="admin-apartmentOrNotes"
-          className="text-sm font-medium text-slate-700"
-        >
-          Apartment / notes (optional)
-        </label>
-        <textarea
-          id="admin-apartmentOrNotes"
-          name="apartmentOrNotes"
-          rows={3}
-          className={inputClass}
-          value={apartmentOrNotes}
-          onChange={(ev) => setApartmentOrNotes(ev.target.value)}
-        />
-      </div>
+      <DeliveryAddressFields
+        values={{
+          deliveryStreet: fields.deliveryStreet,
+          deliveryHouseNumber: fields.deliveryHouseNumber,
+          apartmentOrNotes: fields.apartmentOrNotes,
+        }}
+        errors={{
+          deliveryStreet: checkoutErrors.deliveryStreet,
+          deliveryHouseNumber: checkoutErrors.deliveryHouseNumber,
+        }}
+        onChange={handleChange}
+        onFieldBlur={markTouched}
+      />
 
       <div className="space-y-2">
         <label htmlFor="admin-plantId" className="text-sm font-medium text-slate-700">
@@ -166,9 +182,10 @@ export function AdminNewOrderForm() {
         <select
           id="admin-plantId"
           name="plantId"
-          className={inputClass}
+          className={baseInputClass}
           value={plantId}
           onChange={(ev) => handlePlantChange(ev.target.value)}
+          onBlur={() => markAdminTouched("plantId")}
         >
           {mockPlants.map((plant) => (
             <option key={plant.id} value={plant.id} className="text-slate-900">
@@ -176,7 +193,9 @@ export function AdminNewOrderForm() {
             </option>
           ))}
         </select>
-        {errors.plantId ? <p className="text-xs text-red-600">{errors.plantId}</p> : null}
+        {adminErrors.plantId ? (
+          <p className="text-xs text-red-600">{adminErrors.plantId}</p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -190,22 +209,40 @@ export function AdminNewOrderForm() {
           min={0}
           step="0.01"
           inputMode="decimal"
-          className={inputClass}
+          className={baseInputClass}
           value={price}
-          onChange={(ev) => setPrice(ev.target.value)}
+          onChange={(ev) => {
+            setPrice(ev.target.value);
+            markAdminTouched("price");
+            setSubmitError(null);
+          }}
+          onBlur={() => markAdminTouched("price")}
         />
-        {errors.price ? <p className="text-xs text-red-600">{errors.price}</p> : null}
+        {adminErrors.price ? (
+          <p className="text-xs text-red-600">{adminErrors.price}</p>
+        ) : null}
       </div>
 
       {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
 
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isSubmitting ? "Saving…" : "Save order"}
-      </button>
+      <div className="relative">
+        {showValidationOverlay ? (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Show what is required to save the order"
+            className="absolute inset-0 z-10 cursor-not-allowed rounded-2xl"
+            onClick={revealValidationErrors}
+          />
+        ) : null}
+        <button
+          type="submit"
+          disabled={isSubmitDisabled}
+          className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
+        >
+          {isSubmitting ? "Saving…" : "Save order"}
+        </button>
+      </div>
     </form>
   );
 }

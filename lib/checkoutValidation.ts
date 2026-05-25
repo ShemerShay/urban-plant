@@ -74,3 +74,42 @@ export function getVisibleCheckoutFieldErrors(
   }
   return visible;
 }
+
+export type AdminNewOrderFieldKey = "plantId" | "price";
+
+export type AdminNewOrderFieldErrors = Partial<Record<AdminNewOrderFieldKey, string>>;
+
+export function getAdminNewOrderFieldErrors(
+  plantId: string,
+  price: string,
+): AdminNewOrderFieldErrors {
+  const errors: AdminNewOrderFieldErrors = {};
+  if (!plantId.trim()) {
+    errors.plantId = "This field is required.";
+  }
+  if (!price.trim()) {
+    errors.price = "This field is required.";
+  } else if (Number(price) < 0 || Number.isNaN(Number(price))) {
+    errors.price = "Enter a valid price.";
+  }
+  return errors;
+}
+
+export function canSubmitAdminNewOrder(plantId: string, price: string): boolean {
+  return Object.keys(getAdminNewOrderFieldErrors(plantId, price)).length === 0;
+}
+
+export function getVisibleAdminNewOrderFieldErrors(
+  fieldErrors: AdminNewOrderFieldErrors,
+  touched: Partial<Record<AdminNewOrderFieldKey, boolean>>,
+  showAllErrors: boolean,
+): AdminNewOrderFieldErrors {
+  const visible: AdminNewOrderFieldErrors = {};
+  for (const key of Object.keys(fieldErrors) as AdminNewOrderFieldKey[]) {
+    const message = fieldErrors[key];
+    if (message && (showAllErrors || touched[key])) {
+      visible[key] = message;
+    }
+  }
+  return visible;
+}

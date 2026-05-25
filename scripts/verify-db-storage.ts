@@ -13,6 +13,7 @@ async function main() {
   const { appendOrder, readOrders, replaceOrder } = await import("../lib/ordersStorage");
   const { readPartnerLocations } = await import("../lib/partnerLocationStorage");
   const { getPosSpotBySpotSlug, setPosSpotStatus } = await import("../lib/posSpotStorage");
+  const { getPlantByIdAsync, readPlants } = await import("../lib/plantStorage");
 
   const slug = "cafe-noir-front-shelf";
   const spot = await getPosSpotBySpotSlug(slug);
@@ -24,6 +25,15 @@ async function main() {
 
   const partners = await readPartnerLocations();
   console.log(`OK: partner_locations → ${partners.length} row(s)`);
+
+  const plants = await readPlants();
+  console.log(`OK: plants → ${plants.length} row(s)`);
+  const monstera = await getPlantByIdAsync("monstera");
+  if (!monstera || monstera.supplierPrice <= 0) {
+    console.error("FAIL: catalog plant monstera missing or invalid supplierPrice");
+    process.exit(1);
+  }
+  console.log(`OK: plant monstera supplierPrice=${monstera.supplierPrice}`);
 
   const testOrderId = randomUUID();
   const beforeStatus = spot.status;

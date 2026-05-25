@@ -16,7 +16,11 @@ import {
   logOrderFlowStart,
 } from "@/lib/logOrderFlow";
 import { getLocationById, resolveLocationFields } from "@/lib/mockLocations";
-import { isValidEmail, isValidPhone } from "@/lib/formValidation";
+import {
+  isValidEmail,
+  isValidIsraeliMobilePhone,
+  isValidPhone,
+} from "@/lib/formValidation";
 import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import type { Offer } from "@/lib/offerTypes";
@@ -184,7 +188,7 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
     locationId: locationIdRaw,
     fullName,
     phone,
-    address,
+    customerEmail: customerEmailRaw,
     apartmentOrNotes,
     fulfillmentMethod: fulfillmentMethodRaw,
     plantName,
@@ -193,6 +197,8 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
 
   const nameStr = typeof fullName === "string" ? fullName.trim() : "";
   const phoneStr = typeof phone === "string" ? phone.trim() : "";
+  const emailTrim =
+    typeof customerEmailRaw === "string" ? customerEmailRaw.trim().toLowerCase() : "";
   const fulfillmentMethod: FulfillmentMethod =
     fulfillmentMethodRaw === "pickup" ? "pickup" : "delivery";
   const orderStatus: OrderStatus =
@@ -201,8 +207,17 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
   if (!nameStr) {
     return NextResponse.json({ error: "fullName is required" }, { status: 400 });
   }
-  if (fulfillmentMethod === "delivery" && !phoneStr) {
-    return NextResponse.json({ error: "phone is required" }, { status: 400 });
+  if (!emailTrim || !isValidEmail(emailTrim)) {
+    return NextResponse.json(
+      { error: "customerEmail is required and must be a valid email" },
+      { status: 400 },
+    );
+  }
+  if (!isValidIsraeliMobilePhone(phoneStr)) {
+    return NextResponse.json(
+      { error: "Please enter a valid 10-digit Israeli phone number." },
+      { status: 400 },
+    );
   }
 
   let addressStr = "";
@@ -235,7 +250,7 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
   );
 
   const catalogId = typeof plantId === "string" ? plantId.trim() : "";
-  const catalogPlant = catalogId ? getPlantById(catalogId) : undefined;
+  const catalogPlant = catalogId ? await getPlantById(catalogId) : undefined;
 
   let resolvedPlantId: string;
   let resolvedPlantName: string;
@@ -246,7 +261,7 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
     resolvedPlantName = catalogPlant.name;
     const customPrice = parsePrice(price);
     resolvedPrice =
-      customPrice !== null && customPrice >= 0 ? customPrice : catalogPlant.price;
+      customPrice !== null && customPrice >= 0 ? customPrice : catalogPlant.supplierPrice;
   } else {
     const manualName = typeof plantName === "string" ? plantName.trim() : "";
     const manualPrice = parsePrice(price);
@@ -287,6 +302,7 @@ async function postLegacyManualOrder(record: Record<string, unknown>): Promise<R
     locationAddress: resolvedLocationAddress,
     price: resolvedPrice,
     fullName: nameStr,
+    customerEmail: emailTrim,
     phone: phoneStr,
     address: addressStr,
     apartmentOrNotes: notesStr,
@@ -322,9 +338,9 @@ export async function POST(request: NextRequest) {
   const record = body as Record<string, unknown>;
 
   if (
-    typeof record.plantName === "string" &&
+    record.orderId === undefined &&
     record.price !== undefined &&
-    record.orderId === undefined
+    (typeof record.plantId === "string" || typeof record.plantName === "string")
   ) {
     return postLegacyManualOrder(record);
   }
@@ -387,7 +403,7 @@ export async function POST(request: NextRequest) {
   }
 
   const catalogId = typeof plantId === "string" ? plantId.trim() : "";
-  const catalogPlant = catalogId ? getPlantById(catalogId) : undefined;
+  const catalogPlant = catalogId ? await getPlantById(catalogId) : undefined;
 
   if (!catalogPlant) {
     return NextResponse.json({ error: "plantId must match a catalog plant" }, { status: 400 });

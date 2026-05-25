@@ -1,7 +1,9 @@
-import { readPlantsSync } from "@/lib/plantStorage";
+import { getPlantByIdAsync } from "@/lib/plantStorage";
 import type { PlantProduct } from "@/lib/types";
 
-/** Resolve a catalog plant from persisted storage (server / API routes). */
-export function getPlantById(id: string): PlantProduct | undefined {
-  return readPlantsSync().find((plant) => plant.id === id);
+/** Resolve a catalog plant from Postgres (server / API routes). */
+export async function getPlantById(id: string): Promise<PlantProduct | undefined> {
+  const trimmed = id.trim();
+  if (!trimmed) return undefined;
+  return getPlantByIdAsync(trimmed);
 }

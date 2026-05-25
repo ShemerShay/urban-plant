@@ -20,7 +20,7 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
   const offer = await getOfferById(posSpot.currentOfferId);
   if (!offer || offer.status !== "active") notFound();
 
-  const plant = getPlantById(offer.productId);
+  const plant = await getPlantById(offer.productId);
   if (!plant) notFound();
 
   return (

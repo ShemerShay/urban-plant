@@ -48,7 +48,7 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const plantName =
     order?.snapshot?.productName ||
     order?.plantName ||
-    getPlantById(plantId)?.name ||
+    (plantId ? (await getPlantById(plantId))?.name : undefined) ||
     readPlantName(sp.plantName) ||
     "your plant";
 

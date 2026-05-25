@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { CheckoutCustomerFields } from "@/components/checkout/CheckoutCustomerFields";
 import {
   DeliveryAddressFields,
   type DeliveryAddressFieldErrors,
@@ -15,7 +16,6 @@ import {
   type CheckoutFieldKey,
   type CheckoutFulfillmentMethod,
 } from "@/lib/checkoutValidation";
-import { normalizeIsraeliMobilePhoneInput } from "@/lib/formValidation";
 type FormFields = {
   fullName: string;
   email: string;
@@ -32,9 +32,6 @@ interface CheckoutFormProps {
   /** POS Spot slug from `/checkout/pos/{spotSlug}`. */
   spotSlug: string;
 }
-
-const baseInputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
 export function CheckoutForm({
   plantId,
@@ -201,64 +198,20 @@ export function CheckoutForm({
         </div>
       </fieldset>
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="fullName">
-          Full name
-        </label>
-        <input
-          id="fullName"
-          name="fullName"
-          type="text"
-          autoComplete="name"
-          className={baseInputClass}
-          value={fields.fullName}
-          onChange={(event) => handleChange("fullName", event.target.value)}
-          onBlur={() => markTouched("fullName")}
-          placeholder="Jane Doe"
-        />
-        {errors.fullName ? <p className="text-xs text-red-600">{errors.fullName}</p> : null}
-      </div>
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="email">
-          Email
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          inputMode="email"
-          className={baseInputClass}
-          value={fields.email}
-          onChange={(event) => handleChange("email", event.target.value)}
-          onBlur={() => markTouched("email")}
-          placeholder="jane.doe@example.com"
-        />
-        {errors.email ? <p className="text-xs text-red-600">{errors.email}</p> : null}
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="phone">
-          Phone number
-        </label>
-        <input
-          id="phone"
-          name="phone"
-          type="tel"
-          inputMode="numeric"
-          autoComplete="tel"
-          className={baseInputClass}
-          value={fields.phone}
-          onChange={(event) => {
-            const normalized = normalizeIsraeliMobilePhoneInput(event.target.value);
-            handleChange("phone", normalized);
-          }}
-          onBlur={() => markTouched("phone")}
-          placeholder="0521234567"
-          maxLength={10}
-        />
-        {errors.phone ? <p className="text-xs text-red-600">{errors.phone}</p> : null}
-      </div>
+      <CheckoutCustomerFields
+        values={{
+          fullName: fields.fullName,
+          email: fields.email,
+          phone: fields.phone,
+        }}
+        errors={{
+          fullName: errors.fullName,
+          email: errors.email,
+          phone: errors.phone,
+        }}
+        onChange={handleChange}
+        onFieldBlur={markTouched}
+      />
 
       {fulfillmentMethod === "delivery" ? (
         <DeliveryAddressFields

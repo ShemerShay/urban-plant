@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getPlantByIdAsync, updatePlant } from "@/lib/plantStorage";
+import { plantToWire, wireBodyToParseInput } from "@/lib/plantWire";
 import { parsePlantBody } from "@/lib/plantValidation";
 
 interface RouteParams {
@@ -27,10 +28,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const record = body as Record<string, unknown>;
-  const parsed = parsePlantBody(
-    { ...record, id: plantId },
-    { requireId: false, existingId: plantId },
-  );
+  const parsed = parsePlantBody(wireBodyToParseInput({ ...record, id: plantId }), {
+    requireId: false,
+    existingId: plantId,
+  });
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
@@ -43,7 +44,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!plant) {
       return NextResponse.json({ error: "Plant not found" }, { status: 404 });
     }
-    return NextResponse.json({ plant });
+    return NextResponse.json({ plant: plantToWire(plant) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update plant";
     return NextResponse.json({ error: message }, { status: 500 });

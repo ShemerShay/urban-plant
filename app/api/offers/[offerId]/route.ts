@@ -56,7 +56,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!productId) {
       return NextResponse.json({ error: "productId is required" }, { status: 400 });
     }
-    if (!getPlantById(productId)) {
+    if (!(await getPlantById(productId))) {
       return NextResponse.json({ error: "productId must match a catalog plant" }, { status: 400 });
     }
   }
@@ -119,5 +119,5 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Offer not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ offer: enrichOfferWithProduct(offer) });
+  return NextResponse.json({ offer: await enrichOfferWithProduct(offer) });
 }

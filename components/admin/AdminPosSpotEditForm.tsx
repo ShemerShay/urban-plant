@@ -12,7 +12,7 @@ import {
   pocketDisplayLabel,
 } from "@/lib/posSpotPocket";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
-import type { PosSpot } from "@/lib/posSpotTypes";
+import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
 import { posSpotPath } from "@/lib/qrNavigation";
 
 type OfferRow = {
@@ -91,6 +91,9 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   const [pocketOther, setPocketOther] = useState("");
   const [spotDescription, setSpotDescription] = useState("");
 
+  const [availability, setAvailability] = useState<Extract<PosSpotStatus, "available" | "sold">>(
+    "available",
+  );
   const [checkStatus, setCheckStatus] = useState(false);
   const [checkBy, setCheckBy] = useState("");
   const [posWeeklyNote, setPosWeeklyNote] = useState("");
@@ -130,6 +133,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
       setPocket((spot.pocket as PosSpotPocketValue) ?? "");
       setPocketOther(spot.pocketOther ?? "");
       setSpotDescription(spot.spotDescription ?? "");
+      setAvailability(spot.status === "sold" ? "sold" : "available");
       setCheckStatus(spot.checkStatus);
       setCheckBy(spot.checkBy ?? "");
       setPosWeeklyNote(spot.posWeeklyNote ?? "");
@@ -225,6 +229,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
           pocket,
           ...(pocket === "other" ? { pocketOther: pocketOther.trim() } : {}),
           ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
+          status: availability,
           checkStatus,
           checkBy,
           posWeeklyNote,
@@ -419,6 +424,45 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               ) : null}
             </div>
           </div>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-slate-700">Availability</legend>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                aria-pressed={availability === "available"}
+                onClick={() => setAvailability("available")}
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  availability === "available"
+                    ? "border-emerald-700 bg-emerald-50 text-emerald-900"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                }`}
+              >
+                Available
+              </button>
+              <button
+                type="button"
+                aria-pressed={availability === "sold"}
+                onClick={() => setAvailability("sold")}
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  availability === "sold"
+                    ? "border-emerald-700 bg-emerald-50 text-emerald-900"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                }`}
+              >
+                Unavailable
+              </button>
+            </div>
+            {initialSpot.status === "inactive" ? (
+              <p className="text-xs text-amber-700">
+                This spot is inactive. Saving will set it to the availability you choose above.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Unavailable spots cannot be purchased until marked available again.
+              </p>
+            )}
+          </fieldset>
 
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-700">Offer</span>

@@ -11,7 +11,7 @@ function cleanString(value: unknown): string {
 
 export async function GET() {
   const offers = await readOffers();
-  return NextResponse.json({ offers: enrichOffersWithProduct(offers) });
+  return NextResponse.json({ offers: await enrichOffersWithProduct(offers) });
 }
 
 export async function POST(request: NextRequest) {
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   if (!productId) {
     return NextResponse.json({ error: "productId is required" }, { status: 400 });
   }
-  if (!getPlantById(productId)) {
+  if (!(await getPlantById(productId))) {
     return NextResponse.json({ error: "productId must match a catalog plant" }, { status: 400 });
   }
 
@@ -87,5 +87,5 @@ export async function POST(request: NextRequest) {
     ...(status ? { status } : {}),
   });
 
-  return NextResponse.json({ offer: enrichOfferWithProduct(offer) }, { status: 201 });
+  return NextResponse.json({ offer: await enrichOfferWithProduct(offer) }, { status: 201 });
 }

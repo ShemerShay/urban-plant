@@ -98,13 +98,16 @@ export function parsePlantBody(
     return { ok: false, error: "currency must be ILS, USD, or EUR" };
   }
 
-  const priceRaw = body.price;
-  const price =
-    typeof priceRaw === "number" && Number.isFinite(priceRaw) && priceRaw >= 0
-      ? priceRaw
+  const supplierPriceRaw =
+    body.supplierPrice ?? body.supplier_price ?? body.price;
+  const supplierPrice =
+    typeof supplierPriceRaw === "number" &&
+    Number.isFinite(supplierPriceRaw) &&
+    supplierPriceRaw >= 0
+      ? supplierPriceRaw
       : null;
-  if (price === null) {
-    return { ok: false, error: "price must be a non-negative number" };
+  if (supplierPrice === null) {
+    return { ok: false, error: "supplierPrice must be a non-negative number" };
   }
 
   const difficultyRaw = cleanString(body.difficulty);
@@ -162,7 +165,8 @@ export function parsePlantBody(
     name,
     subtitle,
     description,
-    price,
+    supplierPrice,
+    price: supplierPrice,
     currency: currencyRaw as PlantProduct["currency"],
     images,
     labels,
