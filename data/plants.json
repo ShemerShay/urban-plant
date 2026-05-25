@@ -7,7 +7,8 @@
     "price": 89,
     "currency": "ILS",
     "images": [
-      "https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=1200&q=80"
+      "https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=1200&q=80",
+      "/plant-library/monstera-2-fe1be92f.jpg"
     ],
     "labels": [
       "Easy to care",
@@ -57,11 +58,9 @@
   {
     "id": "asparagus",
     "name": "Asparagus fern",
-    "family": "Asparagaceae",
     "subtitle": "Soft airy texture",
-    "averageSize": "small",
     "description": "Feathery, delicate foliage that adds movement and a relaxed botanical vibe to tight spaces.",
-    "price": 89,
+    "price": 41,
     "currency": "ILS",
     "images": [
       "https://images.unsplash.com/photo-1463947628408-f8581a2f4aca?auto=format&fit=crop&w=1200&q=80",
@@ -82,7 +81,9 @@
       "Prune brown stems to keep it airy.",
       "Protect from drying heat vents."
     ],
-    "commercialCopy": "Light, playful greenery—friendly for desks and small tables."
+    "commercialCopy": "Light, playful greenery—friendly for desks and small tables.",
+    "family": "Asparagaceaes",
+    "averageSize": "small"
   },
   {
     "id": "olive-01",

@@ -1,10 +1,13 @@
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
+import { plantToWire, type PlantProductWire } from "@/lib/plantWire";
 import type { PlantProduct } from "@/lib/types";
 
 /** Static seed catalog for client bundles. Server routes should use `@/lib/plantCatalog`. */
-export const mockPlants: PlantProduct[] = PLANTS_CATALOG_SEED;
+export const mockPlants: PlantProductWire[] = PLANTS_CATALOG_SEED.map((plant) =>
+  plantToWire(plant as PlantProduct),
+);
 
-export function getPlantById(id: string): PlantProduct | undefined {
+export function getPlantById(id: string): PlantProductWire | undefined {
   return mockPlants.find((plant) => plant.id === id);
 }
 

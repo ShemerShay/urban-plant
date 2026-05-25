@@ -32,10 +32,7 @@ function defaultOffers(): Offer[] {
   return PLANTS_CATALOG_SEED.map((plant) => ({
     id: randomUUID(),
     productId: plant.id,
-    consumerPrice: plant.price,
-    ...(typeof plant.baseSupplierPrice === "number"
-      ? { supplierPrice: plant.baseSupplierPrice }
-      : {}),
+    consumerPrice: plant.supplierPrice,
     ...(plant.supplierName ? { supplierName: plant.supplierName } : {}),
     status: "active",
     createdAt: plant.createdAt ?? SEED_CREATED_AT,

@@ -46,7 +46,7 @@ export function AdminOrdersHeaderMenu() {
     <div className="relative flex items-center" id="admin-orders-header-menu" ref={rootRef}>
       <button
         type="button"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-800 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/45"
+        className="flex h-11 w-11 shrink-0 items-center justify-center cursor-pointer rounded-xl bg-white text-emerald-800 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/45"
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label="Page actions"
@@ -62,20 +62,12 @@ export function AdminOrdersHeaderMenu() {
           aria-orientation="vertical"
         >
           <Link
-            href="/admin/pos-spots"
+            href="/admin"
             role="menuitem"
             className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}
           >
-            POS Spots
-          </Link>
-          <Link
-            href="/admin/qr"
-            role="menuitem"
-            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-            onClick={() => setOpen(false)}
-          >
-            + pos spot
+            Admin routes
           </Link>
           <Link
             href="/admin/orders/new"
@@ -86,14 +78,6 @@ export function AdminOrdersHeaderMenu() {
             Add New Order
           </Link>
           <div className="my-1 border-t border-slate-100" />
-          <Link
-            href="/"
-            role="menuitem"
-            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-            onClick={() => setOpen(false)}
-          >
-            Home
-          </Link>
         </div>
       ) : null}
     </div>

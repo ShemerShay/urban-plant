@@ -1,32 +1,8 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 
+import { DEFAULT_POS_SPOT_SLUG, posSpotPath } from "@/lib/qrNavigation";
+
+/** `/` → default POS plant page (keeps a real App Router page for Turbopack HMR). */
 export default function Home() {
-  return (
-    <main id="home-page" className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-8">
-      <div className="flex flex-1 flex-col justify-center space-y-6">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">
-          Urban Plant
-        </p>
-        <h1 className="text-4xl font-semibold leading-tight text-emerald-950">
-          QR-powered plant shopping for real spaces
-        </h1>
-        <p className="text-base leading-7 text-slate-600">
-          Scan a plant in a partner location, learn everything you need in
-          seconds, and complete your order in a calm mobile flow.
-        </p>
-      </div>
-
-      <div className="space-y-3 pb-4">
-        <Link
-          href="/pos/caf_lev_hair_9_waiting_area"
-          className="block rounded-2xl bg-emerald-700 px-6 py-4 text-center text-sm font-semibold text-white"
-        >
-          Demo POS Spot
-        </Link>
-        <p className="text-center text-xs text-slate-500">
-          Start with one mock product and expand later.
-        </p>
-      </div>
-    </main>
-  );
+  redirect(posSpotPath(DEFAULT_POS_SPOT_SLUG));
 }

@@ -1,10 +1,12 @@
 import Link from "next/link";
 
+import { DEFAULT_POS_SPOT_SLUG, posSpotPath } from "@/lib/qrNavigation";
+
 export function PlantPageHeader({ knownPartner }: { knownPartner: string }) {
   return (
     <header className="flex items-end justify-between mb-8">
       <Link
-        href="/"
+        href={posSpotPath(DEFAULT_POS_SPOT_SLUG)}
         className="font-serif-display text-xl font-medium tracking-tight text-neutral-900 transition hover:opacity-70"
       >
         UrbanPlant

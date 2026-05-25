@@ -9,14 +9,15 @@ export function PostHogPageView() {
   const searchParams = useSearchParams()
   const posthog = usePostHog()
 
+  const search = searchParams.toString()
+
   useEffect(() => {
     if (pathname && posthog) {
       let url = window.origin + pathname
-      const search = searchParams.toString()
       if (search) url += '?' + search
       posthog.capture('$pageview', { $current_url: url })
     }
-  }, [pathname, searchParams, posthog])
+  }, [pathname, search, posthog])
 
   return null
 }

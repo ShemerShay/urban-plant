@@ -6,6 +6,7 @@ import { readOffers } from "@/lib/offerStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
 import { formatPosSpotDisplayName, isPosSpotPocketValue } from "@/lib/posSpotPocket";
 import { getPosSpotById, PosSpotSlugConflictError, updatePosSpot } from "@/lib/posSpotStorage";
+import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
 
 interface RouteParams {
@@ -16,10 +17,18 @@ function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function mapOffersForResponse() {
-  return readOffers().then((offers) =>
-    offers.map((offer) => {
-      const product = getPlantById(offer.productId);
+function parsePosSpotStatus(value: unknown): PosSpotStatus | null {
+  if (value === "available" || value === "sold" || value === "inactive") {
+    return value;
+  }
+  return null;
+}
+
+async function mapOffersForResponse() {
+  const offers = await readOffers();
+  return Promise.all(
+    offers.map(async (offer) => {
+      const product = await getPlantById(offer.productId);
       return {
         ...offer,
         productName: product?.name ?? offer.productId,
@@ -131,6 +140,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     pocketForUpdate = null;
   }
 
+  const statusRaw = record.status;
+  const hasStatus = "status" in record;
+  const parsedStatus = hasStatus ? parsePosSpotStatus(statusRaw) : null;
+  if (hasStatus && !parsedStatus) {
+    return NextResponse.json(
+      { error: "status must be available, sold, or inactive" },
+      { status: 400 },
+    );
+  }
+
   const hasCheckStatus = typeof record.checkStatus === "boolean";
   const posWeeklyNoteRaw = record.posWeeklyNote;
   const hasPosWeeklyNote = "posWeeklyNote" in record;
@@ -188,6 +207,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         : {}),
       ...(hasOfferPlacedAt
         ? { updateOfferPlacedAt: true as const, offerPlacedAt: offerPlacedAt ?? null }
+        : {}),
+      ...(hasStatus && parsedStatus
+        ? { updateStatus: true as const, status: parsedStatus }
         : {}),
     });
     if (!posSpot) {
