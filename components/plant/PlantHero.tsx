@@ -5,7 +5,7 @@ interface PlantHeroProps {
 
 export function PlantHero({ name, subtitle }: PlantHeroProps) {
   return (
-    <section id="plant-hero" className="space-y-2">
+    <section id="plant-hero" className="w-full space-y-3 text-center">
       <h1 className="font-serif-display text-[2.125rem] font-medium leading-[1.12] tracking-tight text-neutral-900 sm:text-[2.375rem]">
         {name}
       </h1>

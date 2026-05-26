@@ -20,7 +20,7 @@ export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkPr
   const href = buildWhatsAppChatUrl(whatsAppMessage);
 
   return (
-    <div className="mt-10 flex w-full shrink-0 justify-center px-1">
+    <div className="mt-14 flex w-full shrink-0 justify-center px-1">
       <a
         href={href}
         target="_blank"
@@ -28,7 +28,7 @@ export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkPr
         className={contactRowClassName}
       >
         <IconWhatsApp className="size-5 shrink-0 text-[#25D366]" />
-        <span className="min-w-0 break-words">Contact us</span>
+        <span className="min-w-0 break-words">Ask us anything</span>
       </a>
     </div>
   );
