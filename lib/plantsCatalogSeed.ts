@@ -4,9 +4,9 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
   {
     id: "monstera",
     name: "Monstera Deliciosa",
-    subtitle: "Easy indoor plant",
+    subtitle: "Big leaves. Low drama.",
     description:
-      "A calm, sculptural plant that adds fresh character to indoor spaces. Great for creating a soft natural presence at home.",
+      "A sculptural indoor plant with bold leaves and a calm presence. Easy to style, easy to love.",
     supplierPrice: 89,
     currency: "ILS",
     images: [

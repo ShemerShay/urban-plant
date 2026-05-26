@@ -16,6 +16,38 @@ import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
 import { canPurchasePosSpot } from "@/lib/purchaseEligibility";
 import { posSpotCheckoutPath } from "@/lib/qrNavigation";
 
+/** Static marketing copy for the QR plant landing page (not from DB). */
+const TOP_MARKETING_LINE_1 = "Looks good here.";
+const TOP_MARKETING_LINE_2 = "Could look good at yours.";
+const AVAILABILITY_LINE_1 = "This exact plant is available now.";
+const AVAILABILITY_LINE_2 = "It may not be here tomorrow.";
+const CARE_REASSURANCE =
+  "We\u2019ll send simple care instructions after purchase.";
+
+/** Near-black / warm grey — stronger than body, not CTA green. */
+const LANDING_HEADLINE_CLASS = "text-[#2a302c]";
+const LANDING_AVAILABILITY_PRIMARY_CLASS = "text-[#343a36]";
+const LANDING_CARE_CLASS = "text-neutral-400";
+
+function IconMegaphoneMuted({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {/* Explicit coordinates — "19-6" was parsed as y=-6 and clipped the icon */}
+      <path d="M3 11 21 6v12l-18-7v-3z" />
+      <path d="M11.5 14v3.5a2.5 2.5 0 0 0 5 0v-1" />
+    </svg>
+  );
+}
+
 interface PosPageProps {
   params: Promise<{ spotSlug: string }>;
 }
@@ -46,8 +78,8 @@ export default async function PosPage({ params }: PosPageProps) {
     >
       <PlantPageHeader knownPartner={knownPartner?.name ?? ""} />
 
-      <div className="flex flex-1 flex-col gap-10">
-        <div className="relative flex flex-col">
+      <div className="flex flex-1 flex-col items-center text-center">
+        <div className="relative flex w-full flex-col">
           <PlantImageGallery images={plant.images} name={plant.name} />
           <div className="flex items-center gap-2">
             <div className="absolute top-5 left-5">
@@ -56,15 +88,49 @@ export default async function PosPage({ params }: PosPageProps) {
           </div>
         </div>
 
-        <PlantHero name={plant.name} subtitle={plant.subtitle} />
-        <PlantProductInfoGrid
-          light={plant.light}
-          water={plant.water}
-          difficulty={plant.difficulty}
-          labels={plant.labels}
-        />
+        <p
+          className={`mt-10 w-full text-[16px] font-semibold leading-snug tracking-[0.02em] sm:text-[17px] ${LANDING_HEADLINE_CLASS}`}
+        >
+          <span className="block">{TOP_MARKETING_LINE_1}</span>
+          <span className="mt-0.5 block whitespace-nowrap">{TOP_MARKETING_LINE_2}</span>
+        </p>
 
-        <PlantProductAbout description={plant.description} />
+        <div className="mt-10 w-full">
+          <PlantHero name={plant.name} subtitle={plant.subtitle} />
+        </div>
+
+        <div className="mt-12 w-full">
+          <PlantProductInfoGrid
+            light={plant.light}
+            water={plant.water}
+            difficulty={plant.difficulty}
+            labels={plant.labels}
+          />
+        </div>
+
+        <div className="mt-14 w-full">
+          <PlantProductAbout description={plant.description} />
+        </div>
+
+        <div
+          className="mx-auto mt-12 w-full max-w-[20rem] space-y-2 rounded-2xl bg-[#f0efe7] px-5 py-4 sm:max-w-[22rem] sm:px-6 sm:py-[1.125rem]"
+          role="note"
+          aria-label="Availability"
+        >
+          <div
+            className={`flex items-center justify-center gap-2.5 text-[15px] font-semibold leading-snug ${LANDING_AVAILABILITY_PRIMARY_CLASS}`}
+          >
+            <span className="inline-flex size-4 shrink-0 items-center justify-center">
+              <IconMegaphoneMuted className="size-4 text-[#6b756f]" />
+            </span>
+            <p>{AVAILABILITY_LINE_1}</p>
+          </div>
+          <p className="text-[13px] leading-relaxed text-neutral-500">{AVAILABILITY_LINE_2}</p>
+        </div>
+
+        <p className={`mt-10 w-full text-[13px] leading-6 ${LANDING_CARE_CLASS}`}>
+          {CARE_REASSURANCE}
+        </p>
       </div>
 
       <PlantPageContactLink whatsAppMessage={whatsAppMessage} />
