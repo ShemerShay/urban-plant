@@ -13,6 +13,8 @@ interface PlantProductInfoGridProps {
 const PANEL_CLASS =
   "rounded-[28px] bg-[#7a8f7c] p-6 shadow-none outline-none sm:p-8";
 
+const QUADRANT_ICON_SIZE = 36;
+
 function lightDisplay(light: PlantProduct["light"]): string {
   switch (light) {
     case "Low light":
@@ -47,8 +49,8 @@ function IconSun() {
   return (
     <svg
       className="shrink-0 text-white"
-      width="28"
-      height="28"
+      width={QUADRANT_ICON_SIZE}
+      height={QUADRANT_ICON_SIZE}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -67,8 +69,8 @@ function IconWater() {
   return (
     <svg
       className="shrink-0 text-white"
-      width="28"
-      height="28"
+      width={QUADRANT_ICON_SIZE}
+      height={QUADRANT_ICON_SIZE}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -86,8 +88,8 @@ function IconSprout() {
   return (
     <svg
       className="shrink-0 text-white"
-      width="28"
-      height="28"
+      width={QUADRANT_ICON_SIZE}
+      height={QUADRANT_ICON_SIZE}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -107,8 +109,8 @@ function IconRuler() {
   return (
     <svg
       className="shrink-0 text-white"
-      width="28"
-      height="28"
+      width={QUADRANT_ICON_SIZE}
+      height={QUADRANT_ICON_SIZE}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

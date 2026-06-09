@@ -4,7 +4,7 @@ interface PlantProductAboutProps {
 
 export function PlantProductAbout({ description }: PlantProductAboutProps) {
   return (
-    <section id="plant-about" className="w-full space-y-5 text-center">
+    <section id="plant-about" className="w-full space-y-2 text-center">
       <h2 className="font-serif-display text-2xl font-semibold tracking-tight text-neutral-900">
         About
       </h2>

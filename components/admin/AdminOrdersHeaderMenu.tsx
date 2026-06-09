@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { AdminOrdersExportButton } from "@/components/admin/AdminOrdersExportButton";
+import type { SavedOrder } from "@/lib/orderTypes";
+
 function IconMoreVertical({ className }: { className?: string }) {
   return (
     <svg
@@ -20,7 +23,11 @@ function IconMoreVertical({ className }: { className?: string }) {
   );
 }
 
-export function AdminOrdersHeaderMenu() {
+interface AdminOrdersHeaderMenuProps {
+  filteredOrders: SavedOrder[];
+}
+
+export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +84,11 @@ export function AdminOrdersHeaderMenu() {
           >
             Add New Order
           </Link>
+          <AdminOrdersExportButton
+            orders={filteredOrders}
+            menuItem
+            onExport={() => setOpen(false)}
+          />
           <div className="my-1 border-t border-slate-100" />
         </div>
       ) : null}

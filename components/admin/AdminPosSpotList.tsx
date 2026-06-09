@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import QRCode from "react-qr-code";
 
 import type { PartnerLocation } from "@/lib/mockLocations";
@@ -25,6 +26,9 @@ type PosSpotsApiResponse = {
   offers?: OfferRow[];
   locations?: PartnerLocation[];
 };
+
+const partnerSelectClass =
+  "h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
 function clientOriginSnapshot(): string {
   return `${window.location.protocol}//${window.location.host}`;
@@ -301,11 +305,14 @@ function PosSpotCard({
 
 export function AdminPosSpotList() {
   const origin = useClientOrigin();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
   const [offers, setOffers] = useState<OfferRow[]>([]);
   const [locations, setLocations] = useState<PartnerLocation[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const partnerFilter = searchParams.get("partner") ?? "all";
 
   useEffect(() => {
     let cancelled = false;
@@ -341,6 +348,29 @@ export function AdminPosSpotList() {
   const locationById = new Map(locations.map((loc) => [loc.id, loc]));
   const offerById = new Map(offers.map((offer) => [offer.id, offer]));
 
+  const partnerOptions = useMemo(() => {
+    const ids = new Set(posSpots.map((spot) => spot.partnerLocationId));
+    return [...ids]
+      .map((id) => ({
+        value: id,
+        label: locationById.get(id)?.name ?? id,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [posSpots, locations]);
+
+  const filteredSpots =
+    partnerFilter === "all"
+      ? posSpots
+      : posSpots.filter((spot) => spot.partnerLocationId === partnerFilter);
+
+  function setPartnerFilter(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "all") params.delete("partner");
+    else params.set("partner", value);
+    const qs = params.toString();
+    router.push(qs ? `/admin/pos-spots?${qs}` : "/admin/pos-spots");
+  }
+
   if (isLoading) {
     return <p className="text-sm text-slate-600">Loading POS Spots…</p>;
   }
@@ -363,8 +393,36 @@ export function AdminPosSpotList() {
   }
 
   return (
+    <>
+      <section aria-label="Filter POS spots" className="mb-6">
+        <label className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Partner
+          </span>
+          <select
+            className={partnerSelectClass}
+            value={partnerFilter}
+            onChange={(e) => setPartnerFilter(e.target.value)}
+          >
+            <option value="all" className="text-slate-900">
+              All
+            </option>
+            {partnerOptions.map((opt) => (
+              <option key={opt.value} value={opt.value} className="text-slate-900">
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      {filteredSpots.length === 0 ? (
+        <div className="rounded-3xl bg-white p-5 text-sm text-slate-600 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+          <p>No POS Spots match the selected partner.</p>
+        </div>
+      ) : (
     <ul className="space-y-4">
-      {posSpots.map((spot) => (
+      {filteredSpots.map((spot) => (
         <li key={spot.id}>
           <PosSpotCard
             spot={spot}
@@ -375,5 +433,7 @@ export function AdminPosSpotList() {
         </li>
       ))}
     </ul>
+      )}
+    </>
   );
 }
