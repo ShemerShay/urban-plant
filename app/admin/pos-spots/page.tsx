@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { AdminPosSpotList } from "@/components/admin/AdminPosSpotList";
 
@@ -19,7 +20,7 @@ export default function AdminPosSpotsPage() {
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">POS Spots</h1>
         </div>
         <Link
-          href="/"
+          href="/admin"
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
           Home
@@ -31,7 +32,9 @@ export default function AdminPosSpotsPage() {
         <span className="font-mono text-slate-800">/pos/{"{spotSlug}"}</span>.
       </p>
 
-      <AdminPosSpotList />
+      <Suspense fallback={<p className="text-sm text-slate-600">Loading POS Spots…</p>}>
+        <AdminPosSpotList />
+      </Suspense>
 
       <p className="mt-8 text-center text-xs text-slate-500">
         <Link

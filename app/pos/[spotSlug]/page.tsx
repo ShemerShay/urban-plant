@@ -29,7 +29,7 @@ const LANDING_HEADLINE_CLASS = "text-[#2a302c]";
 const LANDING_AVAILABILITY_PRIMARY_CLASS = "text-[#343a36]";
 const LANDING_CARE_CLASS = "text-neutral-400";
 
-function IconMegaphoneMuted({ className }: { className?: string }) {
+function IconMegaphoneUnMuted({ className }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -88,16 +88,16 @@ export default async function PosPage({ params }: PosPageProps) {
           </div>
         </div>
 
+        <div className="mt-10 w-full">
+          <PlantHero name={plant.name} subtitle={plant.subtitle} />
+        </div>
+
         <p
           className={`mt-10 w-full text-[16px] font-semibold leading-snug tracking-[0.02em] sm:text-[17px] ${LANDING_HEADLINE_CLASS}`}
         >
           <span className="block">{TOP_MARKETING_LINE_1}</span>
           <span className="mt-0.5 block whitespace-nowrap">{TOP_MARKETING_LINE_2}</span>
         </p>
-
-        <div className="mt-10 w-full">
-          <PlantHero name={plant.name} subtitle={plant.subtitle} />
-        </div>
 
         <div className="mt-12 w-full">
           <PlantProductInfoGrid
@@ -121,7 +121,7 @@ export default async function PosPage({ params }: PosPageProps) {
             className={`flex items-center justify-center gap-2.5 text-[15px] font-semibold leading-snug ${LANDING_AVAILABILITY_PRIMARY_CLASS}`}
           >
             <span className="inline-flex size-4 shrink-0 items-center justify-center">
-              <IconMegaphoneMuted className="size-4 text-[#6b756f]" />
+              <IconMegaphoneUnMuted className="size-4 text-[#6b756f]" />
             </span>
             <p>{AVAILABILITY_LINE_1}</p>
           </div>

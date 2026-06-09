@@ -172,6 +172,18 @@ export function CheckoutForm({
 
       <fieldset className="space-y-2">
         <div className="grid grid-cols-2 gap-2">
+        <button
+            type="button"
+            aria-pressed={fulfillmentMethod === "delivery"}
+            onClick={() => handleFulfillmentChange("delivery")}
+            className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+              fulfillmentMethod === "delivery"
+                ? "border-emerald-700 bg-emerald-50 text-emerald-900"
+                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+            }`}
+          >
+            Delivery
+          </button>
           <button
             type="button"
             aria-pressed={fulfillmentMethod === "pickup"}
@@ -183,18 +195,6 @@ export function CheckoutForm({
             }`}
           >
             Pickup
-          </button>
-          <button
-            type="button"
-            aria-pressed={fulfillmentMethod === "delivery"}
-            onClick={() => handleFulfillmentChange("delivery")}
-            className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
-              fulfillmentMethod === "delivery"
-                ? "border-emerald-700 bg-emerald-50 text-emerald-900"
-                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-            }`}
-          >
-            Delivery
           </button>
         </div>
       </fieldset>

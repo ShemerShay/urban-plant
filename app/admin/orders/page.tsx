@@ -7,8 +7,14 @@ import { AdminOrderCard } from "@/components/admin/AdminOrderCard";
 import { AdminOrdersHeaderMenu } from "@/components/admin/AdminOrdersHeaderMenu";
 import type { FilterOption } from "@/components/admin/AdminOrdersFilters";
 import { AdminOrdersFilters } from "@/components/admin/AdminOrdersFilters";
+import {
+  filterOrders,
+  parseDateParam,
+  parseLocation,
+  parsePlant,
+  parseStatuses,
+} from "@/lib/adminOrdersFilterUtils";
 import { readOrders } from "@/lib/ordersStorage";
-import type { OrderStatus } from "@/lib/status";
 
 function firstParam(v: string | string[] | undefined): string | undefined {
   if (typeof v === "string") return v;
@@ -16,47 +22,32 @@ function firstParam(v: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
-function parseStatus(raw: string | undefined): OrderStatus | "all" {
-  if (raw === "sold" || raw === "picked_up" || raw === "delivered" || raw === "cancelled") return raw;
-  return "all";
-}
-
-function parseLocation(raw: string | undefined): string | "all" | "__none__" {
-  if (raw === "__none__") return "__none__";
-  if (raw && raw !== "all") return raw;
-  return "all";
-}
-
-function parsePlant(raw: string | undefined): string | "all" {
-  if (raw && raw !== "all") return raw;
-  return "all";
-}
-
 interface AdminOrdersPageProps {
   searchParams: Promise<{
     status?: string | string[];
     location?: string | string[];
     plant?: string | string[];
+    dateFrom?: string | string[];
+    dateTo?: string | string[];
   }>;
 }
 
 export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageProps) {
   const sp = await searchParams;
-  const statusFilter = parseStatus(firstParam(sp.status));
+  const statusFilters = parseStatuses(sp.status);
   const locationFilter = parseLocation(firstParam(sp.location));
   const plantFilter = parsePlant(firstParam(sp.plant));
+  const dateFrom = parseDateParam(firstParam(sp.dateFrom));
+  const dateTo = parseDateParam(firstParam(sp.dateTo));
 
   const allOrders = await readOrders();
 
-  const orders = allOrders.filter((o) => {
-    if (statusFilter !== "all" && o.orderStatus !== statusFilter) return false;
-    if (plantFilter !== "all" && (o.snapshot?.productId ?? o.plantId) !== plantFilter) return false;
-    if (locationFilter !== "all") {
-      const locationId = o.snapshot?.partnerLocationId ?? o.locationId;
-      if (locationFilter === "__none__" && locationId !== null) return false;
-      if (locationFilter !== "__none__" && locationId !== locationFilter) return false;
-    }
-    return true;
+  const orders = filterOrders(allOrders, {
+    statuses: statusFilters,
+    location: locationFilter,
+    plant: plantFilter,
+    dateFrom,
+    dateTo,
   });
 
   const hasNoLocationOrder = allOrders.some((o) => (o.snapshot?.partnerLocationId ?? o.locationId) === null);
@@ -94,13 +85,15 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
     >
       <div className="mb-6 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-emerald-950">Orders</h1>
-        <AdminOrdersHeaderMenu />
+        <AdminOrdersHeaderMenu filteredOrders={orders} />
       </div>
 
       <AdminOrdersFilters
-        currentStatus={statusFilter}
+        currentStatuses={statusFilters}
         currentLocation={locationFilter}
         currentPlant={plantFilter}
+        currentDateFrom={dateFrom}
+        currentDateTo={dateTo}
         locationOptions={locationOptions}
         plantOptions={plantOptions}
       />
