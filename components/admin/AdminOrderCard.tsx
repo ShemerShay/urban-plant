@@ -12,6 +12,7 @@ import { AdminOrderStatusSelect } from "@/components/admin/AdminOrderStatusSelec
 import { formatPrice, getPlantById } from "@/lib/mockPlants";
 import { formatOrderDeliveryAddressDisplay } from "@/lib/deliveryAddress";
 import type { SavedOrder } from "@/lib/orderTypes";
+import { routes } from "@/lib/routes";
 import type { OrderStatus } from "@/lib/status";
 import { ORDER_STATUS_LABELS } from "@/lib/status";
 
@@ -180,7 +181,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
     }
     setBusy("cancel");
     try {
-      const res = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}`, {
+      const res = await fetch(routes.api.order(order.orderId), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cancellationReason: trimmedReason }),
@@ -200,7 +201,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
     if (next === order.orderStatus) return;
     setBusy("patch");
     try {
-      const res = await fetch(`/api/orders/${encodeURIComponent(order.orderId)}`, {
+      const res = await fetch(routes.api.order(order.orderId), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderStatus: next }),

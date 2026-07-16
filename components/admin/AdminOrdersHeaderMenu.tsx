@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { AdminOrdersExportButton } from "@/components/admin/AdminOrdersExportButton";
 import type { SavedOrder } from "@/lib/orderTypes";
+import { routes } from "@/lib/routes";
 
 function IconMoreVertical({ className }: { className?: string }) {
   return (
@@ -69,7 +70,7 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
           aria-orientation="vertical"
         >
           <Link
-            href="/admin"
+            href={routes.admin.index()}
             role="menuitem"
             className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}
@@ -77,7 +78,7 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
             Admin routes
           </Link>
           <Link
-            href="/admin/orders/new"
+            href={routes.admin.ordersNew()}
             role="menuitem"
             className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}

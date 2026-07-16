@@ -13,7 +13,12 @@ import {
 } from "@/lib/posSpotPocket";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
-import { posSpotPath } from "@/lib/qrNavigation";
+import {
+  absoluteAppUrl,
+  getClientOrigin,
+  posSpotPath,
+  routes,
+} from "@/lib/routes";
 
 type OfferRow = {
   id: string;
@@ -31,16 +36,12 @@ type EditLoadResponse = {
   error?: string;
 };
 
-function clientOriginSnapshot(): string {
-  return `${window.location.protocol}//${window.location.host}`;
-}
-
 function subscribeToNothing(): () => void {
   return () => {};
 }
 
 function useClientOrigin(): string {
-  return useSyncExternalStore(subscribeToNothing, clientOriginSnapshot, () => "");
+  return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
 }
 
 function isoToDatetimeLocalValue(iso: string | undefined): string {
@@ -107,7 +108,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`/api/pos-spots/${encodeURIComponent(posSpotId)}`, {
+      const res = await fetch(routes.api.posSpot(posSpotId), {
         cache: "no-store",
         signal,
       });
@@ -189,7 +190,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   }, [offers, currentOfferId]);
 
   const relativePath = useMemo(() => (spotSlug ? posSpotPath(spotSlug) : ""), [spotSlug]);
-  const fullUrlPreview = origin && relativePath ? `${origin}${relativePath}` : "";
+  const fullUrlPreview = origin && relativePath ? absoluteAppUrl(origin, relativePath) : "";
   const pocketLabel = pocket
     ? pocketDisplayLabel(pocket, pocketOther)
     : initialSpot?.pocket
@@ -218,7 +219,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
     setIsSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/pos-spots/${encodeURIComponent(posSpotId)}`, {
+      const res = await fetch(routes.api.posSpot(posSpotId), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -250,7 +251,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
         setSaveError(data.error ?? "Could not save changes");
         return;
       }
-      router.push("/admin/pos-spots");
+      router.push(routes.admin.posSpots());
     } catch {
       setSaveError("Network error. Try again.");
     } finally {
@@ -259,7 +260,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   }
 
   function handleCancel() {
-    router.push("/admin/pos-spots");
+    router.push(routes.admin.posSpots());
   }
 
   if (isLoading) {
@@ -271,7 +272,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
       <div className="space-y-4">
         <p className="text-sm text-red-700">{loadError ?? "POS Spot not found"}</p>
         <Link
-          href="/admin/pos-spots"
+          href={routes.admin.posSpots()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
           Back to POS Spots
@@ -294,7 +295,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
           </p>
         </div>
         <Link
-          href="/admin/pos-spots"
+          href={routes.admin.posSpots()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
           Back to POS Spots

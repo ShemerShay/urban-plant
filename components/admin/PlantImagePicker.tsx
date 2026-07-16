@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { routes } from "@/lib/routes";
+
 type LibraryImage = {
   url: string;
   filename: string;
@@ -49,7 +51,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
         for (const file of list) {
           const body = new FormData();
           body.append("file", file);
-          const res = await fetch("/api/plant-images", { method: "POST", body });
+          const res = await fetch(routes.api.plantImages(), { method: "POST", body });
           const data = (await res.json().catch(() => ({}))) as {
             image?: LibraryImage;
             error?: string;
@@ -77,7 +79,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
     setLibraryLoading(true);
     setLibraryError(null);
     try {
-      const res = await fetch("/api/plant-images", { cache: "no-store" });
+      const res = await fetch(routes.api.plantImages(), { cache: "no-store" });
       const data = (await res.json().catch(() => ({}))) as {
         images?: LibraryImage[];
         error?: string;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminQrGenerator } from "@/components/admin/AdminQrGenerator";
+import { routes } from "@/lib/routes";
 
 /**
  * Internal POS Spot QR tooling for pilot labeling. Replace with authenticated tooling + CMS before production.
@@ -19,10 +20,10 @@ export default function AdminQrPage() {
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">Create POS Spot</h1>
         </div>
         <Link
-          href="/"
+          href={routes.admin.index()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          Home
+          Admin
         </Link>
       </div>
 

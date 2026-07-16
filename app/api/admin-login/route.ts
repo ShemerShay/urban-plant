@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { ADMIN_COOKIE, ADMIN_COOKIE_VALUE } from "@/lib/adminAuth";
+
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() ?? "";
-const COOKIE_NAME = "admin_auth";
-const COOKIE_VALUE = "1";
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
 
 export async function POST(request: Request) {
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   }
 
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(COOKIE_NAME, COOKIE_VALUE, {
+  response.cookies.set(ADMIN_COOKIE, ADMIN_COOKIE_VALUE, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",

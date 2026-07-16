@@ -428,8 +428,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const createdAt = new Date().toISOString();
   const partner = await getLocationById(posSpot.partnerLocationId);
+  if (fulfillmentMethod === "pickup" && partner?.pickupDisabled) {
+    return NextResponse.json(
+      { error: "Pickup is not available at this location." },
+      { status: 400 },
+    );
+  }
+
+  const createdAt = new Date().toISOString();
   const order = await completedOrder({
     orderId,
     plant: catalogPlant,

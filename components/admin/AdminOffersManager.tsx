@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatPrice } from "@/lib/mockPlants";
 import type { OfferStatus, OfferWithProduct } from "@/lib/offerTypes";
+import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
 
 type OffersApiResponse = {
@@ -389,7 +390,7 @@ function AdminOfferCard({
     setIsSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/offers/${encodeURIComponent(offer.id)}`, {
+      const res = await fetch(routes.api.offer(offer.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(draftToPayload(draft)),
@@ -516,8 +517,8 @@ export function AdminOffersManager() {
     setLoadError(null);
     try {
       const [offersRes, plantsRes] = await Promise.all([
-        fetch("/api/offers", { cache: "no-store", signal }),
-        fetch("/api/plants", { cache: "no-store", signal }),
+        fetch(routes.api.offers(), { cache: "no-store", signal }),
+        fetch(routes.api.plants(), { cache: "no-store", signal }),
       ]);
       const offersData = (await offersRes.json().catch(() => ({}))) as OffersApiResponse;
       const plantsData = (await plantsRes.json().catch(() => ({}))) as PlantsApiResponse;
@@ -564,7 +565,7 @@ export function AdminOffersManager() {
     if (payload.supplierName === null) delete payload.supplierName;
 
     try {
-      const res = await fetch("/api/offers", {
+      const res = await fetch(routes.api.offers(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -595,7 +596,7 @@ export function AdminOffersManager() {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href="/admin"
+            href={routes.admin.index()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
             Admin

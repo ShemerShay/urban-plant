@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
 import { formatPrice } from "@/lib/mockPlants";
 import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
+import { getLocationById } from "@/lib/mockLocations";
 import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
-import { posSpotPath } from "@/lib/qrNavigation";
+import { posSpotPath } from "@/lib/routes";
 
 interface PosCheckoutPageProps {
   params: Promise<{ spotSlug: string }>;
@@ -23,8 +25,12 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
   const plant = await getPlantById(offer.productId);
   if (!plant) notFound();
 
+  const partner = await getLocationById(posSpot.partnerLocationId);
+  const pickupDisabled = Boolean(partner?.pickupDisabled);
+
   return (
     <main id="checkout-page" className="mx-auto min-h-screen w-full max-w-md px-4 py-6">
+      <RememberCustomerPath />
       <div className="space-y-6">
         <Link href={posSpotPath(posSpot.spotSlug)} className="inline-block text-sm text-emerald-700">
           Back to plant
@@ -44,6 +50,7 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
             plantName={plant.name}
             priceDisplay={formatPrice(offer.consumerPrice, plant.currency)}
             spotSlug={posSpot.spotSlug}
+            pickupDisabled={pickupDisabled}
           />
         </section>
       </div>

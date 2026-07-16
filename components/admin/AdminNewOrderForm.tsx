@@ -23,6 +23,7 @@ import {
   type CheckoutFieldKey,
   type CheckoutFormValues,
 } from "@/lib/checkoutValidation";
+import { routes } from "@/lib/routes";
 
 const baseInputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
@@ -109,7 +110,7 @@ export function AdminNewOrderForm() {
     setSubmitError(null);
 
     try {
-      const res = await fetch("/api/orders", {
+      const res = await fetch(routes.api.orders(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,7 +131,7 @@ export function AdminNewOrderForm() {
         return;
       }
 
-      router.push("/admin/orders");
+      router.push(routes.admin.orders());
       router.refresh();
     } catch {
       setSubmitError("Network error. Try again.");

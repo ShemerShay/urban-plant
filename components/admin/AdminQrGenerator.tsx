@@ -8,7 +8,7 @@ import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
 import { POS_SPOT_POCKETS, type PosSpotPocketValue } from "@/lib/posSpotPocket";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
-import { posSpotPath } from "@/lib/qrNavigation";
+import { absoluteAppUrl, getClientOrigin, posSpotPath, routes } from "@/lib/routes";
 
 type OfferOption = {
   id: string;
@@ -21,16 +21,12 @@ type OfferOption = {
 
 type PosSpotStatus = "available" | "sold" | "inactive";
 
-function clientOriginSnapshot(): string {
-  return `${window.location.protocol}//${window.location.host}`;
-}
-
 function subscribeToNothing(): () => void {
   return () => {};
 }
 
 function useClientOrigin(): string {
-  return useSyncExternalStore(subscribeToNothing, clientOriginSnapshot, () => "");
+  return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
 }
 
 export function AdminQrGenerator() {
@@ -54,7 +50,7 @@ export function AdminQrGenerator() {
   useEffect(() => {
     let cancelled = false;
     async function loadOptions() {
-      const res = await fetch("/api/pos-spots", { cache: "no-store" });
+      const res = await fetch(routes.api.posSpots(), { cache: "no-store" });
       if (!res.ok) return;
       const data = (await res.json()) as {
         offers?: OfferOption[];
@@ -87,7 +83,7 @@ export function AdminQrGenerator() {
   }, [location?.name, posNumber, pocket, pocketOther]);
 
   const relativePath = useMemo(() => (spotSlug ? posSpotPath(spotSlug) : ""), [spotSlug]);
-  const fullUrl = origin && relativePath ? `${origin}${relativePath}` : "";
+  const fullUrl = origin && relativePath ? absoluteAppUrl(origin, relativePath) : "";
 
   const offer = offers.find((item) => item.id === currentOfferId);
   const pocketLabel =
@@ -160,7 +156,7 @@ export function AdminQrGenerator() {
     setIsSaving(true);
     setSaveHint(null);
     try {
-      const res = await fetch("/api/pos-spots", {
+      const res = await fetch(routes.api.posSpots(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -428,7 +424,7 @@ export function AdminQrGenerator() {
       </div>
 
       <p className="text-center text-xs text-slate-500">
-        <Link href="/admin/orders" className="font-medium text-emerald-700 underline underline-offset-2">
+        <Link href={routes.admin.orders()} className="font-medium text-emerald-700 underline underline-offset-2">
           Back to orders
         </Link>
       </p>
