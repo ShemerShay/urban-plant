@@ -23,6 +23,10 @@ function parsePayments(value: unknown): PartnerLocation["payments"] {
   return parsePartnerPayments(value);
 }
 
+function parsePickupDisabled(value: unknown): boolean {
+  return value === true;
+}
+
 export function parsePartnerBody(
   body: Record<string, unknown>,
   options: { requireId: boolean; existingId?: string },
@@ -55,6 +59,7 @@ export function parsePartnerBody(
   if (!type) return { ok: false, error: "type is required" };
 
   const payments = parsePayments(body.payments);
+  const pickupDisabled = parsePickupDisabled(body.pickupDisabled);
 
   const partner: PartnerLocation = {
     id: resolvedId,
@@ -63,6 +68,7 @@ export function parsePartnerBody(
     type,
     partnerType: type,
     payments,
+    pickupDisabled,
   };
 
   return { ok: true, partner };

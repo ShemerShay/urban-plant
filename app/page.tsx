@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { DEFAULT_POS_SPOT_SLUG, posSpotPath } from "@/lib/qrNavigation";
+import { routes } from "@/lib/routes";
 
-/** `/` → default POS plant page (keeps a real App Router page for Turbopack HMR). */
+/** `/` → admin (middleware sends unauthenticated users to login). */
 export default function Home() {
-  redirect(posSpotPath(DEFAULT_POS_SPOT_SLUG));
+  redirect(routes.admin.index());
 }

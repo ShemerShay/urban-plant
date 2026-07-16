@@ -1,11 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export function GET(request: Request) {
-  const loginUrl = new URL("/admin-login", request.url);
+import { ADMIN_COOKIE } from "@/lib/adminAuth";
+import { getRequestOrigin, routes } from "@/lib/routes";
+
+export async function GET(request: NextRequest) {
+  const loginUrl = new URL(routes.admin.login(), getRequestOrigin(request.url));
   const response = NextResponse.redirect(loginUrl);
-  response.cookies.set("admin_auth", "", {
+  response.cookies.set(ADMIN_COOKIE, "", {
     httpOnly: true,
-    sameSite: "lax",
     path: "/",
     maxAge: 0,
   });

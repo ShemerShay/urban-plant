@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { FixedBottomCTA } from "@/components/plant/FixedBottomCTA";
 import { PlantPageContactLink } from "@/components/plant/PlantPageContactLink";
 import { PlantHero } from "@/components/plant/PlantHero";
@@ -14,7 +15,7 @@ import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
 import { canPurchasePosSpot } from "@/lib/purchaseEligibility";
-import { posSpotCheckoutPath } from "@/lib/qrNavigation";
+import { posSpotCheckoutPath } from "@/lib/routes";
 
 /** Static marketing copy for the QR plant landing page (not from DB). */
 const TOP_MARKETING_LINE_1 = "Looks good here.";
@@ -76,6 +77,7 @@ export default async function PosPage({ params }: PosPageProps) {
       id="plant-page"
       className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-10"
     >
+      <RememberCustomerPath />
       <PlantPageHeader knownPartner={knownPartner?.name ?? ""} />
 
       <div className="flex flex-1 flex-col items-center text-center">

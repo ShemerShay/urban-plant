@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { AdminPosSpotList } from "@/components/admin/AdminPosSpotList";
+import { routes } from "@/lib/routes";
 
 /**
  * Admin index of all POS Spots with live QR codes for copy, open, and download.
@@ -20,10 +21,10 @@ export default function AdminPosSpotsPage() {
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">POS Spots</h1>
         </div>
         <Link
-          href="/admin"
+          href={routes.admin.index()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          Home
+          Admin
         </Link>
       </div>
 
@@ -38,14 +39,14 @@ export default function AdminPosSpotsPage() {
 
       <p className="mt-8 text-center text-xs text-slate-500">
         <Link
-          href="/admin/qr"
+          href={routes.admin.qr()}
           className="font-medium text-emerald-700 underline underline-offset-2"
         >
           Create POS Spot
         </Link>
         {" · "}
         <Link
-          href="/admin/orders"
+          href={routes.admin.orders()}
           className="font-medium text-emerald-700 underline underline-offset-2"
         >
           Back to orders

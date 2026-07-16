@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { routes } from "@/lib/routes";
+
+/** Public URL prefix for the plant image library (filesystem folder name matches). */
 export const PLANT_LIBRARY_PUBLIC_PREFIX = "/plant-library";
 
 const LIBRARY_DIR = path.join(process.cwd(), "public", "plant-library");
@@ -82,7 +85,7 @@ export async function listPlantLibraryImages(): Promise<PlantLibraryImage[]> {
     const info = await stat(filePath);
     if (!info.isFile()) continue;
     images.push({
-      url: `${PLANT_LIBRARY_PUBLIC_PREFIX}/${filename}`,
+      url: routes.plantLibrary(filename),
       filename,
       uploadedAt: info.mtime.toISOString(),
     });
@@ -125,7 +128,7 @@ export async function savePlantLibraryImage(
   await writeFile(filePath, buffer);
 
   return {
-    url: `${PLANT_LIBRARY_PUBLIC_PREFIX}/${filename}`,
+    url: routes.plantLibrary(filename),
     filename,
     uploadedAt: new Date().toISOString(),
   };

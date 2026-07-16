@@ -6,6 +6,7 @@
 import Link from "next/link";
 
 import { AdminNewOrderForm } from "@/components/admin/AdminNewOrderForm";
+import { routes } from "@/lib/routes";
 
 export default function AdminNewOrderPage() {
   return (
@@ -16,7 +17,7 @@ export default function AdminNewOrderPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-emerald-950">New order</h1>
         <Link
-          href="/admin/orders"
+          href={routes.admin.orders()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
           Back to orders

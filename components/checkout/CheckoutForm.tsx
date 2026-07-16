@@ -16,6 +16,7 @@ import {
   type CheckoutFieldKey,
   type CheckoutFulfillmentMethod,
 } from "@/lib/checkoutValidation";
+import { routes } from "@/lib/routes";
 type FormFields = {
   fullName: string;
   email: string;
@@ -31,6 +32,8 @@ interface CheckoutFormProps {
   priceDisplay: string;
   /** POS Spot slug from `/checkout/pos/{spotSlug}`. */
   spotSlug: string;
+  /** When true, pickup is hidden and only delivery is available. */
+  pickupDisabled?: boolean;
 }
 
 export function CheckoutForm({
@@ -38,6 +41,7 @@ export function CheckoutForm({
   plantName,
   priceDisplay: _priceDisplay,
   spotSlug,
+  pickupDisabled = false,
 }: CheckoutFormProps) {
   const router = useRouter();
   const [fulfillmentMethod, setFulfillmentMethod] =
@@ -72,6 +76,9 @@ export function CheckoutForm({
   }
 
   function handleFulfillmentChange(next: FulfillmentMethod) {
+    if (pickupDisabled && next === "pickup") {
+      return;
+    }
     setFulfillmentMethod(next);
     if (next === "pickup") {
       setTouched((prev) => {
@@ -109,7 +116,7 @@ export function CheckoutForm({
     const orderId = crypto.randomUUID();
 
     try {
-      const response = await fetch("/api/orders", {
+      const response = await fetch(routes.api.orders(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -139,14 +146,15 @@ export function CheckoutForm({
         return;
       }
 
-      const successParams = new URLSearchParams({
-        orderId,
-        plantId,
-        plantName,
-        spotSlug,
-        fulfillmentMethod,
-      });
-      router.replace(`/success?${successParams.toString()}`);
+      router.replace(
+        routes.customer.success({
+          orderId,
+          plantId,
+          plantName,
+          spotSlug,
+          fulfillmentMethod,
+        }),
+      );
 
       // TODO(payment): move completed order creation to provider confirmation/webhook.
     } catch {
@@ -171,8 +179,8 @@ export function CheckoutForm({
       </h2>
 
       <fieldset className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-        <button
+        <div className={pickupDisabled ? "" : "grid grid-cols-2 gap-2"}>
+          <button
             type="button"
             aria-pressed={fulfillmentMethod === "delivery"}
             onClick={() => handleFulfillmentChange("delivery")}
@@ -184,18 +192,20 @@ export function CheckoutForm({
           >
             Delivery
           </button>
-          <button
-            type="button"
-            aria-pressed={fulfillmentMethod === "pickup"}
-            onClick={() => handleFulfillmentChange("pickup")}
-            className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
-              fulfillmentMethod === "pickup"
-                ? "border-emerald-700 bg-emerald-50 text-emerald-900"
-                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-            }`}
-          >
-            Pickup
-          </button>
+          {!pickupDisabled ? (
+            <button
+              type="button"
+              aria-pressed={fulfillmentMethod === "pickup"}
+              onClick={() => handleFulfillmentChange("pickup")}
+              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                fulfillmentMethod === "pickup"
+                  ? "border-emerald-700 bg-emerald-50 text-emerald-900"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              Pickup
+            </button>
+          ) : null}
         </div>
       </fieldset>
 

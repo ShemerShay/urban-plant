@@ -1,9 +1,10 @@
 import Image from "next/image";
-import Link from "next/link";
 
+import { CustomerRecoveryActions } from "@/components/customer/CustomerRecoveryActions";
+import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOrders } from "@/lib/ordersStorage";
-import { posSpotPath } from "@/lib/qrNavigation";
+import { posSpotPath } from "@/lib/routes";
 
 interface SuccessPageProps {
   searchParams: Promise<{
@@ -61,19 +62,17 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
     readPlantName(sp.plantName) ||
     "your plant";
   const spotSlug = readSpotSlug(sp.spotSlug) || order?.snapshot?.spotSlug?.trim() || "";
-  const returnToPlantHref = spotSlug ? posSpotPath(spotSlug) : "/";
+  const returnToPlantHref = spotSlug ? posSpotPath(spotSlug) : null;
   const plantImage = plant?.images[0] ?? order?.snapshot?.productImage;
 
   return (
     <main id="success-page" className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-10">
+      <RememberCustomerPath />
       <div className="flex-1 space-y-6">
         <section className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <Link
-            href={returnToPlantHref}
-            className="font-serif-display text-xl font-medium tracking-tight text-neutral-900 transition hover:opacity-70"
-          >
+          <p className="font-serif-display text-xl font-medium tracking-tight text-neutral-900">
             UrbanPlant
-          </Link>
+          </p>
           <h1 className="mt-3 text-3xl font-semibold text-emerald-950">
             Thank you for your order
           </h1>
@@ -107,15 +106,13 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
             1x {plantName} {isPickup ? "pickup" : "delivery"}
           </p>
         </section>
-
       </div>
 
-      <Link
-        href={returnToPlantHref}
-        className="mt-8 block rounded-2xl bg-emerald-700 px-5 py-4 text-center text-sm font-semibold text-white"
-      >
-        Return to plant
-      </Link>
+      <CustomerRecoveryActions
+        preferredReturnHref={returnToPlantHref}
+        returnLabel="Return to plant"
+        whatsAppMessage={`Hi Urban Plant — I have a question about my order for “${plantName}”.`}
+      />
     </main>
   );
 }

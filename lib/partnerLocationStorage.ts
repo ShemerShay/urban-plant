@@ -10,6 +10,8 @@ export interface PartnerLocation {
   /** @deprecated Use `type`; mirrored for callers not yet migrated off `partnerType`. */
   partnerType: string;
   payments: PartnerPaymentRecord[];
+  /** When true, checkout for this partner's POS spots hides pickup. */
+  pickupDisabled: boolean;
   createdAt?: string;
 }
 
@@ -19,6 +21,7 @@ type PartnerLocationRow = {
   address: string;
   type: string;
   payments: unknown;
+  pickup_disabled: boolean;
   created_at: string | Date;
 };
 
@@ -31,13 +34,14 @@ function mapPartnerLocationRow(row: PartnerLocationRow): PartnerLocation {
     type: row.type,
     partnerType: row.type,
     payments: parsePartnerPayments(row.payments),
+    pickupDisabled: Boolean(row.pickup_disabled),
     ...(createdAt ? { createdAt } : {}),
   };
 }
 
 export async function readPartnerLocations(): Promise<PartnerLocation[]> {
   const rows = await sql`
-    SELECT id, name, address, type, payments, created_at
+    SELECT id, name, address, type, payments, pickup_disabled, created_at
     FROM partner_locations
     ORDER BY name ASC
   `;
@@ -50,7 +54,7 @@ export async function getPartnerLocationById(
   const trimmed = id.trim();
   if (!trimmed) return undefined;
   const rows = await sql`
-    SELECT id, name, address, type, payments, created_at
+    SELECT id, name, address, type, payments, pickup_disabled, created_at
     FROM partner_locations
     WHERE id = ${trimmed}
     LIMIT 1
@@ -71,7 +75,7 @@ export async function updatePartnerLocationAddress(
     UPDATE partner_locations
     SET address = ${trimmedAddress}
     WHERE id = ${trimmedId}
-    RETURNING id, name, address, type, payments, created_at
+    RETURNING id, name, address, type, payments, pickup_disabled, created_at
   `;
   const row = (rows as PartnerLocationRow[])[0];
   return row ? mapPartnerLocationRow(row) : null;
@@ -88,16 +92,17 @@ export async function createPartnerLocation(
   const paymentsJson = JSON.stringify(partner.payments);
 
   const rows = await sql`
-    INSERT INTO partner_locations (id, name, address, type, payments, created_at)
+    INSERT INTO partner_locations (id, name, address, type, payments, pickup_disabled, created_at)
     VALUES (
       ${partner.id},
       ${partner.name},
       ${partner.address},
       ${partner.type},
       ${paymentsJson}::jsonb,
+      ${partner.pickupDisabled},
       ${partner.createdAt ?? new Date().toISOString()}::timestamptz
     )
-    RETURNING id, name, address, type, payments, created_at
+    RETURNING id, name, address, type, payments, pickup_disabled, created_at
   `;
   const row = (rows as PartnerLocationRow[])[0];
   if (!row) {
@@ -121,9 +126,10 @@ export async function updatePartnerLocation(
       name = ${partner.name},
       address = ${partner.address},
       type = ${partner.type},
-      payments = ${paymentsJson}::jsonb
+      payments = ${paymentsJson}::jsonb,
+      pickup_disabled = ${partner.pickupDisabled}
     WHERE id = ${trimmedId}
-    RETURNING id, name, address, type, payments, created_at
+    RETURNING id, name, address, type, payments, pickup_disabled, created_at
   `;
   const row = (rows as PartnerLocationRow[])[0];
   return row ? mapPartnerLocationRow(row) : null;

@@ -18,6 +18,7 @@
     "db:migrate:plants": "node scripts/migrate-plants-from-json.mjs",
     "db:migrate:plants-drop-base-supplier-price": "node scripts/apply-sql-file.mjs db/migrations/009_plants_drop_base_supplier_price.sql",
     "db:migrate:plant-images": "node scripts/apply-sql-file.mjs db/migrations/010_plant_library_images.sql",
+    "db:migrate:partner-pickup-disabled": "node scripts/apply-sql-file.mjs db/migrations/013_partner_locations_pickup_disabled.sql",
     "db:seed": "node scripts/seed-from-json.mjs",
     "generate:tel-aviv-streets": "node scripts/generate-tel-aviv-streets.mjs",
     "db:verify-storage": "npx tsx scripts/verify-db-storage.ts",

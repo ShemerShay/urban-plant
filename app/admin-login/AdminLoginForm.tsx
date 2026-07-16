@@ -3,13 +3,24 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { isAdminPath, routes } from "@/lib/routes";
+
 const inputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+
+function safeAdminRedirect(from: string | null): string {
+  if (!from) return routes.admin.index();
+  const path = from.split("?")[0] ?? "";
+  if (!isAdminPath(path) || path === routes.admin.login()) {
+    return routes.admin.index();
+  }
+  return from.startsWith("/") ? from : routes.admin.index();
+}
 
 export function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") ?? "/admin/orders";
+  const from = safeAdminRedirect(searchParams.get("from"));
 
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +32,7 @@ export function AdminLoginForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/admin-login", {
+      const res = await fetch(routes.api.adminLogin(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),

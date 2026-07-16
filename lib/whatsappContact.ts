@@ -1,10 +1,14 @@
 /**
  * Business WhatsApp for customer contact (wa.me expects digits only, country code, no +).
  * Set NEXT_PUBLIC_WHATSAPP_PHONE to override (e.g. 972546605603 or 0546605603).
+ * Optional NEXT_PUBLIC_WHATSAPP_CHAT_BASE overrides the chat URL base (default https://wa.me).
  */
 
 /** Default Urban Plant line (054-660-5603) when env is unset. */
 const DEFAULT_WHATSAPP_DIGITS = "972546605603";
+
+/** Official WhatsApp click-to-chat host — override only via env if ever required. */
+const DEFAULT_WHATSAPP_CHAT_BASE = "https://wa.me";
 
 const IL_PREFIX = "972";
 
@@ -33,9 +37,15 @@ export function getWhatsAppBusinessDigits(): string {
   return DEFAULT_WHATSAPP_DIGITS;
 }
 
+export function getWhatsAppChatBase(): string {
+  const fromEnv = (process.env.NEXT_PUBLIC_WHATSAPP_CHAT_BASE ?? "").trim().replace(/\/+$/, "");
+  return fromEnv || DEFAULT_WHATSAPP_CHAT_BASE;
+}
+
 export function buildWhatsAppChatUrl(message?: string): string {
   const phone = getWhatsAppBusinessDigits();
   if (!phone) return "";
-  if (!message?.trim()) return `https://wa.me/${phone}`;
-  return `https://wa.me/${phone}?text=${encodeURIComponent(message.trim())}`;
+  const base = `${getWhatsAppChatBase()}/${phone}`;
+  if (!message?.trim()) return base;
+  return `${base}?text=${encodeURIComponent(message.trim())}`;
 }

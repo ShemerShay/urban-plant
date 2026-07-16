@@ -1,4 +1,5 @@
 import type { SavedOrder } from "@/lib/orderTypes";
+import { routes } from "@/lib/routes";
 import { isOrderStatus, type OrderStatus } from "@/lib/status";
 import { toIsoDateString } from "@/lib/storageUtils";
 
@@ -69,5 +70,5 @@ export function ordersQueryUrl(filters: OrdersFilterState): string {
   if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) params.set("dateTo", filters.dateTo);
   const qs = params.toString();
-  return qs ? `/admin/orders?${qs}` : "/admin/orders";
+  return routes.admin.ordersWithQuery(qs);
 }

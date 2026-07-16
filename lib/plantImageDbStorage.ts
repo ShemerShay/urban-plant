@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import type { PlantLibraryImage } from "@/lib/plantImageStorage";
+import { routes } from "@/lib/routes";
 
 type PlantLibraryRow = {
   filename: string;
@@ -28,7 +29,7 @@ export async function listPlantLibraryImagesFromDb(): Promise<PlantLibraryImage[
   `) as Pick<PlantLibraryRow, "filename" | "uploaded_at">[];
 
   return rows.map((row) => ({
-    url: `/plant-library/${row.filename}`,
+    url: routes.plantLibrary(row.filename),
     filename: row.filename,
     uploadedAt:
       row.uploaded_at instanceof Date
@@ -53,7 +54,7 @@ export async function savePlantLibraryImageToDb(
   `;
 
   return {
-    url: `/plant-library/${filename}`,
+    url: routes.plantLibrary(filename),
     filename,
     uploadedAt,
   };

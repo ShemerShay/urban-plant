@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
 import { formatPrice } from "@/lib/mockPlants";
+import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
 
 type PlantsApiResponse = {
@@ -608,7 +609,7 @@ function AdminPlantCard({
     setIsSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/plants/${encodeURIComponent(plant.id)}`, {
+      const res = await fetch(routes.api.plant(plant.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(draftToPayload(draft)),
@@ -728,7 +729,7 @@ export function AdminPlantsManager() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/plants", { cache: "no-store", signal });
+      const res = await fetch(routes.api.plants(), { cache: "no-store", signal });
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (signal?.aborted) return;
       if (!res.ok) {
@@ -756,7 +757,7 @@ export function AdminPlantsManager() {
     setIsCreating(true);
     setCreateError(null);
     try {
-      const res = await fetch("/api/plants", {
+      const res = await fetch(routes.api.plants(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(draftToPayload(createDraft, { omitId: true })),
@@ -787,7 +788,7 @@ export function AdminPlantsManager() {
         </div>
         <div className="flex items-center gap-2">
            <Link
-            href="/admin"
+            href={routes.admin.index()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
             Admin

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export const ADMIN_COOKIE = "admin_auth";
-export const ADMIN_COOKIE_VALUE = "1";
+import { ADMIN_COOKIE, ADMIN_COOKIE_VALUE } from "@/lib/adminAuth";
+import { getRequestOrigin, routes } from "@/lib/routes";
 
 export function middleware(request: NextRequest) {
   const cookie = request.cookies.get(ADMIN_COOKIE);
@@ -12,7 +12,7 @@ export function middleware(request: NextRequest) {
   }
 
   const from = request.nextUrl.pathname + request.nextUrl.search;
-  const loginUrl = new URL("/admin-login", request.url);
+  const loginUrl = new URL(routes.admin.login(), getRequestOrigin(request.url));
   loginUrl.searchParams.set("from", from);
   return NextResponse.redirect(loginUrl);
 }

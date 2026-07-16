@@ -9,7 +9,12 @@ import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
-import { posSpotPath } from "@/lib/qrNavigation";
+import {
+  absoluteAppUrl,
+  getClientOrigin,
+  posSpotPath,
+  routes,
+} from "@/lib/routes";
 import { addCalendarDaysUtc, utcCalendarDateString } from "@/lib/storageUtils";
 
 type OfferRow = {
@@ -30,16 +35,12 @@ type PosSpotsApiResponse = {
 const partnerSelectClass =
   "h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
-function clientOriginSnapshot(): string {
-  return `${window.location.protocol}//${window.location.host}`;
-}
-
 function subscribeToNothing(): () => void {
   return () => {};
 }
 
 function useClientOrigin(): string {
-  return useSyncExternalStore(subscribeToNothing, clientOriginSnapshot, () => "");
+  return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
 }
 
 function formatCreatedAt(value: string | undefined): string | null {
@@ -99,7 +100,7 @@ function PosSpotCard({
   const qrHostRef = useRef<HTMLDivElement>(null);
   const [copyHint, setCopyHint] = useState<string | null>(null);
   const relativePath = posSpotPath(spot.spotSlug);
-  const fullUrl = origin ? `${origin}${relativePath}` : "";
+  const fullUrl = origin ? absoluteAppUrl(origin, relativePath) : "";
   const createdLabel = formatCreatedAt(spot.createdAt);
   const nextVisitIso = spot.nextCheck ?? addCalendarDaysUtc(utcCalendarDateString(), 7);
   const nextVisitLabel = formatDateOnly(nextVisitIso) ?? nextVisitIso;
@@ -263,7 +264,7 @@ function PosSpotCard({
               Open POS page
             </Link>
             <Link
-              href={`/admin/pos-spots/${encodeURIComponent(spot.id)}/edit`}
+              href={routes.admin.posSpotEdit(spot.id)}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
             >
               Edit details
@@ -320,7 +321,7 @@ export function AdminPosSpotList() {
       setIsLoading(true);
       setLoadError(null);
       try {
-        const res = await fetch("/api/pos-spots", { cache: "no-store" });
+        const res = await fetch(routes.api.posSpots(), { cache: "no-store" });
         if (!res.ok) {
           if (!cancelled) setLoadError("Could not load POS Spots");
           return;
@@ -368,7 +369,7 @@ export function AdminPosSpotList() {
     if (value === "all") params.delete("partner");
     else params.set("partner", value);
     const qs = params.toString();
-    router.push(qs ? `/admin/pos-spots?${qs}` : "/admin/pos-spots");
+    router.push(routes.admin.posSpotsWithQuery(qs));
   }
 
   if (isLoading) {
@@ -384,7 +385,7 @@ export function AdminPosSpotList() {
       <div className="rounded-3xl bg-white p-5 text-sm text-slate-600 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
         <p>No POS Spots yet.</p>
         <p className="mt-2">
-          <Link href="/admin/qr" className="font-medium text-emerald-700 underline underline-offset-2">
+          <Link href={routes.admin.qr()} className="font-medium text-emerald-700 underline underline-offset-2">
             Create a POS Spot
           </Link>
         </p>

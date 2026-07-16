@@ -7,7 +7,7 @@ import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { PartnerPaymentRecord } from "@/lib/partnerPayment";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
-import { posSpotPath } from "@/lib/qrNavigation";
+import { posSpotPath, routes } from "@/lib/routes";
 
 type PartnersApiResponse = {
   partners?: PartnerLocation[];
@@ -31,6 +31,7 @@ type PartnerDraft = {
   name: string;
   address: string;
   type: string;
+  pickupDisabled: boolean;
   payments: PaymentDraft[];
 };
 
@@ -49,6 +50,7 @@ function paymentToDraft(payment: PartnerPaymentRecord): PaymentDraft {
 function normalizePartner(partner: PartnerLocation): PartnerLocation {
   return {
     ...partner,
+    pickupDisabled: Boolean(partner.pickupDisabled),
     payments: Array.isArray(partner.payments) ? partner.payments : [],
   };
 }
@@ -58,6 +60,7 @@ function normalizeDraft(draft: PartnerDraft): PartnerDraft {
     name: draft.name ?? "",
     address: draft.address ?? "",
     type: draft.type ?? "",
+    pickupDisabled: Boolean(draft.pickupDisabled),
     payments: Array.isArray(draft.payments) ? draft.payments : [],
   };
 }
@@ -68,6 +71,7 @@ function partnerToDraft(partner: PartnerLocation): PartnerDraft {
     name: normalized.name,
     address: normalized.address,
     type: normalized.type,
+    pickupDisabled: normalized.pickupDisabled,
     payments: normalized.payments.map(paymentToDraft),
   };
 }
@@ -77,6 +81,7 @@ function emptyDraft(): PartnerDraft {
     name: "",
     address: "",
     type: "",
+    pickupDisabled: false,
     payments: [],
   };
 }
@@ -132,6 +137,7 @@ function draftToPayload(draft: PartnerDraft):
       name: normalized.name.trim(),
       address: normalized.address.trim(),
       type: normalized.type.trim(),
+      pickupDisabled: normalized.pickupDisabled,
       payments,
     },
   };
@@ -411,6 +417,20 @@ function PartnerFieldsForm({
             placeholder="Cafe"
           />
         </label>
+        <label className="flex items-start gap-3 sm:col-span-2">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-500"
+            checked={safeDraft.pickupDisabled}
+            onChange={(e) => patch({ pickupDisabled: e.target.checked })}
+          />
+          <span>
+            <span className={labelClassName}>Disable pickup at checkout</span>
+            <span className="mt-1 block text-sm text-slate-600">
+              When enabled, customers can only choose delivery for POS spots at this partner.
+            </span>
+          </span>
+        </label>
         <PartnerPaymentsEditor
           payments={safeDraft.payments}
           onChange={(payments) => patch({ payments })}
@@ -443,6 +463,12 @@ function PartnerDetailView({
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">Type</dt>
           <dd className="text-slate-900">{partner.type}</dd>
+        </div>
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">Pickup at checkout</dt>
+          <dd className="text-slate-900">
+            {partner.pickupDisabled ? "Disabled (delivery only)" : "Enabled"}
+          </dd>
         </div>
         <div>
           <dt className="font-medium text-slate-500">Payments</dt>
@@ -529,7 +555,7 @@ function AdminPartnerCard({
     setIsSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/partners/${encodeURIComponent(partner.id)}`, {
+      const res = await fetch(routes.api.partner(partner.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(result.payload),
@@ -679,8 +705,8 @@ export function AdminPartnersManager() {
     setLoadError(null);
     try {
       const [partnersRes, spotsRes] = await Promise.all([
-        fetch("/api/partners", { cache: "no-store", signal }),
-        fetch("/api/pos-spots", { cache: "no-store", signal }),
+        fetch(routes.api.partners(), { cache: "no-store", signal }),
+        fetch(routes.api.posSpots(), { cache: "no-store", signal }),
       ]);
       const partnersData = (await partnersRes.json().catch(() => ({}))) as PartnersApiResponse;
       const spotsData = (await spotsRes.json().catch(() => ({}))) as PosSpotsApiResponse;
@@ -725,7 +751,7 @@ export function AdminPartnersManager() {
     setIsCreating(true);
     setCreateError(null);
     try {
-      const res = await fetch("/api/partners", {
+      const res = await fetch(routes.api.partners(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(result.payload),
@@ -756,7 +782,7 @@ export function AdminPartnersManager() {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href="/admin"
+            href={routes.admin.index()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
             Admin
