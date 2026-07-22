@@ -39,7 +39,7 @@ interface CheckoutFormProps {
 export function CheckoutForm({
   plantId,
   plantName,
-  priceDisplay: _priceDisplay,
+  priceDisplay,
   spotSlug,
   pickupDisabled = false,
 }: CheckoutFormProps) {
@@ -59,8 +59,6 @@ export function CheckoutForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [prepMessage, setPrepMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  void _priceDisplay;
 
   function markTouched(field: CheckoutFieldKey) {
     setTouched((prev) => ({ ...prev, [field]: true }));
@@ -146,6 +144,28 @@ export function CheckoutForm({
         return;
       }
 
+      const customerEmail = fields.email.trim();
+      const fullName = fields.fullName.trim();
+      let emailFailed = false;
+      try {
+        const emailResponse = await fetch(routes.api.sendPurchaseEmail(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerEmail,
+            fullName,
+            plantName,
+            priceDisplay,
+            fulfillmentMethod,
+          }),
+        });
+        if (!emailResponse.ok) {
+          emailFailed = true;
+        }
+      } catch {
+        emailFailed = true;
+      }
+
       router.replace(
         routes.customer.success({
           orderId,
@@ -153,6 +173,7 @@ export function CheckoutForm({
           plantName,
           spotSlug,
           fulfillmentMethod,
+          ...(emailFailed ? { emailFailed: "1" } : {}),
         }),
       );
 

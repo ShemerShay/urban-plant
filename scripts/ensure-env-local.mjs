@@ -14,9 +14,9 @@ const source = path.join(root, ".env.example");
 try {
   await access(target, constants.F_OK);
   console.log(".env.local already exists — leaving it unchanged.");
-  console.log("Set RESEND_API_KEY, RESEND_FROM, ADMIN_PASSWORD, and NEXT_PUBLIC_WHATSAPP_PHONE in .env.local as needed.");
+  console.log("Set GMAIL_USER, GMAIL_APP_PASSWORD, ADMIN_PASSWORD, and NEXT_PUBLIC_WHATSAPP_PHONE in .env.local as needed.");
 } catch {
   await copyFile(source, target);
   console.log("Created .env.local from .env.example");
-  console.log("Next: open .env.local, set RESEND_API_KEY=re_..., then run npm run dev");
+  console.log("Next: open .env.local, set GMAIL_USER and GMAIL_APP_PASSWORD, then run npm run dev");
 }
