@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -9,15 +9,23 @@ function buildEmailHtml(params: {
   fullName: string;
   plantName: string;
   priceDisplay: string;
-  orderId: string;
+  fulfillmentMethod: "delivery" | "pickup";
 }): string {
   const greeting = params.fullName ? `Hi ${escapeHtml(params.fullName)},` : "Hi,";
   const priceLine = params.priceDisplay
     ? `<p style="margin:12px 0 0;font-size:15px;line-height:1.5;color:#374151;">Order total: <strong>${escapeHtml(params.priceDisplay)}</strong></p>`
     : "";
-  const orderRef = params.orderId
-    ? `<p style="margin:8px 0 0;font-size:13px;color:#6b7280;">Reference: ${escapeHtml(params.orderId)}</p>`
-    : "";
+  const plantBlock =
+    params.fulfillmentMethod === "pickup"
+      ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
+    <strong>${escapeHtml(params.plantName)}</strong>
+  </p>
+  <p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
+    You may take the plant with you.
+  </p>`
+      : `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
+    <strong>${escapeHtml(params.plantName)}</strong> — we’ll contact you within the next 1–3 business days to coordinate delivery.
+  </p>`;
 
   return `
 <!DOCTYPE html>
@@ -27,11 +35,8 @@ function buildEmailHtml(params: {
   <p style="margin:0;font-size:15px;line-height:1.5;color:#374151;">
     Thank you for your purchase from Urban Plant. Your order was received.
   </p>
-  <p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
-    <strong>${escapeHtml(params.plantName)}</strong> — we’ll contact you soon with pickup or delivery details.
-  </p>
+  ${plantBlock}
   ${priceLine}
-  ${orderRef}
   <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— Urban Plant</p>
 </body>
 </html>
@@ -69,16 +74,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) {
+  const gmailUser = process.env.GMAIL_USER?.trim();
+  if (!gmailUser) {
     return NextResponse.json(
       { error: "Email service is not configured" },
       { status: 503 },
     );
   }
 
-  const from = process.env.RESEND_FROM?.trim();
-  if (!from) {
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD?.trim();
+  if (!gmailAppPassword) {
     return NextResponse.json(
       { error: "Email sender is not configured" },
       { status: 503 },
@@ -89,34 +94,42 @@ export async function POST(request: NextRequest) {
     typeof rec.plantName === "string" && rec.plantName.trim()
       ? rec.plantName.trim()
       : "your plant";
-  const orderId =
-    typeof rec.orderId === "string" && rec.orderId.trim() ? rec.orderId.trim() : "";
   const fullName =
     typeof rec.fullName === "string" ? rec.fullName.trim() : "";
   const priceDisplay =
     typeof rec.priceDisplay === "string" ? rec.priceDisplay.trim() : "";
+  const fulfillmentMethodRaw =
+    typeof rec.fulfillmentMethod === "string" ? rec.fulfillmentMethod.trim() : "";
+  const fulfillmentMethod =
+    fulfillmentMethodRaw === "pickup" ? "pickup" : "delivery";
 
-  const resend = new Resend(apiKey);
-
-  const { data, error } = await resend.emails.send({
-    from,
-    to: customerEmail,
-    subject: "Your Urban Plant order is confirmed",
-    html: buildEmailHtml({
-      fullName,
-      plantName,
-      priceDisplay,
-      orderId,
-    }),
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
+    },
   });
 
-  if (error) {
-    console.error("[send-purchase-email]", error);
-    return NextResponse.json(
-      { error: error.message ?? "Failed to send confirmation email" },
-      { status: 502 },
-    );
-  }
+  try {
+    const info = await transporter.sendMail({
+      from: `"Urban Plant" <${gmailUser}>`,
+      to: customerEmail,
+      replyTo: "beherha@gmail.com",
+      subject: "Your Urban Plant order is confirmed",
+      html: buildEmailHtml({
+        fullName,
+        plantName,
+        priceDisplay,
+        fulfillmentMethod,
+      }),
+    });
 
-  return NextResponse.json({ ok: true, id: data?.id ?? null });
+    return NextResponse.json({ ok: true, id: info.messageId ?? null });
+  } catch (error) {
+    console.error("[send-purchase-email]", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to send confirmation email";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
 }
