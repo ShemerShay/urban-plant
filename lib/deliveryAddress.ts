@@ -23,6 +23,43 @@ export function formatDeliveryAddressLine(input: {
   return `${city}, ${street} ${houseNumber}`;
 }
 
+/**
+ * Best-effort reverse of {@link formatDeliveryAddressLine} for edit forms.
+ * Matches the longest known Tel Aviv street; unmatched legacy text is returned as street only.
+ */
+export function parseStoredDeliveryAddress(address: string): {
+  street: string;
+  houseNumber: string;
+} {
+  const trimmed = address.trim();
+  if (!trimmed) return { street: "", houseNumber: "" };
+
+  let rest = trimmed;
+  const cityPrefix = `${TEL_AVIV_CITY},`;
+  if (rest.startsWith(cityPrefix)) {
+    rest = rest.slice(cityPrefix.length).trim();
+  }
+
+  let bestStreet = "";
+  for (const street of TEL_AVIV_STREETS) {
+    if (
+      (rest === street || rest.startsWith(`${street} `)) &&
+      street.length > bestStreet.length
+    ) {
+      bestStreet = street;
+    }
+  }
+
+  if (!bestStreet) {
+    return { street: rest, houseNumber: "" };
+  }
+
+  return {
+    street: bestStreet,
+    houseNumber: rest.slice(bestStreet.length).trim(),
+  };
+}
+
 /** Readable display for order summaries (legacy rows pass through unchanged). */
 export function formatOrderDeliveryAddressDisplay(order: {
   address: string;

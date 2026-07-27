@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { StreetSearchSelect } from "@/components/checkout/StreetSearchSelect";
+import {
+  formatDeliveryAddressLine,
+  isTelAvivStreet,
+  parseStoredDeliveryAddress,
+  TEL_AVIV_CITY,
+} from "@/lib/deliveryAddress";
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { PartnerPaymentRecord } from "@/lib/partnerPayment";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
@@ -29,7 +36,8 @@ type PaymentDraft = {
 
 type PartnerDraft = {
   name: string;
-  address: string;
+  street: string;
+  houseNumber: string;
   type: string;
   pickupDisabled: boolean;
   payments: PaymentDraft[];
@@ -58,7 +66,8 @@ function normalizePartner(partner: PartnerLocation): PartnerLocation {
 function normalizeDraft(draft: PartnerDraft): PartnerDraft {
   return {
     name: draft.name ?? "",
-    address: draft.address ?? "",
+    street: draft.street ?? "",
+    houseNumber: draft.houseNumber ?? "",
     type: draft.type ?? "",
     pickupDisabled: Boolean(draft.pickupDisabled),
     payments: Array.isArray(draft.payments) ? draft.payments : [],
@@ -67,9 +76,11 @@ function normalizeDraft(draft: PartnerDraft): PartnerDraft {
 
 function partnerToDraft(partner: PartnerLocation): PartnerDraft {
   const normalized = normalizePartner(partner);
+  const { street, houseNumber } = parseStoredDeliveryAddress(normalized.address);
   return {
     name: normalized.name,
-    address: normalized.address,
+    street,
+    houseNumber,
     type: normalized.type,
     pickupDisabled: normalized.pickupDisabled,
     payments: normalized.payments.map(paymentToDraft),
@@ -79,7 +90,8 @@ function partnerToDraft(partner: PartnerLocation): PartnerDraft {
 function emptyDraft(): PartnerDraft {
   return {
     name: "",
-    address: "",
+    street: "",
+    houseNumber: "",
     type: "",
     pickupDisabled: false,
     payments: [],
@@ -131,11 +143,19 @@ function draftToPayload(draft: PartnerDraft):
   const payments = draftPaymentsToRecords(normalized.payments);
   if ("error" in payments) return { ok: false, error: payments.error };
 
+  const street = normalized.street.trim();
+  const houseNumber = normalized.houseNumber.trim();
+  if (!street) return { ok: false, error: "Street is required." };
+  if (!houseNumber) return { ok: false, error: "House number is required." };
+  if (!isTelAvivStreet(street)) {
+    return { ok: false, error: "Select a street from the Tel Aviv list." };
+  }
+
   return {
     ok: true,
     payload: {
       name: normalized.name.trim(),
-      address: normalized.address.trim(),
+      address: formatDeliveryAddressLine({ street, houseNumber }),
       type: normalized.type.trim(),
       pickupDisabled: normalized.pickupDisabled,
       payments,
@@ -400,14 +420,39 @@ function PartnerFieldsForm({
             onChange={(e) => patch({ name: e.target.value })}
           />
         </label>
-        <label className="block sm:col-span-2">
-          <span className={labelClassName}>Address</span>
-          <input
-            className={inputClassName}
-            value={safeDraft.address}
-            onChange={(e) => patch({ address: e.target.value })}
-          />
-        </label>
+        <div className="space-y-4 sm:col-span-2">
+          <div>
+            <span className={labelClassName}>City</span>
+            <input
+              className={`${inputClassName} cursor-default bg-slate-50 text-slate-700`}
+              value={TEL_AVIV_CITY}
+              readOnly
+              aria-readonly="true"
+            />
+          </div>
+          <div>
+            <label className={labelClassName} htmlFor="partner-street">
+              Street
+            </label>
+            <div className="mt-1">
+              <StreetSearchSelect
+                id="partner-street"
+                value={safeDraft.street}
+                onChange={(street) => patch({ street })}
+              />
+            </div>
+          </div>
+          <label className="block">
+            <span className={labelClassName}>House number</span>
+            <input
+              className={inputClassName}
+              value={safeDraft.houseNumber}
+              onChange={(e) => patch({ houseNumber: e.target.value })}
+              placeholder="26ב"
+              autoComplete="off"
+            />
+          </label>
+        </div>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>Type</span>
           <input
@@ -687,7 +732,16 @@ export function AdminPartnersManager() {
       map.set(spot.partnerLocationId, list);
     }
     for (const list of map.values()) {
-      list.sort((a, b) => a.spotName.localeCompare(b.spotName));
+      list.sort((a, b) => {
+        const aNum = Number.parseInt(a.posNumber ?? "", 10);
+        const bNum = Number.parseInt(b.posNumber ?? "", 10);
+        const aOk = Number.isFinite(aNum);
+        const bOk = Number.isFinite(bNum);
+        if (aOk && bOk && aNum !== bNum) return aNum - bNum;
+        if (aOk && !bOk) return -1;
+        if (!aOk && bOk) return 1;
+        return a.spotName.localeCompare(b.spotName);
+      });
     }
     return map;
   }, [posSpots]);

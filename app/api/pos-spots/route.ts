@@ -5,6 +5,7 @@ import { appendEvent } from "@/lib/eventStorage";
 import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
+import { isPosAssignableOffer } from "@/lib/offerTypes";
 import { formatPosSpotDisplayName, isPosSpotPocketValue } from "@/lib/posSpotPocket";
 import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
@@ -25,8 +26,9 @@ export async function GET() {
     readPosSpots(),
     readPartnerLocations(),
   ]);
+  const posOffers = offers.filter(isPosAssignableOffer);
   const enrichedOffers = await Promise.all(
-    offers.map(async (offer) => {
+    posOffers.map(async (offer) => {
       const product = await getPlantById(offer.productId);
       return {
         ...offer,
@@ -77,8 +79,11 @@ export async function POST(request: NextRequest) {
   }
   const offers = await readOffers();
   const offer = offers.find((item) => item.id === currentOfferId);
-  if (!offer || offer.status !== "active") {
-    return NextResponse.json({ error: "Active Offer not found" }, { status: 404 });
+  if (!offer || !isPosAssignableOffer(offer)) {
+    return NextResponse.json(
+      { error: "Active catalog offer required (manual offers cannot be used on POS spots)" },
+      { status: 400 },
+    );
   }
   if (!posNumber) {
     return NextResponse.json({ error: "posNumber is required" }, { status: 400 });
