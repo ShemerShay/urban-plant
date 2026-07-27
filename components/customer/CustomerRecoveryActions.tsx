@@ -34,19 +34,21 @@ interface CustomerRecoveryActionsProps {
   /** Prefer this return target when safe (e.g. known spotSlug from success). */
   preferredReturnHref?: string | null;
   returnLabel?: string;
+  className?: string;
 }
 
 export function CustomerRecoveryActions({
   whatsAppMessage,
   preferredReturnHref = null,
   returnLabel = "Return to previous page",
+  className = "mt-8",
 }: CustomerRecoveryActionsProps) {
   const pathname = usePathname() ?? "";
   const returnHref = resolveReturnHref(pathname, preferredReturnHref);
   const whatsAppHref = customerRecoveryWhatsAppUrl(whatsAppMessage);
 
   return (
-    <div className="mt-8 flex w-full flex-col gap-3">
+    <div className={`${className} flex w-full flex-col gap-3`}>
       {returnHref ? (
         <Link
           href={returnHref}

@@ -43,6 +43,22 @@ function useClientOrigin(): string {
   return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
 }
 
+/** Sort POS spots so number 1 appears first (numeric when possible). */
+function comparePosNumberAsc(a: PosSpot, b: PosSpot): number {
+  const aNum = Number.parseInt(a.posNumber ?? "", 10);
+  const bNum = Number.parseInt(b.posNumber ?? "", 10);
+  const aOk = Number.isFinite(aNum);
+  const bOk = Number.isFinite(bNum);
+  if (aOk && bOk && aNum !== bNum) return aNum - bNum;
+  if (aOk && !bOk) return -1;
+  if (!aOk && bOk) return 1;
+  const byLabel = (a.posNumber ?? "").localeCompare(b.posNumber ?? "", undefined, {
+    numeric: true,
+  });
+  if (byLabel !== 0) return byLabel;
+  return a.spotName.localeCompare(b.spotName);
+}
+
 function formatCreatedAt(value: string | undefined): string | null {
   if (!value) return null;
   const date = new Date(value);
@@ -328,9 +344,7 @@ export function AdminPosSpotList() {
         }
         const data = (await res.json()) as PosSpotsApiResponse;
         if (cancelled) return;
-        const spots = [...(data.posSpots ?? [])].sort((a, b) =>
-          b.createdAt.localeCompare(a.createdAt),
-        );
+        const spots = [...(data.posSpots ?? [])].sort(comparePosNumberAsc);
         setPosSpots(spots);
         setOffers(data.offers ?? []);
         setLocations(data.locations ?? []);

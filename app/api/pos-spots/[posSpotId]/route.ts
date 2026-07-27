@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
+import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID } from "@/lib/offerTypes";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
 import { formatPosSpotDisplayName, isPosSpotPocketValue } from "@/lib/posSpotPocket";
 import { getPosSpotById, PosSpotSlugConflictError, updatePosSpot } from "@/lib/posSpotStorage";
@@ -25,7 +26,9 @@ function parsePosSpotStatus(value: unknown): PosSpotStatus | null {
 }
 
 async function mapOffersForResponse() {
-  const offers = await readOffers();
+  const offers = (await readOffers()).filter(
+    (offer) => offer.id !== MANUAL_OFFER_ID && offer.productId !== MANUAL_PRODUCT_ID,
+  );
   return Promise.all(
     offers.map(async (offer) => {
       const product = await getPlantById(offer.productId);
@@ -101,9 +104,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (!offer) {
     return NextResponse.json({ error: "Offer not found" }, { status: 404 });
   }
-  if (offer.status !== "active" && currentOfferId !== existing.currentOfferId) {
+  if (
+    offer.id === MANUAL_OFFER_ID ||
+    offer.productId === MANUAL_PRODUCT_ID ||
+    (offer.status !== "active" && currentOfferId !== existing.currentOfferId)
+  ) {
     return NextResponse.json(
-      { error: "When changing the offer, choose an active offer." },
+      {
+        error:
+          offer.id === MANUAL_OFFER_ID || offer.productId === MANUAL_PRODUCT_ID
+            ? "Manual offers cannot be used on POS spots"
+            : "When changing the offer, choose an active offer.",
+      },
       { status: 400 },
     );
   }

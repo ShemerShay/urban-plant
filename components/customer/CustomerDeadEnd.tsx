@@ -28,14 +28,14 @@ export function CustomerDeadEnd({
           </p>
           <h1 className="mt-3 text-3xl font-semibold text-emerald-950">{title}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
+          <CustomerRecoveryActions
+            className="mt-6"
+            whatsAppMessage={whatsAppMessage}
+            preferredReturnHref={preferredReturnHref}
+            returnLabel={returnLabel}
+          />
         </section>
       </div>
-
-      <CustomerRecoveryActions
-        whatsAppMessage={whatsAppMessage}
-        preferredReturnHref={preferredReturnHref}
-        returnLabel={returnLabel}
-      />
     </main>
   );
 }
