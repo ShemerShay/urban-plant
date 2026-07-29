@@ -1,57 +1,20 @@
-import Link from "next/link";
-import { Suspense } from "react";
+import { redirect } from "next/navigation";
 
-import { AdminPosSpotList } from "@/components/admin/AdminPosSpotList";
 import { routes } from "@/lib/routes";
 
+interface PageProps {
+  searchParams: Promise<{ partner?: string }>;
+}
+
 /**
- * Admin index of all POS Spots with live QR codes for copy, open, and download.
+ * Legacy global POS Spots page — redirects into Partners (or a specific partner when
+ * `?partner=` is present).
  */
-export default function AdminPosSpotsPage() {
-  return (
-    <main
-      id="admin-pos-spots-page"
-      className="mx-auto min-h-screen w-full max-w-md px-4 py-6 pb-12"
-    >
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            Urban Plant · Admin
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">POS Spots</h1>
-        </div>
-        <Link
-          href={routes.admin.index()}
-          className="text-sm font-medium text-emerald-700 underline underline-offset-2"
-        >
-          Admin
-        </Link>
-      </div>
-
-      <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        Every POS Spot and its QR for scanning at{" "}
-        <span className="font-mono text-slate-800">/pos/{"{spotSlug}"}</span>.
-      </p>
-
-      <Suspense fallback={<p className="text-sm text-slate-600">Loading POS Spots…</p>}>
-        <AdminPosSpotList />
-      </Suspense>
-
-      <p className="mt-8 text-center text-xs text-slate-500">
-        <Link
-          href={routes.admin.qr()}
-          className="font-medium text-emerald-700 underline underline-offset-2"
-        >
-          Create POS Spot
-        </Link>
-        {" · "}
-        <Link
-          href={routes.admin.orders()}
-          className="font-medium text-emerald-700 underline underline-offset-2"
-        >
-          Back to orders
-        </Link>
-      </p>
-    </main>
-  );
+export default async function AdminPosSpotsRedirectPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const partnerId = typeof params.partner === "string" ? params.partner.trim() : "";
+  if (partnerId) {
+    redirect(routes.admin.partner(partnerId));
+  }
+  redirect(routes.admin.partners());
 }

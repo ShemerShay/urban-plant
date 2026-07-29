@@ -7,9 +7,11 @@ export interface PosSpot {
   spotName: string;
   partnerLocationId: string;
   posNumber?: string;
-  /** Normalized pocket value; optional on legacy rows migrated before pocket existed. */
+  /** FK to pockets.id — preferred pocket relationship. Nullable = Unassigned. */
+  pocketId?: string;
+  /** @deprecated Legacy enum value; kept for migration safety. Prefer pocketId. */
   pocket?: string;
-  /** Custom pocket label when pocket is "other". */
+  /** @deprecated Custom label when legacy pocket was "other". Prefer pocketId. */
   pocketOther?: string;
   /** Human-readable label for orders and display; derived from partner + number + pocket. */
   posName: string;

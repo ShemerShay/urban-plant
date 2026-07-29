@@ -22,7 +22,9 @@
     "db:seed": "node scripts/seed-from-json.mjs",
     "generate:tel-aviv-streets": "node scripts/generate-tel-aviv-streets.mjs",
     "db:verify-storage": "npx tsx scripts/verify-db-storage.ts",
-    "db:verify-plants": "npx tsx scripts/verify-plants-storage.mjs"
+    "db:verify-plants": "npx tsx scripts/verify-plants-storage.mjs",
+    "db:migrate:pockets": "node scripts/apply-sql-file.mjs db/migrations/014_pockets.sql",
+    "db:migrate:unassign-dash-pockets": "node scripts/apply-sql-file.mjs db/migrations/015_unassign_dash_pockets.sql"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

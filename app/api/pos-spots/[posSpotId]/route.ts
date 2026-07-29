@@ -4,11 +4,11 @@ import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
 import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID } from "@/lib/offerTypes";
+import { getPocketById } from "@/lib/pocketStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
-import { formatPosSpotDisplayName, isPosSpotPocketValue } from "@/lib/posSpotPocket";
 import { getPosSpotById, PosSpotSlugConflictError, updatePosSpot } from "@/lib/posSpotStorage";
+import { formatPosSpotDisplayName } from "@/lib/posSpotSlugUtils";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
-import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
 
 interface RouteParams {
   params: Promise<{ posSpotId: string }>;
@@ -72,19 +72,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const record = body as Record<string, unknown>;
-  const partnerLocationId = cleanString(record.partnerLocationId);
+  const partnerLocationId = cleanString(record.partnerLocationId) || existing.partnerLocationId;
   const partnerLocationAddress = cleanString(record.partnerLocationAddress);
   const spotDescription = cleanString(record.spotDescription);
-  const posNumber = cleanString(record.posNumber);
-  const currentOfferId = cleanString(record.currentOfferId);
-  const pocketRaw = cleanString(record.pocket);
-  const pocketOther = cleanString(record.pocketOther);
+  const posNumber = cleanString(record.posNumber) || existing.posNumber || "";
+  const currentOfferId = cleanString(record.currentOfferId) || existing.currentOfferId;
+  const hasPocketId = "pocketId" in record;
+  const pocketIdRaw =
+    record.pocketId === null
+      ? null
+      : typeof record.pocketId === "string"
+        ? record.pocketId.trim() || null
+        : hasPocketId
+          ? null
+          : undefined;
 
   if (!partnerLocationId) {
     return NextResponse.json({ error: "partnerLocationId is required" }, { status: 400 });
-  }
-  if (!partnerLocationAddress) {
-    return NextResponse.json({ error: "partnerLocationAddress is required" }, { status: 400 });
   }
   if (!posNumber) {
     return NextResponse.json({ error: "posNumber is required" }, { status: 400 });
@@ -97,6 +101,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const partnerLocation = locations.find((loc) => loc.id === partnerLocationId);
   if (!partnerLocation) {
     return NextResponse.json({ error: "Partner Location not found" }, { status: 404 });
+  }
+
+  if (partnerLocationAddress) {
+    const updatedLocation = await updatePartnerLocationAddress(
+      partnerLocationId,
+      partnerLocationAddress,
+    );
+    if (!updatedLocation) {
+      return NextResponse.json({ error: "Could not update partner address" }, { status: 400 });
+    }
   }
 
   const offers = await readOffers();
@@ -120,37 +134,34 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const updatedLocation = await updatePartnerLocationAddress(partnerLocationId, partnerLocationAddress);
-  if (!updatedLocation) {
-    return NextResponse.json({ error: "Could not update partner address" }, { status: 400 });
+  let nextPocketId = existing.pocketId ?? null;
+  let pocketName: string | undefined;
+  if (hasPocketId) {
+    if (pocketIdRaw) {
+      const pocket = await getPocketById(pocketIdRaw);
+      if (!pocket || pocket.partnerLocationId !== partnerLocationId) {
+        return NextResponse.json(
+          { error: "Pocket not found for this partner" },
+          { status: 400 },
+        );
+      }
+      nextPocketId = pocket.id;
+      pocketName = pocket.name;
+    } else {
+      nextPocketId = null;
+      pocketName = undefined;
+    }
+  } else if (existing.pocketId) {
+    const pocket = await getPocketById(existing.pocketId);
+    pocketName = pocket?.name;
   }
 
-  let pocket: string | null = pocketRaw || existing.pocket || null;
-  if (pocket && !isPosSpotPocketValue(pocket)) {
-    return NextResponse.json({ error: "Invalid pocket value" }, { status: 400 });
-  }
-  if (pocket === "other" && !pocketOther) {
-    return NextResponse.json({ error: "pocketOther is required when pocket is other" }, { status: 400 });
-  }
-
-  let spotName = existing.spotName;
-  let spotSlug = existing.spotSlug;
-  let posName = existing.posName;
-  let pocketForUpdate: string | null = pocket;
-
-  if (pocket) {
-    const generated = buildPosSpotNameAndSlug(
-      partnerLocation.name,
-      posNumber,
-      pocket,
-      pocketOther,
-    );
-    spotName = generated.spotName;
-    spotSlug = generated.spotSlug;
-    posName = formatPosSpotDisplayName(partnerLocation.name, posNumber, pocket, pocketOther);
-  } else {
-    pocketForUpdate = null;
-  }
+  // Slug / spot_name stay stable on update — QR identity must not change when pocket moves.
+  const posName = formatPosSpotDisplayName(
+    partnerLocation.name,
+    posNumber,
+    pocketName,
+  );
 
   const statusRaw = record.status;
   const hasStatus = "status" in record;
@@ -188,11 +199,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       partnerLocationId,
       posNumber,
       posName,
-      spotName,
       ...(spotDescription ? { spotDescription } : {}),
-      spotSlug,
-      pocket: pocketForUpdate,
-      pocketOther: pocketForUpdate === "other" ? pocketOther || null : null,
+      ...(hasPocketId
+        ? { updatePocketId: true as const, pocketId: nextPocketId }
+        : {}),
       currentOfferId,
       ...(hasCheckStatus
         ? {

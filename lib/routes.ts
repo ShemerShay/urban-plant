@@ -25,6 +25,12 @@ export const routes = {
     plants: () => "/admin/plants",
     offers: () => "/admin/offers",
     partners: () => "/admin/partners",
+    partner: (partnerId: string) =>
+      `/admin/partners/${encodeURIComponent(partnerId.trim())}`,
+    partnerPockets: (partnerId: string) =>
+      `/admin/partners/${encodeURIComponent(partnerId.trim())}#pockets`,
+    partnerPosSpots: (partnerId: string) =>
+      `/admin/partners/${encodeURIComponent(partnerId.trim())}#pos-spots`,
   },
   pos: {
     spot: (spotSlug: string) => `/pos/${encodeURIComponent(spotSlug.trim())}`,
@@ -59,6 +65,10 @@ export const routes = {
     partners: () => "/api/partners",
     partner: (partnerId: string) =>
       `/api/partners/${encodeURIComponent(partnerId.trim())}`,
+    partnerPockets: (partnerId: string) =>
+      `/api/partners/${encodeURIComponent(partnerId.trim())}/pockets`,
+    partnerPocket: (partnerId: string, pocketId: string) =>
+      `/api/partners/${encodeURIComponent(partnerId.trim())}/pockets/${encodeURIComponent(pocketId.trim())}`,
     sendPurchaseEmail: () => "/api/send-purchase-email",
   },
   plantLibrary: (filename: string) =>

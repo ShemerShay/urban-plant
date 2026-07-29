@@ -162,17 +162,15 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   const partnerLocation = locationById.get(partnerLocationId);
 
   const generated = useMemo(() => {
-    if (!partnerLocation?.name || !posNumber.trim() || !pocket) {
+    if (!partnerLocation?.name || !posNumber.trim()) {
       return null;
     }
-    if (pocket === "other" && !pocketOther.trim()) {
-      return null;
-    }
-    return buildPosSpotNameAndSlug(partnerLocation.name, posNumber, pocket, pocketOther);
-  }, [partnerLocation?.name, posNumber, pocket, pocketOther]);
+    // Preview only — edit saves preserve existing spot_slug via API.
+    return buildPosSpotNameAndSlug(partnerLocation.name, posNumber);
+  }, [partnerLocation?.name, posNumber]);
 
-  const spotName = generated?.spotName ?? initialSpot?.spotName ?? "";
-  const spotSlug = generated?.spotSlug ?? initialSpot?.spotSlug ?? "";
+  const spotName = initialSpot?.spotName ?? generated?.spotName ?? "";
+  const spotSlug = initialSpot?.spotSlug ?? generated?.spotSlug ?? "";
 
   function handlePartnerChange(nextId: string) {
     setPartnerLocationId(nextId);
