@@ -37,7 +37,7 @@ export function pocketDisplayLabel(pocket: string | undefined, pocketOther?: str
   return pocket.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Pocket text used when building spot_name / spot_slug (custom text for "other"). */
+/** Legacy pocket text helper — not used for QR / slug identity. */
 export function pocketNameForSlug(pocket: string, pocketOther?: string): string {
   if (pocket === "other") {
     const custom = typeof pocketOther === "string" ? pocketOther.trim() : "";
@@ -62,4 +62,22 @@ export function posSpotPocketLabel(spot: {
   pocketOther?: string;
 }): string | undefined {
   return pocketDisplayLabel(spot.pocket, spot.pocketOther);
+}
+
+/**
+ * Resolve pocket display name: prefer Pocket entity name, else legacy enum columns,
+ * else "Unassigned" when explicitly requested.
+ */
+export function resolvePosSpotPocketLabel(options: {
+  pocketName?: string | null;
+  pocket?: string;
+  pocketOther?: string;
+  unassignedLabel?: string;
+}): string {
+  if (typeof options.pocketName === "string" && options.pocketName.trim()) {
+    return options.pocketName.trim();
+  }
+  const legacy = pocketDisplayLabel(options.pocket, options.pocketOther);
+  if (legacy) return legacy;
+  return options.unassignedLabel ?? "Unassigned";
 }

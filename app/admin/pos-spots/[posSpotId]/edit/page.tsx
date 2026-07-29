@@ -1,19 +1,19 @@
-import { AdminPosSpotEditForm } from "@/components/admin/AdminPosSpotEditForm";
+import { redirect } from "next/navigation";
 
-/**
- * Dedicated edit screen: the POS list uses a narrow `max-w-md` column and each card
- * already stacks QR, metadata, URL, and actions — inlining ~6 inputs would crowd taps
- * and small screens, so edits live here with the same form density as `/admin/qr`.
- */
-export default async function AdminPosSpotEditPage({
-  params,
-}: {
+import { getPosSpotById } from "@/lib/posSpotStorage";
+import { routes } from "@/lib/routes";
+
+interface PageProps {
   params: Promise<{ posSpotId: string }>;
-}) {
-  const { posSpotId } = await params;
-  return (
-    <main className="mx-auto min-h-screen w-full max-w-md px-4 py-6 pb-12">
-      <AdminPosSpotEditForm posSpotId={decodeURIComponent(posSpotId)} />
-    </main>
-  );
+}
+
+/** Legacy edit URL — send admins to the partner detail page. */
+export default async function AdminPosSpotEditRedirectPage({ params }: PageProps) {
+  const { posSpotId: rawId } = await params;
+  const posSpotId = decodeURIComponent(rawId);
+  const spot = await getPosSpotById(posSpotId);
+  if (spot?.partnerLocationId) {
+    redirect(routes.admin.partner(spot.partnerLocationId));
+  }
+  redirect(routes.admin.partners());
 }

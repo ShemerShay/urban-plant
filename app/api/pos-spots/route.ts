@@ -6,9 +6,12 @@ import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
 import { isPosAssignableOffer } from "@/lib/offerTypes";
-import { formatPosSpotDisplayName, isPosSpotPocketValue } from "@/lib/posSpotPocket";
+import { getPocketById } from "@/lib/pocketStorage";
 import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";
-import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
+import {
+  buildPosSpotNameAndSlug,
+  formatPosSpotDisplayName,
+} from "@/lib/posSpotSlugUtils";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 
 function normalizeStatus(value: unknown): PosSpotStatus {
@@ -20,12 +23,16 @@ function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export async function GET() {
-  const [offers, posSpots, locations] = await Promise.all([
+export async function GET(request: NextRequest) {
+  const partnerId = cleanString(request.nextUrl.searchParams.get("partnerId"));
+  const [offers, allSpots, locations] = await Promise.all([
     readOffers(),
     readPosSpots(),
     readPartnerLocations(),
   ]);
+  const posSpots = partnerId
+    ? allSpots.filter((spot) => spot.partnerLocationId === partnerId)
+    : allSpots;
   const posOffers = offers.filter(isPosAssignableOffer);
   const enrichedOffers = await Promise.all(
     posOffers.map(async (offer) => {
@@ -61,8 +68,7 @@ export async function POST(request: NextRequest) {
   const spotDescription = cleanString(record.spotDescription);
   const posNumber = cleanString(record.posNumber);
   const placementNotes = cleanString(record.placementNotes);
-  const pocket = cleanString(record.pocket);
-  const pocketOther = cleanString(record.pocketOther);
+  const pocketIdRaw = cleanString(record.pocketId);
   const offerPlacedAt = new Date().toISOString();
   const status = normalizeStatus(record.status);
 
@@ -88,32 +94,41 @@ export async function POST(request: NextRequest) {
   if (!posNumber) {
     return NextResponse.json({ error: "posNumber is required" }, { status: 400 });
   }
-  if (!pocket || !isPosSpotPocketValue(pocket)) {
-    return NextResponse.json({ error: "pocket is required" }, { status: 400 });
-  }
-  if (pocket === "other" && !pocketOther) {
-    return NextResponse.json({ error: "pocketOther is required when pocket is other" }, { status: 400 });
+
+  let pocketName: string | undefined;
+  let pocketId: string | undefined;
+  if (pocketIdRaw) {
+    const pocket = await getPocketById(pocketIdRaw);
+    if (!pocket || pocket.partnerLocationId !== partnerLocationId) {
+      return NextResponse.json(
+        { error: "Pocket not found for this partner" },
+        { status: 400 },
+      );
+    }
+    pocketId = pocket.id;
+    pocketName = pocket.name;
   }
 
   const { spotName, spotSlug } = buildPosSpotNameAndSlug(
     partnerLocation.name,
     posNumber,
-    pocket,
-    pocketOther,
   );
   if (!spotName || !spotSlug) {
     return NextResponse.json({ error: "Could not generate spot name from inputs" }, { status: 400 });
   }
 
-  const posName = formatPosSpotDisplayName(partnerLocation.name, posNumber, pocket, pocketOther);
+  const posName = formatPosSpotDisplayName(
+    partnerLocation.name,
+    posNumber,
+    pocketName,
+  );
   const createdAt = new Date().toISOString();
   const posSpot = {
     id: randomUUID(),
     spotName,
     partnerLocationId,
     posNumber,
-    pocket,
-    ...(pocket === "other" && pocketOther ? { pocketOther } : {}),
+    ...(pocketId ? { pocketId } : {}),
     posName,
     ...(spotDescription ? { spotDescription } : {}),
     ...(placementNotes ? { placementNotes } : {}),
@@ -144,7 +159,8 @@ export async function POST(request: NextRequest) {
       spotSlug,
       spotName,
       posName,
-      pocket,
+      ...(pocketId ? { pocketId } : {}),
+      ...(pocketName ? { pocketName } : {}),
       ...(spotDescription ? { spotDescription } : {}),
       status,
     },

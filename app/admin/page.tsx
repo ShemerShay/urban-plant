@@ -2,27 +2,12 @@ import Link from "next/link";
 
 import { routes } from "@/lib/routes";
 
-/** Static admin pages (excludes dynamic segments such as pos-spot edit). */
+/** Static admin pages (excludes dynamic segments such as partner detail). */
 const ADMIN_PAGES = [
   {
     href: routes.admin.orders(),
     label: "Orders",
     description: "View and filter customer orders.",
-  },
-  {
-    href: routes.admin.ordersNew(),
-    label: "Add New Order",
-    description: "Create a manual order for testing.",
-  },
-  {
-    href: routes.admin.posSpots(),
-    label: "POS Spots",
-    description: "Browse POS spots, QR codes, and spot URLs.",
-  },
-  {
-    href: routes.admin.qr(),
-    label: "Create POS Spot",
-    description: "Set up a new POS spot and generate its QR.",
   },
   {
     href: routes.admin.plants(),
@@ -37,7 +22,7 @@ const ADMIN_PAGES = [
   {
     href: routes.admin.partners(),
     label: "Partners",
-    description: "View and manage partner locations and payment records.",
+    description: "Manage partners, their pockets, and POS spots.",
   },
 ] as const;
 
@@ -55,7 +40,7 @@ export default function AdminIndexPage() {
       </div>
 
       <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        Choose a page to manage orders, POS spots, plants, offers, and QR tooling.
+        Choose a page to manage orders, plants, offers, and partners.
       </p>
 
       <ul className="space-y-3">

@@ -16,6 +16,7 @@ const POS_SPOT_ROW_SQL = sql`
   spot_name,
   partner_location_id,
   pos_number,
+  pocket_id,
   pocket,
   pocket_other,
   pos_name,
@@ -37,6 +38,7 @@ type PosSpotRow = {
   spot_name: string;
   partner_location_id: string;
   pos_number: string | null;
+  pocket_id: string | null;
   pocket: string | null;
   pocket_other: string | null;
   pos_name: string | null;
@@ -91,6 +93,8 @@ function mapPosSpotRow(row: PosSpotRow): PosSpot {
   const createdAt = toIsoString(row.created_at) ?? SEED_CREATED_AT;
   const posNumber =
     typeof row.pos_number === "string" && row.pos_number.trim() ? row.pos_number.trim() : undefined;
+  const pocketId =
+    typeof row.pocket_id === "string" && row.pocket_id.trim() ? row.pocket_id.trim() : undefined;
   const pocket =
     typeof row.pocket === "string" && row.pocket.trim() ? row.pocket.trim() : undefined;
   const pocketOther =
@@ -128,6 +132,7 @@ function mapPosSpotRow(row: PosSpotRow): PosSpot {
     spotName,
     partnerLocationId: row.partner_location_id,
     ...(posNumber ? { posNumber } : {}),
+    ...(pocketId ? { pocketId } : {}),
     ...(pocket ? { pocket } : {}),
     ...(pocketOther ? { pocketOther } : {}),
     posName,
@@ -168,6 +173,7 @@ async function insertPosSpot(posSpot: PosSpot): Promise<void> {
       spot_name,
       partner_location_id,
       pos_number,
+      pocket_id,
       pocket,
       pocket_other,
       pos_name,
@@ -188,6 +194,7 @@ async function insertPosSpot(posSpot: PosSpot): Promise<void> {
       ${posSpot.spotName},
       ${posSpot.partnerLocationId},
       ${posSpot.posNumber ?? null},
+      ${posSpot.pocketId ?? null}::uuid,
       ${posSpot.pocket ?? null},
       ${posSpot.pocketOther ?? null},
       ${posSpot.posName},
@@ -321,11 +328,17 @@ export async function updatePosSpot(
     partnerLocationId: string;
     posNumber: string;
     posName: string;
-    spotName: string;
+    /** When omitted, existing spot_name is preserved (pocket moves must not rewrite identity). */
+    spotName?: string;
     spotDescription?: string;
-    spotSlug: string;
+    /** When omitted, existing spot_slug is preserved. */
+    spotSlug?: string;
+    pocketId?: string | null;
+    updatePocketId?: boolean;
+    /** @deprecated Legacy columns; only written when explicitly provided. */
     pocket?: string | null;
     pocketOther?: string | null;
+    updateLegacyPocket?: boolean;
     currentOfferId: string;
     checkStatus?: boolean;
     checkBy?: string | null;
@@ -341,10 +354,27 @@ export async function updatePosSpot(
   const trimmedId = id.trim();
   if (!trimmedId) return null;
 
-  const spotSlug = normalizePosSpotSlug(patch.spotSlug);
+  const existingRows = await sql`
+    SELECT ${POS_SPOT_ROW_SQL}
+    FROM pos_spots
+    WHERE id = ${trimmedId}::uuid
+    LIMIT 1
+  `;
+  const existingRow = (existingRows as PosSpotRow[])[0];
+  if (!existingRow) return null;
+
+  const spotSlugRaw =
+    typeof patch.spotSlug === "string" && patch.spotSlug.trim()
+      ? patch.spotSlug
+      : existingRow.spot_slug;
+  const spotSlug = normalizePosSpotSlug(spotSlugRaw);
   if (!spotSlug) return null;
 
-  const spotName = normalizePosSpotSlug(patch.spotName) || spotSlug;
+  const spotNameRaw =
+    typeof patch.spotName === "string" && patch.spotName.trim()
+      ? patch.spotName
+      : existingRow.spot_name;
+  const spotName = normalizePosSpotSlug(spotNameRaw) || spotSlug;
   const posName = patch.posName.trim();
   if (!posName) return null;
 
@@ -362,11 +392,19 @@ export async function updatePosSpot(
   const spotDescriptionTrimmed = patch.spotDescription?.trim() ?? "";
   const spotDescription = spotDescriptionTrimmed ? spotDescriptionTrimmed : null;
 
+  const updatePocketId = Boolean(patch.updatePocketId);
+  const pocketIdTrimmed =
+    typeof patch.pocketId === "string" && patch.pocketId.trim() ? patch.pocketId.trim() : null;
+  const pocketIdForSql = updatePocketId ? pocketIdTrimmed : existingRow.pocket_id;
+
+  const updateLegacyPocket = Boolean(patch.updateLegacyPocket);
   const pocketTrimmed = typeof patch.pocket === "string" ? patch.pocket.trim() : "";
   const pocket = pocketTrimmed ? pocketTrimmed : null;
   const pocketOtherTrimmed = typeof patch.pocketOther === "string" ? patch.pocketOther.trim() : "";
   const pocketOther =
     pocket === "other" && pocketOtherTrimmed ? pocketOtherTrimmed : pocket === "other" ? null : null;
+  const legacyPocketForSql = updateLegacyPocket ? pocket : existingRow.pocket;
+  const legacyPocketOtherForSql = updateLegacyPocket ? pocketOther : existingRow.pocket_other;
 
   const updateCheck = Boolean(patch.updateCheckFields && typeof patch.checkStatus === "boolean");
   const clearingCheck = updateCheck && patch.checkStatus === false;
@@ -395,8 +433,9 @@ export async function updatePosSpot(
       partner_location_id = ${patch.partnerLocationId.trim()},
       pos_number = ${posNumber},
       spot_name = ${spotName},
-      pocket = ${pocket},
-      pocket_other = ${pocketOther},
+      pocket_id = ${pocketIdForSql}::uuid,
+      pocket = ${legacyPocketForSql},
+      pocket_other = ${legacyPocketOtherForSql},
       pos_name = ${posName},
       spot_description = ${spotDescription},
       spot_slug = ${spotSlug},
@@ -433,4 +472,16 @@ export async function updatePosSpot(
 
   const row = (rows as PosSpotRow[])[0];
   return row ? mapPosSpotRow(row) : null;
+}
+
+export async function readPosSpotsByPartner(partnerLocationId: string): Promise<PosSpot[]> {
+  const trimmed = partnerLocationId.trim();
+  if (!trimmed) return [];
+  const rows = await sql`
+    SELECT ${POS_SPOT_ROW_SQL}
+    FROM pos_spots
+    WHERE partner_location_id = ${trimmed}
+    ORDER BY created_at ASC
+  `;
+  return (rows as PosSpotRow[]).map(mapPosSpotRow);
 }

@@ -13,8 +13,8 @@ import {
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { PartnerPaymentRecord } from "@/lib/partnerPayment";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
-import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
-import { posSpotPath, routes } from "@/lib/routes";
+import type { PosSpot } from "@/lib/posSpotTypes";
+import { routes } from "@/lib/routes";
 
 type PartnersApiResponse = {
   partners?: PartnerLocation[];
@@ -218,90 +218,6 @@ function partnerMatchesSearch(
   return haystack.includes(q);
 }
 
-function posSpotStatusLabel(status: PosSpotStatus): string {
-  if (status === "available") return "Available";
-  if (status === "sold") return "Unavailable";
-  return "Inactive";
-}
-
-function posSpotStatusClassName(status: PosSpotStatus): string {
-  if (status === "available") return "bg-emerald-100 text-emerald-800";
-  if (status === "sold") return "bg-slate-100 text-slate-700";
-  return "bg-amber-100 text-amber-800";
-}
-
-function PartnerSpotsList({ spots }: { spots: PosSpot[] }) {
-  return (
-    <div>
-      <p className="text-xs font-medium text-slate-500">POS spots</p>
-      <div className="mt-1 text-sm">
-        {spots.length === 0 ? (
-          <span className="text-slate-900">None</span>
-        ) : (
-          <ul className="space-y-2">
-            {spots.map((spot) => {
-              const pocketLabel = posSpotPocketLabel(spot);
-              return (
-                <li
-                  key={spot.id}
-                  className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-sm"
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-emerald-950">{spot.spotName}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${posSpotStatusClassName(spot.status)}`}
-                    >
-                      {posSpotStatusLabel(spot.status)}
-                    </span>
-                  </div>
-                  <dl className="grid gap-1.5">
-                    <div className="flex flex-wrap gap-x-2">
-                      <dt className="font-medium text-slate-500">Display name</dt>
-                      <dd className="text-slate-900">{spot.posName}</dd>
-                    </div>
-                    <div className="flex flex-wrap gap-x-2">
-                      <dt className="font-medium text-slate-500">Spot slug</dt>
-                      <dd className="font-mono text-xs text-slate-900">{spot.spotSlug}</dd>
-                    </div>
-                    {spot.posNumber ? (
-                      <div className="flex flex-wrap gap-x-2">
-                        <dt className="font-medium text-slate-500">POS number</dt>
-                        <dd className="text-slate-900">{spot.posNumber}</dd>
-                      </div>
-                    ) : null}
-                    {pocketLabel ? (
-                      <div className="flex flex-wrap gap-x-2">
-                        <dt className="font-medium text-slate-500">Pocket</dt>
-                        <dd className="text-slate-900">{pocketLabel}</dd>
-                      </div>
-                    ) : null}
-                    {spot.spotDescription ? (
-                      <div className="flex flex-wrap gap-x-2">
-                        <dt className="font-medium text-slate-500">Description</dt>
-                        <dd className="text-slate-900">{spot.spotDescription}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Link
-                      href={posSpotPath(spot.spotSlug)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-emerald-700 underline underline-offset-2"
-                    >
-                      Open POS page
-                    </Link>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900";
 const labelClassName = "text-xs font-medium text-slate-500";
@@ -487,10 +403,8 @@ function PartnerFieldsForm({
 
 function PartnerDetailView({
   partner,
-  spots,
 }: {
   partner: PartnerLocation;
-  spots: PosSpot[];
 }) {
   const payments = Array.isArray(partner.payments) ? partner.payments : [];
 
@@ -554,9 +468,6 @@ function PartnerDetailView({
           </div>
         ) : null}
       </dl>
-      <div className="mt-4">
-        <PartnerSpotsList spots={spots} />
-      </div>
     </div>
   );
 }
@@ -642,17 +553,26 @@ function AdminPartnerCard({
           <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={isOpen} />
         </button>
         {!isEditing ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStartEdit();
-            }}
-            className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-            aria-label={`Edit ${partner.name}`}
-          >
-            <IconPencil className="h-5 w-5" />
-          </button>
+          <div className="flex shrink-0">
+            <Link
+              href={routes.admin.partner(partner.id)}
+              className="flex items-center px-3 text-xs font-semibold text-emerald-700 transition hover:bg-slate-50"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Manage
+            </Link>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onStartEdit();
+              }}
+              className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
+              aria-label={`Edit ${partner.name}`}
+            >
+              <IconPencil className="h-5 w-5" />
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -680,12 +600,9 @@ function AdminPartnerCard({
                   Cancel
                 </button>
               </div>
-              <div className="mt-6 border-t border-slate-100 pt-4">
-                <PartnerSpotsList spots={spots} />
-              </div>
             </>
           ) : (
-            <PartnerDetailView partner={partner} spots={spots} />
+            <PartnerDetailView partner={partner} />
           )}
         </div>
       ) : null}

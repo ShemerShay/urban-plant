@@ -6,7 +6,6 @@ import QRCode from "react-qr-code";
 
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
-import { POS_SPOT_POCKETS, type PosSpotPocketValue } from "@/lib/posSpotPocket";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
 import { absoluteAppUrl, getClientOrigin, posSpotPath, routes } from "@/lib/routes";
 
@@ -29,6 +28,10 @@ function useClientOrigin(): string {
   return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
 }
 
+/**
+ * Legacy create/QR helper. Primary create flow is Partner → POS Spots.
+ * Slug identity is partner + spot number only (Pocket is not part of QR).
+ */
 export function AdminQrGenerator() {
   const qrHostRef = useRef<HTMLDivElement>(null);
   const origin = useClientOrigin();
@@ -37,15 +40,12 @@ export function AdminQrGenerator() {
   const [currentOfferId, setCurrentOfferId] = useState("");
   const [partnerLocationId, setPartnerLocationId] = useState("");
   const [posNumber, setPosNumber] = useState("");
-  const [pocket, setPocket] = useState<PosSpotPocketValue | "">("");
-  const [pocketOther, setPocketOther] = useState("");
   const [spotDescription, setSpotDescription] = useState("");
   const [placementNotes, setPlacementNotes] = useState("");
   const [status, setStatus] = useState<PosSpotStatus>("available");
   const [copyHint, setCopyHint] = useState<string | null>(null);
   const [saveHint, setSaveHint] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [pocketOtherError, setPocketOtherError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,44 +73,32 @@ export function AdminQrGenerator() {
   const location = locations.find((l) => l.id === partnerLocationId);
 
   const { spotName, spotSlug } = useMemo(() => {
-    if (!location?.name || !posNumber.trim() || !pocket) {
+    if (!location?.name || !posNumber.trim()) {
       return { spotName: "", spotSlug: "" };
     }
-    if (pocket === "other" && !pocketOther.trim()) {
-      return { spotName: "", spotSlug: "" };
-    }
-    return buildPosSpotNameAndSlug(location.name, posNumber, pocket, pocketOther);
-  }, [location?.name, posNumber, pocket, pocketOther]);
+    return buildPosSpotNameAndSlug(location.name, posNumber);
+  }, [location?.name, posNumber]);
 
   const relativePath = useMemo(() => (spotSlug ? posSpotPath(spotSlug) : ""), [spotSlug]);
   const fullUrl = origin && relativePath ? absoluteAppUrl(origin, relativePath) : "";
 
   const offer = offers.find((item) => item.id === currentOfferId);
-  const pocketLabel =
-    pocket === "other"
-      ? pocketOther.trim() || "Other"
-      : POS_SPOT_POCKETS.find((p) => p.value === pocket)?.label ?? "";
 
   const canSave = Boolean(
     partnerLocationId.trim() &&
       currentOfferId.trim() &&
       posNumber.trim() &&
-      pocket &&
-      (pocket !== "other" || pocketOther.trim()) &&
       spotSlug.trim() &&
       !isSaving,
   );
 
   function resetForm() {
     setPosNumber("");
-    setPocket("");
-    setPocketOther("");
     setSpotDescription("");
     setPlacementNotes("");
     setStatus("available");
     setPartnerLocationId(locations[0]?.id ?? "");
     setCurrentOfferId(offers[0]?.id ?? "");
-    setPocketOtherError(false);
   }
 
   async function handleCopyUrl() {
@@ -147,11 +135,6 @@ export function AdminQrGenerator() {
   }
 
   async function handleSavePosSpot() {
-    if (pocket === "other" && !pocketOther.trim()) {
-      setPocketOtherError(true);
-      setSaveHint("Custom pocket description is required when Other is selected.");
-      return;
-    }
     if (!canSave) return;
     setIsSaving(true);
     setSaveHint(null);
@@ -162,8 +145,6 @@ export function AdminQrGenerator() {
         body: JSON.stringify({
           partnerLocationId,
           posNumber: posNumber.trim(),
-          pocket,
-          ...(pocket === "other" ? { pocketOther: pocketOther.trim() } : {}),
           ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
           placementNotes: placementNotes.trim(),
           currentOfferId,
@@ -189,8 +170,7 @@ export function AdminQrGenerator() {
       <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
         <h2 className="text-lg font-semibold text-emerald-950">Create POS Spot QR</h2>
         <p className="mt-1 text-sm text-slate-600">
-          The QR encodes a stable POS Spot URL only. Product data is loaded through the selected
-          Offer.
+          Prefer creating from Partners → Partner → POS Spots. Slug = partner + spot number only.
         </p>
 
         <div className="mt-5 grid gap-4">
@@ -235,46 +215,6 @@ export function AdminQrGenerator() {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Pocket</span>
-            <select
-              value={pocket}
-              onChange={(e) => {
-                setPocket(e.target.value as PosSpotPocketValue | "");
-                if (e.target.value !== "other") setPocketOtherError(false);
-              }}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-            >
-              <option value="" className="text-slate-900">
-                Select pocket…
-              </option>
-              {POS_SPOT_POCKETS.map((item) => (
-                <option key={item.value} value={item.value} className="text-slate-900">
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {pocket === "other" ? (
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Custom pocket</span>
-              <input
-                value={pocketOther}
-                onChange={(e) => {
-                  setPocketOther(e.target.value);
-                  if (e.target.value.trim()) setPocketOtherError(false);
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-                placeholder="Describe the placement"
-                aria-invalid={pocketOtherError && !pocketOther.trim()}
-              />
-              {pocketOtherError && !pocketOther.trim() ? (
-                <span className="text-sm text-red-700">Custom pocket is required.</span>
-              ) : null}
-            </label>
-          ) : null}
-
-          <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-700">POS Description (optional)</span>
             <input
               value={spotDescription}
@@ -284,7 +224,7 @@ export function AdminQrGenerator() {
             />
           </label>
 
-          <div className="rounded-2xl bg-slate-50/80 px-3 py-3 space-y-2">
+          <div className="space-y-2 rounded-2xl bg-slate-50/80 px-3 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Auto-generated identifiers
             </p>
@@ -302,9 +242,7 @@ export function AdminQrGenerator() {
                 </p>
               ) : null}
             </div>
-            <span className="text-xs text-slate-500">
-              Built from partner name, spot number, and pocket ({pocketLabel || "select pocket"}).
-            </span>
+            <span className="text-xs text-slate-500">Built from partner name and spot number only.</span>
           </div>
 
           <label className="block space-y-2">
@@ -364,20 +302,12 @@ export function AdminQrGenerator() {
             <dt className="font-medium text-slate-500">Spot number</dt>
             <dd className="text-slate-900">{posNumber || "—"}</dd>
           </div>
-          <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Pocket</dt>
-            <dd className="text-slate-900">{pocketLabel || "—"}</dd>
-          </div>
           {spotName ? (
             <div className="flex flex-wrap gap-x-2">
               <dt className="font-medium text-slate-500">Spot name</dt>
               <dd className="font-mono text-slate-900">{spotName}</dd>
             </div>
           ) : null}
-          <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">POS Description</dt>
-            <dd className="text-slate-900">{spotDescription || "—"}</dd>
-          </div>
           <div className="pt-2">
             <dt className="font-medium text-slate-500">Generated URL</dt>
             <dd className="mt-1 break-all rounded-xl bg-white px-3 py-2 font-mono text-xs text-slate-800 ring-1 ring-emerald-100">
@@ -424,8 +354,11 @@ export function AdminQrGenerator() {
       </div>
 
       <p className="text-center text-xs text-slate-500">
-        <Link href={routes.admin.orders()} className="font-medium text-emerald-700 underline underline-offset-2">
-          Back to orders
+        <Link
+          href={routes.admin.partners()}
+          className="font-medium text-emerald-700 underline underline-offset-2"
+        >
+          Back to partners
         </Link>
       </p>
     </div>
