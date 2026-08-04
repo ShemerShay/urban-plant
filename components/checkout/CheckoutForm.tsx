@@ -16,6 +16,12 @@ import {
   type CheckoutFieldKey,
   type CheckoutFulfillmentMethod,
 } from "@/lib/checkoutValidation";
+import {
+  POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
+  isPosSpotPurchasable,
+  shouldShowHeldForPaymentCheckoutMessage,
+} from "@/lib/posSpotHold";
+import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import { routes } from "@/lib/routes";
 type FormFields = {
   fullName: string;
@@ -34,6 +40,8 @@ interface CheckoutFormProps {
   spotSlug: string;
   /** When true, pickup is hidden and only delivery is available. */
   pickupDisabled?: boolean;
+  /** Latest POS inventory status from the server (page load). */
+  posSpotStatus: PosSpotStatus;
 }
 
 export function CheckoutForm({
@@ -42,6 +50,7 @@ export function CheckoutForm({
   priceDisplay,
   spotSlug,
   pickupDisabled = false,
+  posSpotStatus,
 }: CheckoutFormProps) {
   const router = useRouter();
   const [fulfillmentMethod, setFulfillmentMethod] =
@@ -99,9 +108,14 @@ export function CheckoutForm({
   const fieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
   const errors = getVisibleCheckoutFieldErrors(fieldErrors, touched, showAllErrors);
   const canSubmit = canSubmitCheckout(fields, fulfillmentMethod);
+  const purchaseAllowed = isPosSpotPurchasable(posSpotStatus);
+  const showHeldCheckoutMessage = shouldShowHeldForPaymentCheckoutMessage(posSpotStatus);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!purchaseAllowed) {
+      return;
+    }
     if (!canSubmit) {
       revealValidationErrors();
       return;
@@ -185,8 +199,8 @@ export function CheckoutForm({
     }
   }
 
-  const isSubmitDisabled = isSubmitting || !canSubmit;
-  const showValidationOverlay = !isSubmitting && !canSubmit;
+  const isSubmitDisabled = isSubmitting || !canSubmit || !purchaseAllowed;
+  const showValidationOverlay = !isSubmitting && purchaseAllowed && !canSubmit;
 
   const deliveryErrors: DeliveryAddressFieldErrors = {
     deliveryStreet: errors.deliveryStreet,
@@ -271,23 +285,30 @@ export function CheckoutForm({
       {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
       {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}
 
-      <div className="relative">
-        {showValidationOverlay ? (
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label="Show what is required to complete your order"
-            className="absolute inset-0 z-10 cursor-not-allowed rounded-2xl"
-            onClick={revealValidationErrors}
-          />
+      <div>
+        {showHeldCheckoutMessage ? (
+          <p className="mb-3 text-sm leading-5 text-amber-900">
+            {POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE}
+          </p>
         ) : null}
-        <button
-          type="submit"
-          disabled={isSubmitDisabled}
-          className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
-        >
-          {isSubmitting ? "Processing…" : "Complete Order"}
-        </button>
+        <div className="relative">
+          {showValidationOverlay ? (
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Show what is required to complete your order"
+              className="absolute inset-0 z-10 cursor-not-allowed rounded-2xl"
+              onClick={revealValidationErrors}
+            />
+          ) : null}
+          <button
+            type="submit"
+            disabled={isSubmitDisabled}
+            className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
+          >
+            {isSubmitting ? "Processing…" : "Complete Order"}
+          </button>
+        </div>
       </div>
     </form>
   );

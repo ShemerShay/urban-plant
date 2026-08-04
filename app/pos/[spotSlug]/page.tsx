@@ -15,6 +15,11 @@ import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
 import { canPurchasePosSpot } from "@/lib/purchaseEligibility";
+import {
+  POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
+  productPageCtaText,
+  shouldShowHeldForPaymentProductMessage,
+} from "@/lib/posSpotHold";
 import { posSpotCheckoutPath } from "@/lib/routes";
 
 /** Static marketing copy for the QR plant landing page (not from DB). */
@@ -66,8 +71,12 @@ export default async function PosPage({ params }: PosPageProps) {
 
   const knownPartner = await getLocationById(posSpot.partnerLocationId);
   const partnerName = knownPartner?.name?.trim() ?? "";
-  const ctaText = formatBuyCta(offer.consumerPrice, plant.currency);
+  const availableCtaText = formatBuyCta(offer.consumerPrice, plant.currency);
+  const ctaText = productPageCtaText(posSpot.status, availableCtaText);
   const purchaseEnabled = await canPurchasePosSpot(posSpot.spotSlug);
+  const heldMessage = shouldShowHeldForPaymentProductMessage(posSpot.status)
+    ? POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE
+    : undefined;
   const whatsAppMessage = partnerName
     ? `Hi Urban Plant — I have a question about “${plant.name}” at ${partnerName}.`
     : `Hi Urban Plant — I have a question about “${plant.name}”.`;
@@ -75,7 +84,11 @@ export default async function PosPage({ params }: PosPageProps) {
   return (
     <main
       id="plant-page"
-      className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-10"
+      className={`bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pt-10 ${
+        heldMessage
+          ? "pb-[calc(9.5rem+env(safe-area-inset-bottom))]"
+          : "pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
+      }`}
     >
       <RememberCustomerPath />
       <PlantPageHeader knownPartner={knownPartner?.name ?? ""} />
@@ -141,6 +154,7 @@ export default async function PosPage({ params }: PosPageProps) {
         href={posSpotCheckoutPath(posSpot.spotSlug)}
         ctaText={ctaText}
         purchaseEnabled={purchaseEnabled}
+        messageBelow={heldMessage}
       />
     </main>
   );

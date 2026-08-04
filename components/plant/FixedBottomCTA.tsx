@@ -5,12 +5,15 @@ interface FixedBottomCTAProps {
   ctaText: string;
   /** When false, checkout is blocked (e.g. plant unit no longer available at location). */
   purchaseEnabled?: boolean;
+  /** Optional note directly under the CTA (e.g. held_for_payment explanation). */
+  messageBelow?: string;
 }
 
 export function FixedBottomCTA({
   href,
   ctaText,
   purchaseEnabled = true,
+  messageBelow,
 }: FixedBottomCTAProps) {
   const disabled = !purchaseEnabled;
 
@@ -36,6 +39,9 @@ export function FixedBottomCTA({
           {ctaText}
         </Link>
       )}
+      {messageBelow ? (
+        <p className="mt-2 text-center text-sm leading-5 text-neutral-600">{messageBelow}</p>
+      ) : null}
     </div>
   );
 }

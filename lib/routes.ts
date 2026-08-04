@@ -25,6 +25,7 @@ export const routes = {
     plants: () => "/admin/plants",
     offers: () => "/admin/offers",
     partners: () => "/admin/partners",
+    cardcomTest: () => "/admin/cardcom-test",
     partner: (partnerId: string) =>
       `/admin/partners/${encodeURIComponent(partnerId.trim())}`,
     partnerPockets: (partnerId: string) =>
@@ -70,6 +71,11 @@ export const routes = {
     partnerPocket: (partnerId: string, pocketId: string) =>
       `/api/partners/${encodeURIComponent(partnerId.trim())}/pockets/${encodeURIComponent(pocketId.trim())}`,
     sendPurchaseEmail: () => "/api/send-purchase-email",
+    cardcomCreate: () => "/api/payments/cardcom/create",
+    /** Cardcom LowProfile webhook — POST JSON; verifies via GetLpResult. */
+    cardcomWebhook: () => "/api/payments/cardcom/webhook",
+    /** Admin-only controlled Cardcom test Create (terminal 1000). */
+    adminCardcomTest: () => "/api/admin/cardcom-test",
   },
   plantLibrary: (filename: string) =>
     `/plant-library/${encodeURIComponent(filename.trim())}`,
@@ -105,6 +111,53 @@ export function getClientOrigin(): string {
 export function getRequestOrigin(requestUrl: string | URL): string {
   const url = typeof requestUrl === "string" ? new URL(requestUrl) : requestUrl;
   return url.origin;
+}
+
+/**
+ * Public HTTPS site origin for Cardcom callbacks (Success / Failed / WebHook).
+ * Requires `APP_ORIGIN` (e.g. https://your-site.netlify.app). Never uses localhost
+ * or request host — Cardcom must reach a public URL.
+ */
+export function getPublicAppOrigin(): string {
+  const raw = process.env.APP_ORIGIN?.trim();
+  if (!raw) {
+    throw new Error(
+      "APP_ORIGIN is not set. Add a public HTTPS origin (e.g. https://your-site.netlify.app) to .env.local and Netlify Environment Variables.",
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(
+      "APP_ORIGIN must be a valid absolute URL (e.g. https://your-site.netlify.app).",
+    );
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new Error("APP_ORIGIN must use HTTPS.");
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local")) {
+    throw new Error("APP_ORIGIN must be a public HTTPS origin (not localhost).");
+  }
+
+  return parsed.origin;
+}
+
+/** Absolute Cardcom callback URLs from a validated public origin. */
+export function buildCardcomCallbackUrls(origin: string): {
+  successRedirectUrl: string;
+  failedRedirectUrl: string;
+  webHookUrl: string;
+} {
+  return {
+    successRedirectUrl: absoluteAppUrl(origin, routes.customer.paymentSuccess()),
+    failedRedirectUrl: absoluteAppUrl(origin, routes.customer.paymentFailed()),
+    webHookUrl: absoluteAppUrl(origin, routes.api.cardcomWebhook()),
+  };
 }
 
 export function isAdminPath(pathname: string): boolean {

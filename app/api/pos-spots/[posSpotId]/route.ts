@@ -19,7 +19,12 @@ function cleanString(value: unknown): string {
 }
 
 function parsePosSpotStatus(value: unknown): PosSpotStatus | null {
-  if (value === "available" || value === "sold" || value === "inactive") {
+  if (
+    value === "available" ||
+    value === "sold" ||
+    value === "inactive" ||
+    value === "held_for_payment"
+  ) {
     return value;
   }
   return null;
@@ -168,7 +173,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const parsedStatus = hasStatus ? parsePosSpotStatus(statusRaw) : null;
   if (hasStatus && !parsedStatus) {
     return NextResponse.json(
-      { error: "status must be available, sold, or inactive" },
+      { error: "status must be available, sold, inactive, or held_for_payment" },
       { status: 400 },
     );
   }

@@ -15,7 +15,14 @@ import {
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 
 function normalizeStatus(value: unknown): PosSpotStatus {
-  if (value === "sold" || value === "inactive") return value;
+  if (
+    value === "sold" ||
+    value === "inactive" ||
+    value === "held_for_payment" ||
+    value === "available"
+  ) {
+    return value;
+  }
   return "available";
 }
 

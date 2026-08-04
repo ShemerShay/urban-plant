@@ -77,7 +77,14 @@ function resolveOptionalDescription(row: PosSpotRow, posName: string): string | 
 }
 
 function normalizeStatus(value: string): PosSpotStatus {
-  if (value === "sold" || value === "inactive") return value;
+  if (
+    value === "sold" ||
+    value === "inactive" ||
+    value === "held_for_payment" ||
+    value === "available"
+  ) {
+    return value;
+  }
   return "available";
 }
 
@@ -274,6 +281,97 @@ export async function setPosSpotStatus(id: string, status: PosSpotStatus): Promi
   return row ? mapPosSpotRow(row) : null;
 }
 
+export type PosSpotHoldMutationResult =
+  | { ok: true; outcome: "acquired" | "released" | "sold"; posSpot: PosSpot }
+  | { ok: false; outcome: "not_found" | "unavailable" };
+
+/**
+ * Atomically: available → held_for_payment.
+ * Succeeds only when the spot is still available (conditional UPDATE).
+ */
+export async function acquirePosSpotHoldForPayment(
+  id: string,
+): Promise<PosSpotHoldMutationResult> {
+  const trimmed = id.trim();
+  if (!trimmed) return { ok: false, outcome: "not_found" };
+
+  const existing = await sql`
+    SELECT id FROM pos_spots WHERE id = ${trimmed}::uuid LIMIT 1
+  `;
+  if ((existing as { id: string }[]).length === 0) {
+    return { ok: false, outcome: "not_found" };
+  }
+
+  const rows = await sql`
+    UPDATE pos_spots
+    SET status = 'held_for_payment'
+    WHERE id = ${trimmed}::uuid
+      AND status = 'available'
+    RETURNING ${POS_SPOT_ROW_SQL}
+  `;
+  const row = (rows as PosSpotRow[])[0];
+  if (!row) return { ok: false, outcome: "unavailable" };
+  return { ok: true, outcome: "acquired", posSpot: mapPosSpotRow(row) };
+}
+
+/**
+ * Atomically: held_for_payment → available.
+ * For failed / cancelled / expired payment attempts (wired later).
+ */
+export async function releasePosSpotHoldForPayment(
+  id: string,
+): Promise<PosSpotHoldMutationResult> {
+  const trimmed = id.trim();
+  if (!trimmed) return { ok: false, outcome: "not_found" };
+
+  const existing = await sql`
+    SELECT id FROM pos_spots WHERE id = ${trimmed}::uuid LIMIT 1
+  `;
+  if ((existing as { id: string }[]).length === 0) {
+    return { ok: false, outcome: "not_found" };
+  }
+
+  const rows = await sql`
+    UPDATE pos_spots
+    SET status = 'available'
+    WHERE id = ${trimmed}::uuid
+      AND status = 'held_for_payment'
+    RETURNING ${POS_SPOT_ROW_SQL}
+  `;
+  const row = (rows as PosSpotRow[])[0];
+  if (!row) return { ok: false, outcome: "unavailable" };
+  return { ok: true, outcome: "released", posSpot: mapPosSpotRow(row) };
+}
+
+/**
+ * Atomically: held_for_payment → sold.
+ * For verified payment confirmation (wired later). Not used by current checkout.
+ */
+export async function completePosSpotSaleFromHold(
+  id: string,
+): Promise<PosSpotHoldMutationResult> {
+  const trimmed = id.trim();
+  if (!trimmed) return { ok: false, outcome: "not_found" };
+
+  const existing = await sql`
+    SELECT id FROM pos_spots WHERE id = ${trimmed}::uuid LIMIT 1
+  `;
+  if ((existing as { id: string }[]).length === 0) {
+    return { ok: false, outcome: "not_found" };
+  }
+
+  const rows = await sql`
+    UPDATE pos_spots
+    SET status = 'sold'
+    WHERE id = ${trimmed}::uuid
+      AND status = 'held_for_payment'
+    RETURNING ${POS_SPOT_ROW_SQL}
+  `;
+  const row = (rows as PosSpotRow[])[0];
+  if (!row) return { ok: false, outcome: "unavailable" };
+  return { ok: true, outcome: "sold", posSpot: mapPosSpotRow(row) };
+}
+
 export async function appendPosSpot(posSpot: PosSpot): Promise<PosSpot> {
   const existing = await sql`
     SELECT id FROM pos_spots
@@ -411,7 +509,10 @@ export async function updatePosSpot(
   const settingCheck = updateCheck && patch.checkStatus === true;
 
   const statusIsValid =
-    patch.status === "available" || patch.status === "sold" || patch.status === "inactive";
+    patch.status === "available" ||
+    patch.status === "sold" ||
+    patch.status === "inactive" ||
+    patch.status === "held_for_payment";
   const updateStatus = Boolean(patch.updateStatus && statusIsValid);
   const statusForSql = updateStatus ? patch.status! : null;
 

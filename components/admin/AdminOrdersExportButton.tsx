@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 
 import { formatOrderDeliveryAddressDisplay } from "@/lib/deliveryAddress";
 import type { SavedOrder } from "@/lib/orderTypes";
-import { ORDER_STATUS_LABELS } from "@/lib/status";
+import { isVerifiedPaidOrderStatus, ORDER_STATUS_LABELS } from "@/lib/status";
 
 interface AdminOrdersExportButtonProps {
   orders: SavedOrder[];
@@ -17,11 +17,13 @@ function orderToRow(order: SavedOrder): Record<string, string | number> {
   const productName = order.snapshot?.productName ?? order.plantName;
   const price = order.snapshot?.consumerPrice ?? order.price;
   const locationName = order.snapshot?.partnerLocationName ?? order.locationName;
+  const paid = isVerifiedPaidOrderStatus(order.orderStatus);
 
   return {
     "Order ID": order.orderId,
     "Created At": new Date(order.createdAt).toLocaleString(),
     Status: ORDER_STATUS_LABELS[order.orderStatus],
+    "Counted as paid sale": paid ? "yes" : "no",
     "Customer Name": order.fullName,
     Email: order.customerEmail ?? "",
     Phone: order.phone,

@@ -51,6 +51,7 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
             priceDisplay={formatPrice(offer.consumerPrice, plant.currency)}
             spotSlug={posSpot.spotSlug}
             pickupDisabled={pickupDisabled}
+            posSpotStatus={posSpot.status}
           />
         </section>
       </div>

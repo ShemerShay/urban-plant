@@ -18,7 +18,7 @@ type OfferOption = {
   status: "active" | "inactive";
 };
 
-type PosSpotStatus = "available" | "sold" | "inactive";
+type PosSpotStatus = "available" | "sold" | "inactive" | "held_for_payment";
 
 function subscribeToNothing(): () => void {
   return () => {};
@@ -342,6 +342,8 @@ export function AdminQrGenerator() {
               <QRCode
                 value={fullUrl}
                 size={240}
+                fgColor="#000000"
+                bgColor="transparent"
                 style={{ height: "auto", maxWidth: "100%", width: "100%" }}
               />
             ) : (

@@ -24,7 +24,7 @@ export type CheckoutSessionDraft = CreatePendingOrderInput & {
   paymentProviderSessionId?: string;
 };
 
-/** Build a future checkout-session draft. Pending payment state does not live on Order. */
+/** Build a future checkout-session draft (in-memory). Pending payment may also live on Order. */
 export function createPendingOrder(input: CreatePendingOrderInput): CheckoutSessionDraft {
   const createdAt = new Date().toISOString();
 

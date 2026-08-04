@@ -22,6 +22,8 @@ interface AdminOrderCardProps {
 
 function statusBadgeClass(status: OrderStatus): string {
   switch (status) {
+    case "pending_payment":
+      return "bg-amber-50 text-amber-950 ring-1 ring-amber-200";
     case "delivered":
       return "bg-emerald-100 text-emerald-900";
     case "picked_up":
@@ -249,9 +251,14 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
         <AdminOrderStatusSelect
           id={`order-status-${order.orderId}`}
           value={status}
-          disabled={busy !== null}
+          disabled={busy !== null || status === "pending_payment" || isCancelled}
           onChange={(next) => void handleStatusChange(next)}
         />
+        {status === "pending_payment" ? (
+          <p className="mt-2 text-xs text-amber-800">
+            Awaiting payment verification. Status cannot be marked paid from admin.
+          </p>
+        ) : null}
       </section>
 
 

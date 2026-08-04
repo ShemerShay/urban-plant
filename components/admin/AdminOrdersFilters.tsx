@@ -8,7 +8,13 @@ import { ordersQueryUrl } from "@/lib/adminOrdersFilterUtils";
 import type { OrderStatus } from "@/lib/status";
 import { ORDER_STATUS_LABELS } from "@/lib/status";
 
-const ORDER_STATUSES: OrderStatus[] = ["sold", "picked_up", "delivered", "cancelled"];
+const ORDER_STATUSES: OrderStatus[] = [
+  "pending_payment",
+  "sold",
+  "picked_up",
+  "delivered",
+  "cancelled",
+];
 
 const selectClass =
   "h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";

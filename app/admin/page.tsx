@@ -24,6 +24,11 @@ const ADMIN_PAGES = [
     label: "Partners",
     description: "Manage partners, their pockets, and POS spots.",
   },
+  {
+    href: routes.admin.cardcomTest(),
+    label: "Cardcom test",
+    description: "Controlled Cardcom test payment (terminal 1000 only).",
+  },
 ] as const;
 
 export default function AdminIndexPage() {
