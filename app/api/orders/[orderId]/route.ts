@@ -12,7 +12,7 @@ import { readOrders, replaceOrder } from "@/lib/ordersStorage";
 import type { SavedOrder } from "@/lib/orderTypes";
 import { setPosSpotStatus } from "@/lib/posSpotStorage";
 import type { OrderStatus } from "@/lib/status";
-import { isOrderStatus, parseOrderStatus } from "@/lib/status";
+import { canTransitionOrderStatus, isOrderStatus, parseOrderStatus } from "@/lib/status";
 
 interface RouteParams {
   params: Promise<{ orderId: string }>;
@@ -148,7 +148,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(
       {
         error:
-          'Invalid order status. Send orderStatus: "sold" | "picked_up" | "delivered" | "cancelled" (or legacy action: "markDelivered").',
+          'Invalid order status. Send orderStatus: "pending_payment" | "sold" | "picked_up" | "delivered" | "cancelled" (or legacy action: "markDelivered").',
       },
       { status: 400 },
     );
@@ -158,6 +158,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const prev = orders.find((o) => o.orderId === orderId);
   if (!prev) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  if (!canTransitionOrderStatus(prev.orderStatus, requested)) {
+    return NextResponse.json(
+      {
+        error:
+          prev.orderStatus === "pending_payment"
+            ? "Pending payment orders cannot be marked paid from admin. Cancel the order, or wait for payment verification."
+            : `Cannot change order status from ${prev.orderStatus} to ${requested}.`,
+      },
+      { status: 400 },
+    );
   }
 
   const updated = nextOrderWithStatus(prev, requested);

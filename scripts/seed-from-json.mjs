@@ -16,7 +16,13 @@ import { partnerLocations } from "./seed/partner-locations.mjs";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = path.join(root, "data");
 const SEED_CREATED_AT = "2026-05-17T00:00:00.000Z";
-const ORDER_STATUSES = new Set(["sold", "picked_up", "delivered", "cancelled"]);
+const ORDER_STATUSES = new Set([
+  "pending_payment",
+  "sold",
+  "picked_up",
+  "delivered",
+  "cancelled",
+]);
 const EVENT_TYPES = new Set([
   "order_created",
   "order_cancelled",
@@ -61,11 +67,10 @@ function requireSpotSlug(record, context) {
 
 function normalizeOrderStatus(raw, source) {
   if (typeof raw === "string" && ORDER_STATUSES.has(raw)) return raw;
-  if (
-    (source === "deliveryStatus" && (raw === "available" || raw === "pending")) ||
-    raw === "available" ||
-    raw === "pending_payment"
-  ) {
+  if (source === "deliveryStatus" && (raw === "available" || raw === "pending")) {
+    return "sold";
+  }
+  if (raw === "available" || raw === "pending") {
     return "sold";
   }
   return "sold";

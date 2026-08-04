@@ -21,6 +21,7 @@ import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { Pocket } from "@/lib/pocketTypes";
 import { resolvePosSpotPocketLabel } from "@/lib/posSpotPocket";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
+import { POS_HELD_FOR_PAYMENT_ADMIN_LABEL } from "@/lib/status";
 import {
   buildPosSpotNameAndSlug,
   formatPosSpotDisplayName,
@@ -52,12 +53,14 @@ function useClientOrigin(): string {
 function posSpotStatusLabel(status: PosSpotStatus): string {
   if (status === "available") return "Available";
   if (status === "sold") return "Unavailable";
+  if (status === "held_for_payment") return POS_HELD_FOR_PAYMENT_ADMIN_LABEL;
   return "Inactive";
 }
 
 function posSpotStatusClassName(status: PosSpotStatus): string {
   if (status === "available") return "bg-emerald-100 text-emerald-800";
   if (status === "sold") return "bg-slate-100 text-slate-700";
+  if (status === "held_for_payment") return "bg-amber-100 text-amber-900";
   return "bg-amber-100 text-amber-800";
 }
 
@@ -402,7 +405,15 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     setCurrentOfferId(spot.currentOfferId);
     setSpotDescription(spot.spotDescription ?? "");
     setPlacementNotes(spot.placementNotes ?? "");
-    setSpotStatus(spot.status === "inactive" ? "inactive" : spot.status === "sold" ? "sold" : "available");
+    setSpotStatus(
+      spot.status === "inactive"
+        ? "inactive"
+        : spot.status === "sold"
+          ? "sold"
+          : spot.status === "held_for_payment"
+            ? "held_for_payment"
+            : "available",
+    );
     setSpotError(null);
     setCreateSpotOpen(true);
   }
@@ -891,6 +902,7 @@ This action cannot be undone.`
           >
             <option value="available">Available</option>
             <option value="sold">Unavailable</option>
+            <option value="held_for_payment">Held for payment</option>
             <option value="inactive">Inactive</option>
           </select>
         </label>
@@ -925,7 +937,7 @@ This action cannot be undone.`
             {fullUrl ? (
               <div className="mt-3 flex flex-col items-start gap-2">
                 <div ref={qrHostRef} className="rounded-xl bg-white p-2">
-                  <QRCode value={fullUrl} size={112} />
+                  <QRCode value={fullUrl} size={112} fgColor="#000000" bgColor="transparent" />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button

@@ -8,6 +8,7 @@ import QRCode from "react-qr-code";
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
+import { POS_HELD_FOR_PAYMENT_ADMIN_LABEL } from "@/lib/status";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
 import {
   absoluteAppUrl,
@@ -84,16 +85,18 @@ function formatDateOnly(isoDate: string | undefined): string | null {
   });
 }
 
-/** Admin list copy only; customer plant page still shows "Sold" via `INVENTORY_STATUS_LABELS`. */
+/** Admin list copy only; customer plant page still shows labels via `INVENTORY_STATUS_LABELS`. */
 function statusLabel(status: PosSpotStatus): string {
   if (status === "available") return "Available";
   if (status === "sold") return "Unavailable";
+  if (status === "held_for_payment") return POS_HELD_FOR_PAYMENT_ADMIN_LABEL;
   return "Inactive";
 }
 
 function statusClassName(status: PosSpotStatus): string {
   if (status === "available") return "bg-emerald-100 text-emerald-800";
   if (status === "sold") return "bg-slate-100 text-slate-700";
+  if (status === "held_for_payment") return "bg-amber-100 text-amber-900";
   return "bg-amber-100 text-amber-800";
 }
 
@@ -306,6 +309,8 @@ function PosSpotCard({
               <QRCode
                 value={fullUrl}
                 size={120}
+                fgColor="#000000"
+                bgColor="transparent"
                 style={{ height: "auto", maxWidth: "100%", width: "100%" }}
               />
             ) : (

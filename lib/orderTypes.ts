@@ -2,6 +2,9 @@ import type { OrderStatus } from "./status";
 
 export type FulfillmentMethod = "delivery" | "pickup";
 
+/** Which Cardcom terminal/credentials created checkout_session_id. */
+export type OrderCardcomEnv = "test" | "production";
+
 export interface OrderSnapshot {
   productId: string;
   productName: string;
@@ -25,6 +28,8 @@ export interface SavedOrder {
   id?: string;
   orderId: string;
   checkoutSessionId?: string;
+  /** Which Cardcom terminal/credentials created checkout_session_id. */
+  cardcomEnv?: OrderCardcomEnv;
   posSpotId?: string;
   offerId?: string;
   plantId: string;
@@ -45,7 +50,7 @@ export interface SavedOrder {
   apartmentOrNotes: string;
   fulfillmentMethod: FulfillmentMethod;
   createdAt: string;
-  /** Fulfillment tracking for completed orders. */
+  /** Order lifecycle status (includes pending_payment before verified Cardcom payment). */
   orderStatus: OrderStatus;
   source?: "online" | "manual" | "admin";
   cancelledAt?: string;

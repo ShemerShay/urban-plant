@@ -1,4 +1,19 @@
-export type PosSpotStatus = "available" | "sold" | "inactive";
+export type PosSpotStatus = "available" | "sold" | "inactive" | "held_for_payment";
+
+const POS_SPOT_STATUS_SET = new Set<PosSpotStatus>([
+  "available",
+  "sold",
+  "inactive",
+  "held_for_payment",
+]);
+
+export function isPosSpotStatus(value: unknown): value is PosSpotStatus {
+  return typeof value === "string" && POS_SPOT_STATUS_SET.has(value as PosSpotStatus);
+}
+
+export function parsePosSpotStatus(value: unknown): PosSpotStatus | null {
+  return isPosSpotStatus(value) ? value : null;
+}
 
 export interface PosSpot {
   /** UUID primary key — internal relations only; never shown in admin UI. */

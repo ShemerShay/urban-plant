@@ -9,16 +9,20 @@ import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes"
 import type { OrderStatus } from "./status";
 import { isOrderStatus } from "./status";
 
-function normalizeLegacyOrderStatus(
+/**
+ * Map DB / legacy status strings to OrderStatus.
+ * pending_payment must remain pending_payment (never coerce to sold).
+ */
+export function normalizeLegacyOrderStatus(
   raw: unknown,
   source: "orderStatus" | "deliveryStatus",
 ): OrderStatus {
   if (isOrderStatus(raw)) return raw;
-  if (
-    (source === "deliveryStatus" && (raw === "available" || raw === "pending")) ||
-    raw === "available" ||
-    raw === "pending_payment"
-  ) {
+  // Legacy deliveryStatus / older rows — not Cardcom pending_payment.
+  if (source === "deliveryStatus" && (raw === "available" || raw === "pending")) {
+    return "sold";
+  }
+  if (raw === "available" || raw === "pending") {
     return "sold";
   }
   return "sold";
@@ -71,6 +75,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
 type OrderRow = {
   order_id: string;
   checkout_session_id: string | null;
+  cardcom_env: string | null;
   pos_spot_id: string | null;
   offer_id: string | null;
   product_id: string;
@@ -127,6 +132,9 @@ function mapOrderRow(row: OrderRow): SavedOrder {
     id: orderId,
     orderId,
     ...(row.checkout_session_id ? { checkoutSessionId: row.checkout_session_id } : {}),
+    ...(row.cardcom_env === "test" || row.cardcom_env === "production"
+      ? { cardcomEnv: row.cardcom_env }
+      : {}),
     ...(row.pos_spot_id ? { posSpotId: row.pos_spot_id } : {}),
     ...(row.offer_id ? { offerId: row.offer_id } : {}),
     plantId: row.product_id,
@@ -158,6 +166,7 @@ async function insertOrder(order: SavedOrder): Promise<void> {
     INSERT INTO orders (
       order_id,
       checkout_session_id,
+      cardcom_env,
       pos_spot_id,
       offer_id,
       product_id,
@@ -185,6 +194,7 @@ async function insertOrder(order: SavedOrder): Promise<void> {
     VALUES (
       ${order.orderId}::uuid,
       ${order.checkoutSessionId ?? null},
+      ${order.cardcomEnv ?? null},
       ${order.posSpotId ?? null}::uuid,
       ${order.offerId ?? null},
       ${order.plantId},
@@ -217,6 +227,7 @@ export async function readOrders(): Promise<SavedOrder[]> {
     SELECT
       order_id,
       checkout_session_id,
+      cardcom_env,
       pos_spot_id,
       offer_id,
       product_id,
@@ -283,11 +294,12 @@ export async function patchOrderById(
   return updated;
 }
 
-async function getOrderById(orderId: string): Promise<SavedOrder | null> {
+export async function getOrderById(orderId: string): Promise<SavedOrder | null> {
   const rows = await sql`
     SELECT
       order_id,
       checkout_session_id,
+      cardcom_env,
       pos_spot_id,
       offer_id,
       product_id,
@@ -324,6 +336,7 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
     UPDATE orders
     SET
       checkout_session_id = ${order.checkoutSessionId ?? null},
+      cardcom_env = ${order.cardcomEnv ?? null},
       pos_spot_id = ${order.posSpotId ?? null}::uuid,
       offer_id = ${order.offerId ?? null},
       product_id = ${order.plantId},
@@ -351,6 +364,7 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
     RETURNING
       order_id,
       checkout_session_id,
+      cardcom_env,
       pos_spot_id,
       offer_id,
       product_id,
@@ -377,4 +391,343 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
   `;
   const row = (rows as OrderRow[])[0];
   return row ? mapOrderRow(row) : null;
+}
+
+export type AttachCheckoutSessionIdResult =
+  | { ok: true; order: SavedOrder; alreadyAttached: boolean }
+  | {
+      ok: false;
+      reason: "not_found" | "not_pending" | "already_set" | "duplicate_session" | "conflict";
+    };
+
+/**
+ * Attach Cardcom LowProfileId to checkout_session_id on a pending_payment order.
+ * - Succeeds when checkout_session_id IS NULL (new attach).
+ * - Idempotent when the same LowProfileId is already on this order.
+ * - Fails when a different LowProfileId is already set (no overwrite).
+ * - Fails when the LowProfileId is already used by another order (unique index).
+ */
+export async function attachCheckoutSessionIdToPendingOrder(
+  orderId: string,
+  checkoutSessionId: string,
+  options?: { cardcomEnv?: "test" | "production" },
+): Promise<AttachCheckoutSessionIdResult> {
+  const trimmedId = orderId.trim();
+  const sessionId = checkoutSessionId.trim();
+  const cardcomEnv = options?.cardcomEnv ?? "production";
+  if (!trimmedId || !sessionId) {
+    return { ok: false, reason: "conflict" };
+  }
+
+  try {
+    const rows = await sql`
+      UPDATE orders
+      SET
+        checkout_session_id = ${sessionId},
+        cardcom_env = ${cardcomEnv}
+      WHERE order_id = ${trimmedId}::uuid
+        AND order_status = 'pending_payment'
+        AND checkout_session_id IS NULL
+      RETURNING
+        order_id,
+        checkout_session_id,
+        cardcom_env,
+        pos_spot_id,
+        offer_id,
+        product_id,
+        product_name,
+        partner_location_id,
+        partner_location_name,
+        partner_location_address,
+        price,
+        full_name,
+        customer_email,
+        phone,
+        address,
+        apartment_or_notes,
+        fulfillment_method,
+        order_status,
+        source,
+        cancelled_at,
+        cancelled_by,
+        cancellation_reason,
+        delivered_at,
+        picked_up_at,
+        snapshot,
+        created_at
+    `;
+    const row = (rows as OrderRow[])[0];
+    if (row) {
+      return { ok: true, order: mapOrderRow(row), alreadyAttached: false };
+    }
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return { ok: false, reason: "duplicate_session" };
+    }
+    throw error;
+  }
+
+  const existing = await getOrderById(trimmedId);
+  if (!existing) return { ok: false, reason: "not_found" };
+  if (existing.orderStatus !== "pending_payment") {
+    return { ok: false, reason: "not_pending" };
+  }
+  if (existing.checkoutSessionId === sessionId) {
+    // Idempotent: same LowProfileId already stored on this pending order.
+    return { ok: true, order: existing, alreadyAttached: true };
+  }
+  if (existing.checkoutSessionId) {
+    return { ok: false, reason: "already_set" };
+  }
+  return { ok: false, reason: "conflict" };
+}
+
+/**
+ * Cancel only while order_status is still pending_payment.
+ * Returns null if the order is missing or no longer pending.
+ */
+export async function cancelPendingPaymentOrder(
+  orderId: string,
+  reason: string,
+): Promise<SavedOrder | null> {
+  const trimmedId = orderId.trim();
+  const reasonTrim = reason.trim();
+  if (!trimmedId || !reasonTrim) return null;
+
+  const cancelledAt = new Date().toISOString();
+  const rows = await sql`
+    UPDATE orders
+    SET
+      order_status = 'cancelled',
+      cancelled_at = ${cancelledAt}::timestamptz,
+      cancelled_by = 'system',
+      cancellation_reason = ${reasonTrim},
+      delivered_at = NULL,
+      picked_up_at = NULL
+    WHERE order_id = ${trimmedId}::uuid
+      AND order_status = 'pending_payment'
+    RETURNING
+      order_id,
+      checkout_session_id,
+      cardcom_env,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at
+  `;
+  const row = (rows as OrderRow[])[0];
+  return row ? mapOrderRow(row) : null;
+}
+
+export async function getOrderByCheckoutSessionId(
+  checkoutSessionId: string,
+): Promise<SavedOrder | null> {
+  const sessionId = checkoutSessionId.trim();
+  if (!sessionId) return null;
+
+  const rows = await sql`
+    SELECT
+      order_id,
+      checkout_session_id,
+      cardcom_env,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at
+    FROM orders
+    WHERE checkout_session_id = ${sessionId}
+    LIMIT 1
+  `;
+  const row = (rows as OrderRow[])[0];
+  return row ? mapOrderRow(row) : null;
+}
+
+export type FinalizeVerifiedPendingPaymentResult =
+  | {
+      ok: true;
+      order: SavedOrder;
+      finalized: boolean;
+    }
+  | { ok: false; reason: "ineligible" | "conflict" };
+
+/**
+ * Atomically finalize a verified pending payment on the SAME order row + its POS.
+ * Single SQL statement (Postgres atomic): both updates happen together or not at all.
+ *
+ * Delivery: pending_payment → sold
+ * Pickup: pending_payment → picked_up (+ picked_up_at)
+ * POS: held_for_payment → sold
+ */
+export async function finalizeVerifiedPendingPaymentAtomic(input: {
+  orderId: string;
+  checkoutSessionId: string;
+  posSpotId: string;
+  fulfillmentMethod: "delivery" | "pickup";
+}): Promise<FinalizeVerifiedPendingPaymentResult> {
+  const orderId = input.orderId.trim();
+  const checkoutSessionId = input.checkoutSessionId.trim();
+  const posSpotId = input.posSpotId.trim();
+  if (!orderId || !checkoutSessionId || !posSpotId) {
+    return { ok: false, reason: "ineligible" };
+  }
+
+  const isPickup = input.fulfillmentMethod === "pickup";
+  const nextStatus = isPickup ? "picked_up" : "sold";
+  const pickedUpAt = isPickup ? new Date().toISOString() : null;
+
+  const rows = await sql`
+    WITH eligible AS (
+      SELECT
+        o.order_id,
+        o.pos_spot_id
+      FROM orders o
+      INNER JOIN pos_spots p ON p.id = o.pos_spot_id
+      WHERE o.order_id = ${orderId}::uuid
+        AND o.order_status = 'pending_payment'
+        AND o.checkout_session_id = ${checkoutSessionId}
+        AND o.pos_spot_id = ${posSpotId}::uuid
+        AND p.status = 'held_for_payment'
+    ),
+    order_upd AS (
+      UPDATE orders o
+      SET
+        order_status = ${nextStatus},
+        picked_up_at = ${pickedUpAt}::timestamptz,
+        cancelled_at = NULL,
+        cancelled_by = NULL,
+        cancellation_reason = NULL
+      FROM eligible e
+      WHERE o.order_id = e.order_id
+      RETURNING
+        o.order_id,
+        o.checkout_session_id,
+        o.cardcom_env,
+        o.pos_spot_id,
+        o.offer_id,
+        o.product_id,
+        o.product_name,
+        o.partner_location_id,
+        o.partner_location_name,
+        o.partner_location_address,
+        o.price,
+        o.full_name,
+        o.customer_email,
+        o.phone,
+        o.address,
+        o.apartment_or_notes,
+        o.fulfillment_method,
+        o.order_status,
+        o.source,
+        o.cancelled_at,
+        o.cancelled_by,
+        o.cancellation_reason,
+        o.delivered_at,
+        o.picked_up_at,
+        o.snapshot,
+        o.created_at
+    ),
+    pos_upd AS (
+      UPDATE pos_spots p
+      SET status = 'sold'
+      FROM eligible e
+      WHERE p.id = e.pos_spot_id
+      RETURNING p.id
+    )
+    SELECT
+      o.order_id,
+      o.checkout_session_id,
+      o.cardcom_env,
+      o.pos_spot_id,
+      o.offer_id,
+      o.product_id,
+      o.product_name,
+      o.partner_location_id,
+      o.partner_location_name,
+      o.partner_location_address,
+      o.price,
+      o.full_name,
+      o.customer_email,
+      o.phone,
+      o.address,
+      o.apartment_or_notes,
+      o.fulfillment_method,
+      o.order_status,
+      o.source,
+      o.cancelled_at,
+      o.cancelled_by,
+      o.cancellation_reason,
+      o.delivered_at,
+      o.picked_up_at,
+      o.snapshot,
+      o.created_at,
+      (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id
+    FROM order_upd o
+  `;
+
+  const row = (rows as (OrderRow & { finalized_pos_spot_id: string | null })[])[0];
+  if (!row || !row.finalized_pos_spot_id) {
+    return { ok: false, reason: "conflict" };
+  }
+
+  return {
+    ok: true,
+    order: mapOrderRow(row),
+    finalized: true,
+  };
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code =
+    "code" in error && typeof (error as { code: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : undefined;
+  if (code === "23505") return true;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" &&
+          "message" in error &&
+          typeof (error as { message: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : "";
+  return /unique|duplicate key/i.test(message);
 }

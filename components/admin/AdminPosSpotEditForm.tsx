@@ -92,9 +92,9 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   const [pocketOther, setPocketOther] = useState("");
   const [spotDescription, setSpotDescription] = useState("");
 
-  const [availability, setAvailability] = useState<Extract<PosSpotStatus, "available" | "sold">>(
-    "available",
-  );
+  const [availability, setAvailability] = useState<
+    Extract<PosSpotStatus, "available" | "sold" | "held_for_payment">
+  >("available");
   const [checkStatus, setCheckStatus] = useState(false);
   const [checkBy, setCheckBy] = useState("");
   const [posWeeklyNote, setPosWeeklyNote] = useState("");
@@ -134,7 +134,13 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
       setPocket((spot.pocket as PosSpotPocketValue) ?? "");
       setPocketOther(spot.pocketOther ?? "");
       setSpotDescription(spot.spotDescription ?? "");
-      setAvailability(spot.status === "sold" ? "sold" : "available");
+      setAvailability(
+        spot.status === "sold"
+          ? "sold"
+          : spot.status === "held_for_payment"
+            ? "held_for_payment"
+            : "available",
+      );
       setCheckStatus(spot.checkStatus);
       setCheckBy(spot.checkBy ?? "");
       setPosWeeklyNote(spot.posWeeklyNote ?? "");
@@ -426,7 +432,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium text-slate-700">Availability</legend>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <button
                 type="button"
                 aria-pressed={availability === "available"}
@@ -451,10 +457,27 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               >
                 Unavailable
               </button>
+              <button
+                type="button"
+                aria-pressed={availability === "held_for_payment"}
+                onClick={() => setAvailability("held_for_payment")}
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  availability === "held_for_payment"
+                    ? "border-amber-700 bg-amber-50 text-amber-950"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                }`}
+              >
+                Held for payment
+              </button>
             </div>
             {initialSpot.status === "inactive" ? (
               <p className="text-xs text-amber-700">
                 This spot is inactive. Saving will set it to the availability you choose above.
+              </p>
+            ) : availability === "held_for_payment" ? (
+              <p className="text-xs text-amber-800">
+                Held for payment — a customer started checkout payment. Mark Available to release
+                the hold, or Unavailable if the plant should not be sold.
               </p>
             ) : (
               <p className="text-xs text-slate-500">
