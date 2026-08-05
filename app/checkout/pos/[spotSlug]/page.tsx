@@ -7,15 +7,32 @@ import { formatPrice } from "@/lib/mockPlants";
 import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getLocationById } from "@/lib/mockLocations";
+import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
+import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
+import { isPaymentResumeTokenShape } from "@/lib/paymentResume";
 import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import { posSpotPath } from "@/lib/routes";
 
 interface PosCheckoutPageProps {
   params: Promise<{ spotSlug: string }>;
+  searchParams: Promise<{
+    paymentFailed?: string | string[];
+    orderId?: string | string[];
+    resume?: string | string[];
+  }>;
 }
 
-export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) {
+function readParam(raw: string | string[] | undefined): string | null {
+  const v = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
+  return v?.trim() || null;
+}
+
+export default async function PosCheckoutPage({
+  params,
+  searchParams,
+}: PosCheckoutPageProps) {
   const { spotSlug } = await params;
+  const sp = await searchParams;
   const posSpot = await getPosSpotBySpotSlug(spotSlug);
   if (!posSpot) notFound();
 
@@ -27,6 +44,55 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
 
   const partner = await getLocationById(posSpot.partnerLocationId);
   const pickupDisabled = Boolean(partner?.pickupDisabled);
+
+  const orderId = parseOrderIdQueryParam(readParam(sp.orderId));
+  const resumeToken = readParam(sp.resume);
+  const paymentFailedFlag =
+    readParam(sp.paymentFailed) === "1" || readParam(sp.paymentFailed) === "true";
+
+  let paymentResume:
+    | {
+        orderId: string;
+        resumeToken: string;
+        showPaymentFailedMessage: boolean;
+        prefill: {
+          fullName: string;
+          email: string;
+          phone: string;
+          fulfillmentMethod: "delivery" | "pickup";
+          deliveryStreet?: string;
+          deliveryHouseNumber?: string;
+          apartmentOrNotes?: string;
+        };
+      }
+    | undefined;
+
+  if (orderId && isPaymentResumeTokenShape(resumeToken)) {
+    const pending = await getPendingOrderForPaymentResume(orderId, resumeToken);
+    if (
+      pending &&
+      pending.posSpotId === posSpot.id &&
+      (pending.snapshot?.spotSlug === posSpot.spotSlug || !pending.snapshot?.spotSlug)
+    ) {
+      paymentResume = {
+        orderId: pending.orderId,
+        resumeToken,
+        showPaymentFailedMessage: paymentFailedFlag,
+        prefill: {
+          fullName: pending.fullName,
+          email: pending.customerEmail ?? "",
+          phone: pending.phone,
+          fulfillmentMethod: pending.fulfillmentMethod,
+          ...(pending.fulfillmentMethod === "delivery"
+            ? {
+                // Address is stored combined; leave street fields for customer to confirm.
+                apartmentOrNotes: pending.apartmentOrNotes,
+              }
+            : {}),
+        },
+      };
+    }
+  }
 
   return (
     <main id="checkout-page" className="mx-auto min-h-screen w-full max-w-md px-4 py-6">
@@ -52,6 +118,7 @@ export default async function PosCheckoutPage({ params }: PosCheckoutPageProps) 
             spotSlug={posSpot.spotSlug}
             pickupDisabled={pickupDisabled}
             posSpotStatus={posSpot.status}
+            paymentResume={paymentResume}
           />
         </section>
       </div>

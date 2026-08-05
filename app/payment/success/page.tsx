@@ -1,12 +1,30 @@
-import { CustomerDeadEnd } from "@/components/customer/CustomerDeadEnd";
+import { PaymentVerificationClient } from "@/components/payment/PaymentVerificationClient";
 
-export default function PaymentSuccessPage() {
+interface PaymentSuccessPageProps {
+  searchParams: Promise<{
+    orderId?: string | string[];
+    resume?: string | string[];
+  }>;
+}
+
+function readParam(raw: string | string[] | undefined): string | null {
+  const v = typeof raw === "string" ? raw : Array.isArray(raw) ? raw[0] : undefined;
+  return v?.trim() || null;
+}
+
+/**
+ * Cardcom SuccessRedirectUrl landing page — temporary verification only.
+ * Final order confirmation is always `/success`.
+ * Cancelled → same checkout via resume token (not a standalone failed page).
+ */
+export default async function PaymentSuccessPage({
+  searchParams,
+}: PaymentSuccessPageProps) {
+  const sp = await searchParams;
   return (
-    <CustomerDeadEnd
-      title="Payment successful"
-      description="Your order was received successfully."
-      whatsAppMessage="Hi Urban Plant — I completed a payment and have a question about my order."
-      returnLabel="Return to previous page"
+    <PaymentVerificationClient
+      orderIdRaw={readParam(sp.orderId)}
+      resumeTokenRaw={readParam(sp.resume)}
     />
   );
 }

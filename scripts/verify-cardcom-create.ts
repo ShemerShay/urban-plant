@@ -99,17 +99,13 @@ async function main(): Promise<void> {
   };
 
   try {
-    const expectedCallbacks = buildCardcomCallbackUrls(TEST_PUBLIC_ORIGIN);
+    // Callback URL shape is asserted after Create (includes orderId + resume → checkout).
     assert.equal(
-      expectedCallbacks.successRedirectUrl,
-      `${TEST_PUBLIC_ORIGIN}${routes.customer.paymentSuccess()}`,
-    );
-    assert.equal(
-      expectedCallbacks.failedRedirectUrl,
-      `${TEST_PUBLIC_ORIGIN}${routes.customer.paymentFailed()}`,
-    );
-    assert.equal(
-      expectedCallbacks.webHookUrl,
+      buildCardcomCallbackUrls(TEST_PUBLIC_ORIGIN, {
+        orderId: "11111111-1111-1111-1111-111111111111",
+        spotSlug: "verify-spot",
+        resumeToken: "a".repeat(64),
+      }).webHookUrl,
       `${TEST_PUBLIC_ORIGIN}${routes.api.cardcomWebhook()}`,
     );
 
@@ -158,6 +154,13 @@ async function main(): Promise<void> {
     assert.equal(captured.last!.cardOwnerName, "Phase C Verify");
     assert.equal(captured.last!.cardOwnerEmail, "phase-c-verify@example.com");
     assert.equal(captured.last!.cardOwnerPhone, "0546605603");
+
+    const expectedCallbacks = buildCardcomCallbackUrls(TEST_PUBLIC_ORIGIN, {
+      orderId: first.orderId,
+      spotSlug: available.spotSlug,
+      resumeToken: order!.paymentResumeToken!,
+    });
+    assert.ok(order!.paymentResumeToken, "resume token stored on pending order");
     assert.equal(
       captured.last!.successRedirectUrl,
       expectedCallbacks.successRedirectUrl,
@@ -167,6 +170,21 @@ async function main(): Promise<void> {
       expectedCallbacks.failedRedirectUrl,
     );
     assert.equal(captured.last!.webHookUrl, expectedCallbacks.webHookUrl);
+    assert.match(
+      captured.last!.successRedirectUrl,
+      new RegExp(`[?&]orderId=${first.orderId}`),
+    );
+    assert.match(captured.last!.successRedirectUrl, /[?&]resume=/);
+    assert.match(
+      captured.last!.failedRedirectUrl,
+      new RegExp(`/checkout/pos/${available.spotSlug}\\?`),
+    );
+    assert.match(captured.last!.failedRedirectUrl, /paymentFailed=1/);
+    assert.match(
+      captured.last!.failedRedirectUrl,
+      new RegExp(`[?&]orderId=${first.orderId}`),
+    );
+    assert.ok(!captured.last!.failedRedirectUrl.includes("/payment/failed"));
 
     // Release + cancel so we can run failure scenarios on the same spot
     await releasePosSpotHoldForPayment(available.id);

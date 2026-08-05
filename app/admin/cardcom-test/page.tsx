@@ -142,8 +142,8 @@ export default function AdminCardcomTestPage() {
       <h1 className="mt-1 text-2xl font-semibold text-emerald-950">Cardcom test payment</h1>
       <p className="mt-3 text-sm leading-relaxed text-slate-600">
         Admin-only. Uses <code className="text-xs">CARDCOM_TEST_API_NAME</code> and terminal{" "}
-        <strong>1000</strong>. Production terminal 194476 is never used here. CheckoutForm is not
-        connected.
+        <strong>1000</strong>. Production terminal 194476 is never used here. Live CheckoutForm uses
+        production credentials via the same Create path.
       </p>
 
       <div className="mt-6 space-y-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-sm text-amber-950">

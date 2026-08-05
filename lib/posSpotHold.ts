@@ -16,8 +16,14 @@ export const POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE =
 export const POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE =
   "לקוח אחר נמצא כרגע בתהליך התשלום עבור הצמח הזה.";
 
-/** Only `available` may begin a purchase / payment attempt. */
-export function isPosSpotPurchasable(status: PosSpotStatus): boolean {
+/** Only `available` may begin a purchase / payment attempt.
+ * Resume holders (matching payment_resume_token) may continue while held_for_payment.
+ */
+export function isPosSpotPurchasable(
+  status: PosSpotStatus,
+  options?: { resumeHolder?: boolean },
+): boolean {
+  if (options?.resumeHolder && status === "held_for_payment") return true;
   return status === "available";
 }
 
@@ -25,7 +31,11 @@ export function shouldShowHeldForPaymentProductMessage(status: PosSpotStatus): b
   return status === "held_for_payment";
 }
 
-export function shouldShowHeldForPaymentCheckoutMessage(status: PosSpotStatus): boolean {
+export function shouldShowHeldForPaymentCheckoutMessage(
+  status: PosSpotStatus,
+  options?: { resumeHolder?: boolean },
+): boolean {
+  if (options?.resumeHolder) return false;
   return status === "held_for_payment";
 }
 

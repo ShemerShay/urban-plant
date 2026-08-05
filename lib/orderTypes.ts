@@ -30,6 +30,11 @@ export interface SavedOrder {
   checkoutSessionId?: string;
   /** Which Cardcom terminal/credentials created checkout_session_id. */
   cardcomEnv?: OrderCardcomEnv;
+  /**
+   * Unguessable token proving the browser started this pending payment.
+   * Only placed in Cardcom redirect URLs — never expose via public status APIs.
+   */
+  paymentResumeToken?: string;
   posSpotId?: string;
   offerId?: string;
   plantId: string;
