@@ -1,7 +1,7 @@
 /**
- * Phase C: pending_payment order + POS hold + Cardcom LowProfile/Create.
- * Server-only. Does not send email, fire order_created, mark POS sold, or
- * connect CheckoutForm. Callers may inject createLowProfile for offline tests.
+ * pending_payment order + POS hold + Cardcom LowProfile/Create.
+ * Server-only. Does not send email, fire order_created, or mark POS sold.
+ * Callers may inject createLowProfile for offline tests.
  */
 
 import { randomUUID } from "crypto";
@@ -39,6 +39,7 @@ import {
   buildCardcomCallbackUrls,
   getPublicAppOrigin,
 } from "@/lib/routes";
+import { createPaymentResumeToken } from "@/lib/paymentResume";
 import type { PlantProduct } from "@/lib/types";
 
 /** Cardcom ProductName max length (mirrored from lib/cardcom.ts). */
@@ -384,6 +385,7 @@ export async function startCardcomPaymentPrep(
   }
 
   const orderId = randomUUID();
+  const paymentResumeToken = createPaymentResumeToken();
   const createdAt = new Date().toISOString();
   const snapshot = await buildOrderSnapshot({
     plant: catalogPlant,
@@ -413,6 +415,7 @@ export async function startCardcomPaymentPrep(
     orderStatus: "pending_payment",
     source: "online",
     snapshot,
+    paymentResumeToken,
     // checkoutSessionId intentionally omitted (null in DB) until Cardcom Create.
   };
 
@@ -503,7 +506,11 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const callbacks = buildCardcomCallbackUrls(publicOrigin);
+  const callbacks = buildCardcomCallbackUrls(publicOrigin, {
+    orderId: pendingOrder.orderId,
+    spotSlug: posSpot.spotSlug,
+    resumeToken: paymentResumeToken,
+  });
   const cardcomEnvironment: CardcomEnvironment =
     deps.cardcomEnvironment === "test" ? "test" : "production";
   const createInput: CreateCardcomLowProfileInput = {

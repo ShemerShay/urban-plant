@@ -51,24 +51,35 @@ function readSpotSlug(raw: string | string[] | undefined): string {
 export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const sp = await searchParams;
   const emailFailed = readEmailFailed(sp.emailFailed);
-  const isPickup = readIsPickup(sp.fulfillmentMethod);
   const orderId = readOrderId(sp.orderId);
   const plantId = readPlantId(sp.plantId);
   const order = orderId ? (await readOrders()).find((o) => o.orderId === orderId) : undefined;
-  const plant = plantId ? await getPlantById(plantId) : undefined;
+  // Prefer trusted order fields; query params are fallback for legacy redirects only.
+  const isPickup = order
+    ? order.fulfillmentMethod === "pickup"
+    : readIsPickup(sp.fulfillmentMethod);
+  const plantFromOrderId = order?.plantId || order?.snapshot?.productId;
+  const plant = (plantFromOrderId || plantId)
+    ? await getPlantById(plantFromOrderId || plantId)
+    : undefined;
   const plantName =
     order?.snapshot?.productName ||
     order?.plantName ||
     plant?.name ||
-    readPlantName(sp.plantName) ||
+    (!order ? readPlantName(sp.plantName) : "") ||
     "your plant";
-  const spotSlug = readSpotSlug(sp.spotSlug) || order?.snapshot?.spotSlug?.trim() || "";
+  const spotSlug =
+    order?.snapshot?.spotSlug?.trim() ||
+    readSpotSlug(sp.spotSlug) ||
+    "";
   const returnToPlantHref = spotSlug ? posSpotPath(spotSlug) : null;
-  const plantImage = plant?.images[0] ?? order?.snapshot?.productImage;
+  const plantImage = order?.snapshot?.productImage ?? plant?.images[0];
 
   const isPendingPayment = order?.orderStatus === "pending_payment";
-  const showCompletedPurchase =
-    !order || (order && isVerifiedPaidOrderStatus(order.orderStatus));
+  // With orderId: only verified paid statuses show final success. Without orderId: legacy thank-you.
+  const showCompletedPurchase = order
+    ? isVerifiedPaidOrderStatus(order.orderStatus)
+    : !orderId;
 
   return (
     <main id="success-page" className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-10">

@@ -47,8 +47,34 @@ export const routes = {
           : new URLSearchParams(params).toString();
       return qs ? `/success?${qs}` : "/success";
     },
-    paymentSuccess: () => "/payment/success",
-    paymentFailed: () => "/payment/failed",
+    paymentSuccess: (params?: { orderId?: string; resume?: string }) => {
+      const orderId = params?.orderId?.trim();
+      if (!orderId) return "/payment/success";
+      const qs = new URLSearchParams({ orderId });
+      const resume = params?.resume?.trim();
+      if (resume) qs.set("resume", resume);
+      return `/payment/success?${qs.toString()}`;
+    },
+    /** Legacy stub — Cardcom FailedRedirectUrl now targets checkout. */
+    paymentFailed: (params?: { orderId?: string }) => {
+      const orderId = params?.orderId?.trim();
+      if (!orderId) return "/payment/failed";
+      return `/payment/failed?${new URLSearchParams({ orderId }).toString()}`;
+    },
+    /** Checkout return after Cardcom fail/cancel (same existing checkout page). */
+    checkoutPaymentFailed: (input: {
+      spotSlug: string;
+      orderId: string;
+      resumeToken: string;
+    }) => {
+      const spotSlug = encodeURIComponent(input.spotSlug.trim());
+      const qs = new URLSearchParams({
+        paymentFailed: "1",
+        orderId: input.orderId.trim(),
+        resume: input.resumeToken.trim(),
+      });
+      return `/checkout/pos/${spotSlug}?${qs.toString()}`;
+    },
   },
   api: {
     adminLogin: () => "/api/admin-login",
@@ -74,6 +100,14 @@ export const routes = {
     cardcomCreate: () => "/api/payments/cardcom/create",
     /** Cardcom LowProfile webhook — POST JSON; verifies via GetLpResult. */
     cardcomWebhook: () => "/api/payments/cardcom/webhook",
+    /** Read-only payment verification status for `/payment/success` polling. */
+    cardcomStatus: (orderId?: string) => {
+      const id = orderId?.trim();
+      if (!id) return "/api/payments/cardcom/status";
+      return `/api/payments/cardcom/status?${new URLSearchParams({ orderId: id }).toString()}`;
+    },
+    /** Resume holder: create a new Cardcom LowProfile for the same pending order. */
+    cardcomRetry: () => "/api/payments/cardcom/retry",
     /** Admin-only controlled Cardcom test Create (terminal 1000). */
     adminCardcomTest: () => "/api/admin/cardcom-test",
   },
@@ -147,15 +181,35 @@ export function getPublicAppOrigin(): string {
   return parsed.origin;
 }
 
-/** Absolute Cardcom callback URLs from a validated public origin. */
-export function buildCardcomCallbackUrls(origin: string): {
+/**
+ * Absolute Cardcom callback URLs from a validated public origin.
+ * Success includes orderId + resume (for cancel→checkout).
+ * Failed returns to the same checkout with paymentFailed + resume.
+ */
+export function buildCardcomCallbackUrls(
+  origin: string,
+  input: { orderId: string; spotSlug: string; resumeToken: string },
+): {
   successRedirectUrl: string;
   failedRedirectUrl: string;
   webHookUrl: string;
 } {
+  const orderId = input.orderId.trim();
+  const spotSlug = input.spotSlug.trim();
+  const resumeToken = input.resumeToken.trim();
   return {
-    successRedirectUrl: absoluteAppUrl(origin, routes.customer.paymentSuccess()),
-    failedRedirectUrl: absoluteAppUrl(origin, routes.customer.paymentFailed()),
+    successRedirectUrl: absoluteAppUrl(
+      origin,
+      routes.customer.paymentSuccess({ orderId, resume: resumeToken }),
+    ),
+    failedRedirectUrl: absoluteAppUrl(
+      origin,
+      routes.customer.checkoutPaymentFailed({
+        spotSlug,
+        orderId,
+        resumeToken,
+      }),
+    ),
     webHookUrl: absoluteAppUrl(origin, routes.api.cardcomWebhook()),
   };
 }

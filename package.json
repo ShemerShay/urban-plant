@@ -27,7 +27,8 @@
     "db:migrate:unassign-dash-pockets": "node scripts/apply-sql-file.mjs db/migrations/015_unassign_dash_pockets.sql",
     "db:migrate:held-for-payment": "node scripts/apply-sql-file.mjs db/migrations/016_pos_spots_held_for_payment.sql",
     "db:migrate:orders-pending-payment": "node scripts/apply-sql-file.mjs db/migrations/017_orders_pending_payment.sql",
-    "db:migrate:orders-cardcom-env": "node scripts/apply-sql-file.mjs db/migrations/018_orders_cardcom_env.sql"
+    "db:migrate:orders-cardcom-env": "node scripts/apply-sql-file.mjs db/migrations/018_orders_cardcom_env.sql",
+    "db:migrate:orders-payment-resume": "node scripts/apply-sql-file.mjs db/migrations/019_orders_payment_resume_token.sql"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

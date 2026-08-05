@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { CheckoutCustomerFields } from "@/components/checkout/CheckoutCustomerFields";
@@ -21,6 +20,7 @@ import {
   isPosSpotPurchasable,
   shouldShowHeldForPaymentCheckoutMessage,
 } from "@/lib/posSpotHold";
+import { PAYMENT_FAILED_CHECKOUT_MESSAGE } from "@/lib/paymentResume";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import { routes } from "@/lib/routes";
 type FormFields = {
@@ -31,10 +31,25 @@ type FormFields = {
 
 type FulfillmentMethod = CheckoutFulfillmentMethod;
 
+type PaymentResumeProps = {
+  orderId: string;
+  resumeToken: string;
+  showPaymentFailedMessage: boolean;
+  prefill: {
+    fullName: string;
+    email: string;
+    phone: string;
+    fulfillmentMethod: FulfillmentMethod;
+    deliveryStreet?: string;
+    deliveryHouseNumber?: string;
+    apartmentOrNotes?: string;
+  };
+};
+
 interface CheckoutFormProps {
   plantId: string;
   plantName: string;
-  /** Formatted price line for confirmation email (e.g. ₪89) */
+  /** Formatted price line (kept for callers; confirmation email is post-webhook). */
   priceDisplay: string;
   /** POS Spot slug from `/checkout/pos/{spotSlug}`. */
   spotSlug: string;
@@ -42,31 +57,43 @@ interface CheckoutFormProps {
   pickupDisabled?: boolean;
   /** Latest POS inventory status from the server (page load). */
   posSpotStatus: PosSpotStatus;
+  /**
+   * Cardcom fail/cancel return for the same pending order (resume token holder).
+   * When set, submit retries Cardcom for that order instead of creating a new sale.
+   */
+  paymentResume?: PaymentResumeProps;
 }
 
 export function CheckoutForm({
   plantId,
   plantName,
-  priceDisplay,
+  priceDisplay: _priceDisplay,
   spotSlug,
   pickupDisabled = false,
   posSpotStatus,
+  paymentResume,
 }: CheckoutFormProps) {
-  const router = useRouter();
-  const [fulfillmentMethod, setFulfillmentMethod] =
-    useState<FulfillmentMethod>("delivery");
+  const resumeHolder = Boolean(paymentResume);
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>(
+    paymentResume?.prefill.fulfillmentMethod === "pickup" && !pickupDisabled
+      ? "pickup"
+      : "delivery",
+  );
   const [fields, setFields] = useState<FormFields>({
-    fullName: "",
-    email: "",
-    phone: "05",
-    deliveryStreet: "",
-    deliveryHouseNumber: "",
-    apartmentOrNotes: "",
+    fullName: paymentResume?.prefill.fullName ?? "",
+    email: paymentResume?.prefill.email ?? "",
+    phone: paymentResume?.prefill.phone || "05",
+    deliveryStreet: paymentResume?.prefill.deliveryStreet ?? "",
+    deliveryHouseNumber: paymentResume?.prefill.deliveryHouseNumber ?? "",
+    apartmentOrNotes: paymentResume?.prefill.apartmentOrNotes ?? "",
   });
   const [touched, setTouched] = useState<Partial<Record<CheckoutFieldKey, boolean>>>({});
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [prepMessage, setPrepMessage] = useState<string | null>(null);
+  const [paymentFailedMessage] = useState(
+    paymentResume?.showPaymentFailedMessage ? PAYMENT_FAILED_CHECKOUT_MESSAGE : null,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function markTouched(field: CheckoutFieldKey) {
@@ -108,8 +135,10 @@ export function CheckoutForm({
   const fieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
   const errors = getVisibleCheckoutFieldErrors(fieldErrors, touched, showAllErrors);
   const canSubmit = canSubmitCheckout(fields, fulfillmentMethod);
-  const purchaseAllowed = isPosSpotPurchasable(posSpotStatus);
-  const showHeldCheckoutMessage = shouldShowHeldForPaymentCheckoutMessage(posSpotStatus);
+  const purchaseAllowed = isPosSpotPurchasable(posSpotStatus, { resumeHolder });
+  const showHeldCheckoutMessage = shouldShowHeldForPaymentCheckoutMessage(posSpotStatus, {
+    resumeHolder,
+  });
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,14 +154,35 @@ export function CheckoutForm({
     setSubmitError(null);
     setPrepMessage(null);
 
-    const orderId = crypto.randomUUID();
-
     try {
-      const response = await fetch(routes.api.orders(), {
+      // Resume holder: retry Cardcom on the same pending order (no new order).
+      if (paymentResume) {
+        const response = await fetch(routes.api.cardcomRetry(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orderId: paymentResume.orderId,
+            resumeToken: paymentResume.resumeToken,
+          }),
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          paymentUrl?: string;
+        };
+        if (!response.ok || !data.paymentUrl) {
+          setSubmitError(data.error ?? "Could not restart payment. Try again.");
+          return;
+        }
+        window.location.assign(data.paymentUrl);
+        return;
+      }
+
+      // First attempt: pending_payment + hold + Cardcom Create → hosted payment page.
+      // Browser never finalizes; webhook + GetLpResult mark sold/picked_up and send email.
+      const response = await fetch(routes.api.cardcomCreate(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          orderId,
           plantId,
           spotSlug,
           fulfillmentMethod,
@@ -151,47 +201,15 @@ export function CheckoutForm({
 
       const data = (await response.json().catch(() => ({}))) as {
         error?: string;
+        paymentUrl?: string;
       };
 
-      if (!response.ok) {
-        setSubmitError(data.error ?? "Could not save order. Try again.");
+      if (!response.ok || !data.paymentUrl) {
+        setSubmitError(data.error ?? "Could not start payment. Try again.");
         return;
       }
 
-      const customerEmail = fields.email.trim();
-      const fullName = fields.fullName.trim();
-      let emailFailed = false;
-      try {
-        const emailResponse = await fetch(routes.api.sendPurchaseEmail(), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customerEmail,
-            fullName,
-            plantName,
-            priceDisplay,
-            fulfillmentMethod,
-          }),
-        });
-        if (!emailResponse.ok) {
-          emailFailed = true;
-        }
-      } catch {
-        emailFailed = true;
-      }
-
-      router.replace(
-        routes.customer.success({
-          orderId,
-          plantId,
-          plantName,
-          spotSlug,
-          fulfillmentMethod,
-          ...(emailFailed ? { emailFailed: "1" } : {}),
-        }),
-      );
-
-      // TODO(payment): move completed order creation to provider confirmation/webhook.
+      window.location.assign(data.paymentUrl);
     } catch {
       setSubmitError("Network error. Try again.");
     } finally {
@@ -282,6 +300,11 @@ export function CheckoutForm({
         </p>
       </div>
 
+      {paymentFailedMessage ? (
+        <p className="text-sm font-medium text-red-700" dir="rtl">
+          {paymentFailedMessage}
+        </p>
+      ) : null}
       {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
       {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}
 
@@ -306,7 +329,11 @@ export function CheckoutForm({
             disabled={isSubmitDisabled}
             className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
           >
-            {isSubmitting ? "Processing…" : "Complete Order"}
+            {isSubmitting
+              ? "Processing…"
+              : paymentResume
+                ? "Try payment again"
+                : "Complete Order"}
           </button>
         </div>
       </div>

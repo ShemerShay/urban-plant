@@ -3,6 +3,7 @@
  */
 
 import { sql } from "@/lib/db";
+import { paymentResumeTokensEqual } from "@/lib/paymentResume";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
@@ -76,6 +77,7 @@ type OrderRow = {
   order_id: string;
   checkout_session_id: string | null;
   cardcom_env: string | null;
+  payment_resume_token: string | null;
   pos_spot_id: string | null;
   offer_id: string | null;
   product_id: string;
@@ -135,6 +137,7 @@ function mapOrderRow(row: OrderRow): SavedOrder {
     ...(row.cardcom_env === "test" || row.cardcom_env === "production"
       ? { cardcomEnv: row.cardcom_env }
       : {}),
+    ...(row.payment_resume_token ? { paymentResumeToken: row.payment_resume_token } : {}),
     ...(row.pos_spot_id ? { posSpotId: row.pos_spot_id } : {}),
     ...(row.offer_id ? { offerId: row.offer_id } : {}),
     plantId: row.product_id,
@@ -167,6 +170,7 @@ async function insertOrder(order: SavedOrder): Promise<void> {
       order_id,
       checkout_session_id,
       cardcom_env,
+      payment_resume_token,
       pos_spot_id,
       offer_id,
       product_id,
@@ -195,6 +199,7 @@ async function insertOrder(order: SavedOrder): Promise<void> {
       ${order.orderId}::uuid,
       ${order.checkoutSessionId ?? null},
       ${order.cardcomEnv ?? null},
+      ${order.paymentResumeToken ?? null},
       ${order.posSpotId ?? null}::uuid,
       ${order.offerId ?? null},
       ${order.plantId},
@@ -228,6 +233,7 @@ export async function readOrders(): Promise<SavedOrder[]> {
       order_id,
       checkout_session_id,
       cardcom_env,
+      payment_resume_token,
       pos_spot_id,
       offer_id,
       product_id,
@@ -300,6 +306,7 @@ export async function getOrderById(orderId: string): Promise<SavedOrder | null> 
       order_id,
       checkout_session_id,
       cardcom_env,
+      payment_resume_token,
       pos_spot_id,
       offer_id,
       product_id,
@@ -337,6 +344,7 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
     SET
       checkout_session_id = ${order.checkoutSessionId ?? null},
       cardcom_env = ${order.cardcomEnv ?? null},
+      payment_resume_token = ${order.paymentResumeToken ?? null},
       pos_spot_id = ${order.posSpotId ?? null}::uuid,
       offer_id = ${order.offerId ?? null},
       product_id = ${order.plantId},
@@ -365,6 +373,7 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
       order_id,
       checkout_session_id,
       cardcom_env,
+      payment_resume_token,
       pos_spot_id,
       offer_id,
       product_id,
@@ -432,6 +441,7 @@ export async function attachCheckoutSessionIdToPendingOrder(
         order_id,
         checkout_session_id,
         cardcom_env,
+        payment_resume_token,
         pos_spot_id,
         offer_id,
         product_id,
@@ -510,6 +520,7 @@ export async function cancelPendingPaymentOrder(
       order_id,
       checkout_session_id,
       cardcom_env,
+      payment_resume_token,
       pos_spot_id,
       offer_id,
       product_id,
@@ -549,6 +560,7 @@ export async function getOrderByCheckoutSessionId(
       order_id,
       checkout_session_id,
       cardcom_env,
+      payment_resume_token,
       pos_spot_id,
       offer_id,
       product_id,
@@ -640,6 +652,7 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         o.order_id,
         o.checkout_session_id,
         o.cardcom_env,
+        o.payment_resume_token,
         o.pos_spot_id,
         o.offer_id,
         o.product_id,
@@ -675,6 +688,7 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       o.order_id,
       o.checkout_session_id,
       o.cardcom_env,
+      o.payment_resume_token,
       o.pos_spot_id,
       o.offer_id,
       o.product_id,
@@ -712,6 +726,109 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
     order: mapOrderRow(row),
     finalized: true,
   };
+}
+
+/**
+ * Load a pending_payment order when orderId + resume token match (holder proof).
+ * Does not mutate. Returns null when missing, not pending, or token mismatch.
+ */
+export async function getPendingOrderForPaymentResume(
+  orderId: string,
+  resumeToken: string,
+): Promise<SavedOrder | null> {
+  const trimmedId = orderId.trim();
+  const token = resumeToken.trim();
+  if (!trimmedId || !token) return null;
+
+  const order = await getOrderById(trimmedId);
+  if (!order) return null;
+  if (order.orderStatus !== "pending_payment") return null;
+  if (!order.paymentResumeToken) return null;
+  if (!paymentResumeTokensEqual(order.paymentResumeToken, token)) return null;
+  return order;
+}
+
+/**
+ * Replace checkout_session_id on a pending order after a failed Cardcom attempt.
+ * Requires matching payment_resume_token. Used for safe retry (new LowProfileId).
+ */
+export async function rotateCheckoutSessionIdForResume(input: {
+  orderId: string;
+  resumeToken: string;
+  newCheckoutSessionId: string;
+  cardcomEnv: "test" | "production";
+}): Promise<
+  | { ok: true; order: SavedOrder }
+  | { ok: false; reason: "not_found" | "not_pending" | "token_mismatch" | "duplicate_session" | "conflict" }
+> {
+  const orderId = input.orderId.trim();
+  const resumeToken = input.resumeToken.trim();
+  const sessionId = input.newCheckoutSessionId.trim();
+  if (!orderId || !resumeToken || !sessionId) {
+    return { ok: false, reason: "conflict" };
+  }
+
+  try {
+    const rows = await sql`
+      UPDATE orders
+      SET
+        checkout_session_id = ${sessionId},
+        cardcom_env = ${input.cardcomEnv}
+      WHERE order_id = ${orderId}::uuid
+        AND order_status = 'pending_payment'
+        AND payment_resume_token = ${resumeToken}
+      RETURNING
+        order_id,
+        checkout_session_id,
+        cardcom_env,
+        payment_resume_token,
+        pos_spot_id,
+        offer_id,
+        product_id,
+        product_name,
+        partner_location_id,
+        partner_location_name,
+        partner_location_address,
+        price,
+        full_name,
+        customer_email,
+        phone,
+        address,
+        apartment_or_notes,
+        fulfillment_method,
+        order_status,
+        source,
+        cancelled_at,
+        cancelled_by,
+        cancellation_reason,
+        delivered_at,
+        picked_up_at,
+        snapshot,
+        created_at
+    `;
+    const row = (rows as OrderRow[])[0];
+    if (row) {
+      return { ok: true, order: mapOrderRow(row) };
+    }
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return { ok: false, reason: "duplicate_session" };
+    }
+    throw error;
+  }
+
+  const existing = await getOrderById(orderId);
+  if (!existing) return { ok: false, reason: "not_found" };
+  if (existing.orderStatus !== "pending_payment") {
+    return { ok: false, reason: "not_pending" };
+  }
+  if (
+    !existing.paymentResumeToken ||
+    existing.paymentResumeToken !== resumeToken
+  ) {
+    return { ok: false, reason: "token_mismatch" };
+  }
+  return { ok: false, reason: "conflict" };
 }
 
 function isUniqueViolation(error: unknown): boolean {

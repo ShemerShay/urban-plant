@@ -1,6 +1,7 @@
 /**
- * Payment-start (Phase C): pending order + POS hold + Cardcom LowProfile/Create.
- * Does NOT wire CheckoutForm, webhook, GetLpResult, or finalize payment.
+ * Payment-start: pending order + POS hold + Cardcom LowProfile/Create.
+ * Used by CheckoutForm first payment and admin Cardcom test.
+ * Does not finalize payment (webhook + GetLpResult) or send email.
  */
 
 import { NextRequest, NextResponse } from "next/server";
