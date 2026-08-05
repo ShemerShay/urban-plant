@@ -30,7 +30,8 @@ const POS_SPOT_ROW_SQL = sql`
   check_by,
   next_check,
   pos_weekly_note,
-  created_at
+  created_at,
+  payment_hold_started_at
 `;
 
 type PosSpotRow = {
@@ -53,6 +54,7 @@ type PosSpotRow = {
   next_check: string | Date | null;
   pos_weekly_note: string | null;
   created_at: string | Date;
+  payment_hold_started_at?: string | Date | null;
 };
 
 function resolvePosName(row: PosSpotRow): string {
@@ -154,6 +156,9 @@ function mapPosSpotRow(row: PosSpotRow): PosSpot {
     ...(nextCheck ? { nextCheck } : {}),
     ...(posWeeklyNote ? { posWeeklyNote } : {}),
     createdAt,
+    ...(toIsoString(row.payment_hold_started_at)
+      ? { paymentHoldStartedAt: toIsoString(row.payment_hold_started_at)! }
+      : {}),
   };
 }
 
@@ -271,12 +276,24 @@ export async function getPosSpotBySpotSlugEnsuringNextVisit(spotSlug: string): P
 }
 
 export async function setPosSpotStatus(id: string, status: PosSpotStatus): Promise<PosSpot | null> {
-  const rows = await sql`
-    UPDATE pos_spots
-    SET status = ${status}
-    WHERE id = ${id}::uuid
-    RETURNING ${POS_SPOT_ROW_SQL}
-  `;
+  const rows =
+    status === "held_for_payment"
+      ? await sql`
+          UPDATE pos_spots
+          SET
+            status = 'held_for_payment',
+            payment_hold_started_at = COALESCE(payment_hold_started_at, now())
+          WHERE id = ${id}::uuid
+          RETURNING ${POS_SPOT_ROW_SQL}
+        `
+      : await sql`
+          UPDATE pos_spots
+          SET
+            status = ${status},
+            payment_hold_started_at = NULL
+          WHERE id = ${id}::uuid
+          RETURNING ${POS_SPOT_ROW_SQL}
+        `;
   const row = (rows as PosSpotRow[])[0];
   return row ? mapPosSpotRow(row) : null;
 }
@@ -304,7 +321,9 @@ export async function acquirePosSpotHoldForPayment(
 
   const rows = await sql`
     UPDATE pos_spots
-    SET status = 'held_for_payment'
+    SET
+      status = 'held_for_payment',
+      payment_hold_started_at = now()
     WHERE id = ${trimmed}::uuid
       AND status = 'available'
     RETURNING ${POS_SPOT_ROW_SQL}
@@ -333,7 +352,9 @@ export async function releasePosSpotHoldForPayment(
 
   const rows = await sql`
     UPDATE pos_spots
-    SET status = 'available'
+    SET
+      status = 'available',
+      payment_hold_started_at = NULL
     WHERE id = ${trimmed}::uuid
       AND status = 'held_for_payment'
     RETURNING ${POS_SPOT_ROW_SQL}
@@ -362,7 +383,9 @@ export async function completePosSpotSaleFromHold(
 
   const rows = await sql`
     UPDATE pos_spots
-    SET status = 'sold'
+    SET
+      status = 'sold',
+      payment_hold_started_at = NULL
     WHERE id = ${trimmed}::uuid
       AND status = 'held_for_payment'
     RETURNING ${POS_SPOT_ROW_SQL}

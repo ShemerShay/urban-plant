@@ -22,6 +22,7 @@ function exists(rel: string): boolean {
 }
 
 async function main(): Promise<void> {
+  await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
 
@@ -34,11 +35,11 @@ async function main(): Promise<void> {
     parseOrderIdQueryParam,
     paymentCompletedRedirectPath,
     paymentVerificationRedirectPath,
-    readCardcomPaymentStatus,
     shouldContinuePaymentStatusPolling,
   } = await import("../lib/cardcomPaymentStatus");
+  const { readCardcomPaymentStatus } = await import("../lib/cardcomPaymentStatusServer");
   const { buildCardcomCallbackUrls, routes } = await import("../lib/routes");
-  const { PAYMENT_FAILED_CHECKOUT_MESSAGE } = await import("../lib/paymentResume");
+  const { PAYMENT_FAILED_CHECKOUT_MESSAGE } = await import("../lib/paymentResumeToken");
   const { getOrderById } = await import("../lib/ordersStorage");
   const { isPosSpotPurchasable } = await import("../lib/posSpotHold");
 
@@ -213,9 +214,28 @@ async function main(): Promise<void> {
 
   const failedSrc = read("app/payment/failed/page.tsx");
   assert.match(failedSrc, /checkoutPaymentFailed|redirect/);
-  assert.equal(PAYMENT_FAILED_CHECKOUT_MESSAGE, "התשלום נכשל. אפשר לנסות שוב.");
+  assert.equal(PAYMENT_FAILED_CHECKOUT_MESSAGE, "Payment failed. Please try again.");
   assert.equal(isPosSpotPurchasable("held_for_payment"), false);
   assert.equal(isPosSpotPurchasable("held_for_payment", { resumeHolder: true }), true);
+  const {
+    POS_HELD_FOR_PAYMENT_CTA,
+    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
+    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
+    shouldShowHeldForPaymentCheckoutMessage,
+  } = await import("../lib/posSpotHold");
+  assert.equal(POS_HELD_FOR_PAYMENT_CTA, "Purchase in progress");
+  assert.equal(
+    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
+    "Another customer is currently purchasing this plant. Please check back shortly.",
+  );
+  assert.equal(
+    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
+    "This plant is currently being purchased by another customer.",
+  );
+  assert.equal(
+    shouldShowHeldForPaymentCheckoutMessage("held_for_payment", { resumeHolder: true }),
+    false,
+  );
 
   // 12-ish: success page still not claiming paid while pending
   assert.match(successSrc, /Payment still in progress/);
@@ -224,7 +244,8 @@ async function main(): Promise<void> {
   // CheckoutForm: first attempt → cardcomCreate; fail/resume → cardcomRetry.
   // Never POST /api/orders or send email from the browser checkout path.
   const checkoutFormSrc = read("components/checkout/CheckoutForm.tsx");
-  assert.match(checkoutFormSrc, /PAYMENT_FAILED_CHECKOUT_MESSAGE|התשלום נכשל/);
+  assert.match(checkoutFormSrc, /PAYMENT_FAILED_CHECKOUT_MESSAGE/);
+  assert.match(checkoutFormSrc, /Try payment again/);
   assert.match(checkoutFormSrc, /cardcomCreate/);
   assert.match(checkoutFormSrc, /cardcomRetry/);
   assert.ok(!checkoutFormSrc.includes("routes.api.orders()"));

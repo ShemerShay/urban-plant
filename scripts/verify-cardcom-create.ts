@@ -13,6 +13,7 @@ import { TEL_AVIV_STREETS } from "../constants/telAvivStreets";
 const TEST_PUBLIC_ORIGIN = "https://urban-plant-phase-c-verify.example.com";
 
 async function main(): Promise<void> {
+  await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
 

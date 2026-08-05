@@ -36,7 +36,7 @@ export const INVENTORY_STATUS_LABELS: Record<InventoryStatus, string> = {
   sold: "Sold",
   inactive: "Inactive",
   /** Customer-facing hold copy (never show the raw enum to customers). */
-  held_for_payment: "בתהליך רכישה",
+  held_for_payment: "Purchase in progress",
 };
 
 /** Admin / English label for held_for_payment. */
@@ -66,6 +66,7 @@ export function isVerifiedPaidOrderStatus(status: OrderStatus): boolean {
 /**
  * Allowed admin/API transitions. Cardcom webhook will use pending → sold|picked_up later.
  * Admin must not mark pending_payment as paid (sold/picked_up/delivered).
+ * Verified paid orders (sold/picked_up/delivered) cannot be cancelled via admin Cancel.
  */
 export function canTransitionOrderStatus(
   from: OrderStatus,
@@ -73,7 +74,7 @@ export function canTransitionOrderStatus(
 ): boolean {
   if (from === to) return true;
   if (to === "cancelled") {
-    return from !== "cancelled";
+    return canAdminCancelOrder(from);
   }
   if (from === "pending_payment") {
     // Paid transitions are reserved for verified payment finalization (not admin).
@@ -92,6 +93,14 @@ export function canTransitionOrderStatus(
     return from === "sold" || from === "picked_up" || from === "delivered";
   }
   return false;
+}
+
+/**
+ * Admin Cancel is only allowed for unpaid pending Cardcom checkouts.
+ * Never for sold / picked_up / delivered.
+ */
+export function canAdminCancelOrder(status: OrderStatus): boolean {
+  return status === "pending_payment";
 }
 
 /** Future webhook finalization helper (not wired yet). */

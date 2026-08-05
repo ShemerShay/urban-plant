@@ -29,6 +29,7 @@ import {
 } from "@/lib/ordersStorage";
 import { getPlantById } from "@/lib/plantCatalog";
 import { isPosSpotPurchasable } from "@/lib/posSpotHold";
+import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import {
   acquirePosSpotHoldForPayment,
   getPosSpotBySpotSlug,
@@ -320,7 +321,7 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const posSpot = await getPosSpotBySpotSlug(spotSlug);
+  let posSpot = await getPosSpotBySpotSlug(spotSlug);
   if (!posSpot) {
     return { ok: false, code: "not_found", error: "POS Spot not found", httpStatus: 404 };
   }
@@ -340,6 +341,12 @@ export async function startCardcomPaymentPrep(
       httpStatus: 409,
     };
   }
+  await expireStalePaymentHold(posSpot.id);
+  const refreshed = await getPosSpotBySpotSlug(spotSlug);
+  if (!refreshed) {
+    return { ok: false, code: "not_found", error: "POS Spot not found", httpStatus: 404 };
+  }
+  posSpot = refreshed;
   if (!isPosSpotPurchasable(posSpot.status)) {
     return {
       ok: false,

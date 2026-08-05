@@ -8,11 +8,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 
 import { appendEvent } from "@/lib/eventStorage";
-import { readOrders, replaceOrder } from "@/lib/ordersStorage";
+import {
+  adminCancelPendingPaymentOrder,
+  getOrderById,
+  replaceOrder,
+} from "@/lib/ordersStorage";
 import type { SavedOrder } from "@/lib/orderTypes";
 import { setPosSpotStatus } from "@/lib/posSpotStorage";
 import type { OrderStatus } from "@/lib/status";
-import { canTransitionOrderStatus, isOrderStatus, parseOrderStatus } from "@/lib/status";
+import {
+  canAdminCancelOrder,
+  canTransitionOrderStatus,
+  isOrderStatus,
+  isVerifiedPaidOrderStatus,
+  parseOrderStatus,
+} from "@/lib/status";
 
 interface RouteParams {
   params: Promise<{ orderId: string }>;
@@ -65,10 +75,20 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "orderId is required" }, { status: 400 });
   }
 
-  const orders = await readOrders();
-  const prev = orders.find((o) => o.orderId === orderId);
+  const prev = await getOrderById(orderId);
   if (!prev) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  if (!canAdminCancelOrder(prev.orderStatus)) {
+    return NextResponse.json(
+      {
+        error: isVerifiedPaidOrderStatus(prev.orderStatus)
+          ? "Verified paid orders cannot be cancelled. Payment and POS inventory stay as-is."
+          : "Only pending payment orders can be cancelled.",
+      },
+      { status: 409 },
+    );
   }
 
   let cancellationReason = "Cancelled by admin";
@@ -82,20 +102,28 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     // DELETE with no JSON body is still a valid cancel request.
   }
 
-  const cancelledAt = new Date().toISOString();
-  const updated: SavedOrder = {
-    ...prev,
-    orderStatus: "cancelled",
-    cancelledAt,
-    cancelledBy: "admin",
+  const result = await adminCancelPendingPaymentOrder({
+    orderId,
     cancellationReason,
-  };
-  delete updated.deliveredAt;
-  delete updated.pickedUpAt;
+  });
 
-  await replaceOrder(updated);
+  if (!result.ok) {
+    if (result.reason === "not_found") {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+    return NextResponse.json(
+      {
+        error:
+          result.reason === "not_cancellable"
+            ? "Order can no longer be cancelled (payment may have completed)."
+            : "Could not cancel order. Try again.",
+      },
+      { status: 409 },
+    );
+  }
+
+  const updated = result.order;
   const posSpotId = relatedPosSpotId(updated);
-  if (posSpotId) await setPosSpotStatus(posSpotId, "available");
   await appendEvent({
     id: randomUUID(),
     type: "order_cancelled",
@@ -104,10 +132,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     orderId: updated.orderId,
     productId: updated.plantId,
     ...(updated.locationId ? { partnerLocationId: updated.locationId } : {}),
-    createdAt: cancelledAt,
+    createdAt: updated.cancelledAt ?? new Date().toISOString(),
     createdBy: "admin",
     data: {
       cancellationReason,
+      releasedPos: result.releasedPos,
     },
   });
 
@@ -154,10 +183,43 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const orders = await readOrders();
-  const prev = orders.find((o) => o.orderId === orderId);
+  const prev = await getOrderById(orderId);
   if (!prev) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  if (requested === "cancelled") {
+    if (!canAdminCancelOrder(prev.orderStatus)) {
+      return NextResponse.json(
+        {
+          error: isVerifiedPaidOrderStatus(prev.orderStatus)
+            ? "Verified paid orders cannot be cancelled. Payment and POS inventory stay as-is."
+            : "Only pending payment orders can be cancelled.",
+        },
+        { status: 409 },
+      );
+    }
+    const reason =
+      typeof cancellationReason === "string" && cancellationReason.trim()
+        ? cancellationReason.trim()
+        : "Cancelled by admin";
+    const result = await adminCancelPendingPaymentOrder({
+      orderId,
+      cancellationReason: reason,
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          error:
+            result.reason === "not_cancellable"
+              ? "Order can no longer be cancelled (payment may have completed)."
+              : "Could not cancel order. Try again.",
+        },
+        { status: 409 },
+      );
+    }
+    await appendManualStatusEvent(prev, result.order);
+    return NextResponse.json({ ok: true, order: result.order });
   }
 
   if (!canTransitionOrderStatus(prev.orderStatus, requested)) {
@@ -173,17 +235,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const updated = nextOrderWithStatus(prev, requested);
-  if (requested === "cancelled") {
-    updated.cancelledAt = new Date().toISOString();
-    updated.cancelledBy = "admin";
-    updated.cancellationReason =
-      typeof cancellationReason === "string" && cancellationReason.trim()
-        ? cancellationReason.trim()
-        : "Cancelled by admin";
-  }
   await replaceOrder(updated);
   const posSpotId = relatedPosSpotId(updated);
-  if (posSpotId) await setPosSpotStatus(posSpotId, requested === "cancelled" ? "available" : "sold");
+  // Never move a verified paid order's POS back to available via status PATCH.
+  if (posSpotId && (requested === "sold" || requested === "picked_up" || requested === "delivered")) {
+    await setPosSpotStatus(posSpotId, "sold");
+  }
   await appendManualStatusEvent(prev, updated);
 
   return NextResponse.json({ ok: true, order: updated });

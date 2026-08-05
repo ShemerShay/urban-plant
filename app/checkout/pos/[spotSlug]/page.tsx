@@ -8,8 +8,9 @@ import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getLocationById } from "@/lib/mockLocations";
 import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
+import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
-import { isPaymentResumeTokenShape } from "@/lib/paymentResume";
+import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
 import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import { posSpotPath } from "@/lib/routes";
 
@@ -33,8 +34,11 @@ export default async function PosCheckoutPage({
 }: PosCheckoutPageProps) {
   const { spotSlug } = await params;
   const sp = await searchParams;
-  const posSpot = await getPosSpotBySpotSlug(spotSlug);
+  let posSpot = await getPosSpotBySpotSlug(spotSlug);
   if (!posSpot) notFound();
+
+  await expireStalePaymentHold(posSpot.id);
+  posSpot = (await getPosSpotBySpotSlug(spotSlug)) ?? posSpot;
 
   const offer = await getOfferById(posSpot.currentOfferId);
   if (!offer || offer.status !== "active") notFound();

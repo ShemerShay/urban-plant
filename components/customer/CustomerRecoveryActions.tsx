@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import {
   customerRecoveryWhatsAppUrl,
@@ -17,7 +18,8 @@ function IconWhatsApp({ className }: { className?: string }) {
   );
 }
 
-function resolveReturnHref(
+/** Prefer prop when safe; never reads window/sessionStorage (SSR-safe). */
+function resolvePreferredReturnHref(
   pathname: string,
   preferredReturnHref: string | null | undefined,
 ): string | null {
@@ -25,8 +27,7 @@ function resolveReturnHref(
   if (preferred && preferred !== pathname && isSafeCustomerReturnPath(preferred)) {
     return preferred;
   }
-  if (typeof window === "undefined") return null;
-  return resolveSafeReturnPath(pathname);
+  return null;
 }
 
 interface CustomerRecoveryActionsProps {
@@ -44,7 +45,18 @@ export function CustomerRecoveryActions({
   className = "mt-8",
 }: CustomerRecoveryActionsProps) {
   const pathname = usePathname() ?? "";
-  const returnHref = resolveReturnHref(pathname, preferredReturnHref);
+  const preferredHref = resolvePreferredReturnHref(pathname, preferredReturnHref);
+  const [storedReturnHref, setStoredReturnHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (preferredHref) {
+      setStoredReturnHref(null);
+      return;
+    }
+    setStoredReturnHref(resolveSafeReturnPath(pathname));
+  }, [pathname, preferredHref]);
+
+  const returnHref = preferredHref ?? storedReturnHref;
   const whatsAppHref = customerRecoveryWhatsAppUrl(whatsAppMessage);
 
   return (

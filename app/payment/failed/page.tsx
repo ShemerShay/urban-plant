@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { CustomerDeadEnd } from "@/components/customer/CustomerDeadEnd";
 import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
 import { getPendingOrderForPaymentResume, getOrderById } from "@/lib/ordersStorage";
-import { isPaymentResumeTokenShape } from "@/lib/paymentResume";
+import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
 import { routes } from "@/lib/routes";
 
 interface PaymentFailedPageProps {
@@ -45,7 +45,7 @@ export default async function PaymentFailedPage({ searchParams }: PaymentFailedP
   return (
     <CustomerDeadEnd
       title="Payment wasn’t completed"
-      description="התשלום נכשל. אפשר לחזור לעמוד הצמח ולנסות שוב, או ליצור קשר עם Urban Plant."
+      description="Payment failed. Please try again from the plant page, or contact Urban Plant."
       whatsAppMessage={
         orderId
           ? `Hi Urban Plant — my payment didn’t complete for order ${orderId}.`

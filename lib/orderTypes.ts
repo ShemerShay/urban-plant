@@ -5,6 +5,9 @@ export type FulfillmentMethod = "delivery" | "pickup";
 /** Which Cardcom terminal/credentials created checkout_session_id. */
 export type OrderCardcomEnv = "test" | "production";
 
+/** Post-payment Urban Plant confirmation email lifecycle. */
+export type PurchaseEmailStatus = "pending" | "processing" | "sent" | "failed";
+
 export interface OrderSnapshot {
   productId: string;
   productName: string;
@@ -64,4 +67,12 @@ export interface SavedOrder {
   snapshot?: OrderSnapshot;
   deliveredAt?: string;
   pickedUpAt?: string;
+  /** Cardcom TranzactionInfo.TranzactionId from verified GetLpResult. */
+  cardcomTransactionId?: number;
+  /** Resolved CreateDocument DocumentType (never "Auto"). */
+  cardcomDocumentType?: string;
+  cardcomDocumentNumber?: number;
+  purchaseEmailStatus?: PurchaseEmailStatus;
+  purchaseEmailSentAt?: string;
+  purchaseEmailLastError?: string;
 }

@@ -1,9 +1,8 @@
 /**
- * Read-only Cardcom payment status for browser return-page polling.
- * Never finalizes payment, mutates POS, sends email, or calls Cardcom.
+ * Client-safe Cardcom payment status helpers for `/payment/success` polling.
+ * No DB access — server reads live in `lib/cardcomPaymentStatusServer.ts`.
  */
 
-import { getOrderById } from "@/lib/ordersStorage";
 import type { OrderStatus } from "@/lib/status";
 import { routes } from "@/lib/routes";
 
@@ -56,38 +55,6 @@ export function mapOrderStatusToPaymentClientState(
       return _exhaustive;
     }
   }
-}
-
-/**
- * Load order by id and return a minimal safe status payload.
- * Read-only: no writes, no Cardcom, no email.
- * Never returns paymentResumeToken.
- */
-export async function readCardcomPaymentStatus(
-  orderIdRaw: unknown,
-): Promise<CardcomPaymentStatusResponse> {
-  const orderId = parseOrderIdQueryParam(orderIdRaw);
-  if (!orderId) {
-    return { state: "not_found" };
-  }
-
-  const order = await getOrderById(orderId);
-  if (!order) {
-    return { state: "not_found" };
-  }
-
-  const spotSlug = order.snapshot?.spotSlug?.trim() || undefined;
-  const state = mapOrderStatusToPaymentClientState(order.orderStatus);
-  if (state === "completed") {
-    return { state: "completed", orderId: order.orderId };
-  }
-  if (state === "cancelled") {
-    return spotSlug ? { state: "cancelled", spotSlug } : { state: "cancelled" };
-  }
-  if (state === "pending") {
-    return spotSlug ? { state: "pending", spotSlug } : { state: "pending" };
-  }
-  return { state };
 }
 
 export function paymentCompletedRedirectPath(orderId: string): string {

@@ -13,7 +13,7 @@ import {
   shouldContinuePaymentStatusPolling,
   type CardcomPaymentStatusResponse,
 } from "@/lib/cardcomPaymentStatus";
-import { isPaymentResumeTokenShape } from "@/lib/paymentResume";
+import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
 import { routes } from "@/lib/routes";
 
 type UiMode = "invalid" | "verifying" | "timeout" | "cancelled_unavailable";
@@ -139,7 +139,7 @@ export function PaymentVerificationClient({
       : mode === "timeout"
         ? "Your payment may still be processing. You can check again or contact Urban Plant."
         : mode === "cancelled_unavailable"
-          ? "התשלום נכשל. אפשר לנסות שוב דרך עמוד הצמח או ליצור קשר עם Urban Plant."
+          ? "Payment failed. Please try again from the plant page, or contact Urban Plant."
           : "We received your payment request and are waiting for final confirmation. This usually takes a few moments.";
 
   return (

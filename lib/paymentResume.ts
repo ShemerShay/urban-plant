@@ -1,17 +1,16 @@
 /**
  * Payment resume token: proves the browser is the customer who started Cardcom payment.
  * Stored on the pending order; placed only in Cardcom redirect URLs (not status API).
+ * Shape check / checkout copy: `lib/paymentResumeToken.ts` (client-safe).
  */
+
+import "server-only";
 
 import { randomBytes, timingSafeEqual } from "crypto";
 
 /** Create an unguessable resume token (hex). */
 export function createPaymentResumeToken(): string {
   return randomBytes(32).toString("hex");
-}
-
-export function isPaymentResumeTokenShape(value: unknown): value is string {
-  return typeof value === "string" && /^[0-9a-f]{64}$/i.test(value.trim());
 }
 
 /** Constant-time compare for resume tokens. */
@@ -25,6 +24,3 @@ export function paymentResumeTokensEqual(a: string, b: string): boolean {
     return false;
   }
 }
-
-/** Inline checkout copy after Cardcom fail/cancel return. */
-export const PAYMENT_FAILED_CHECKOUT_MESSAGE = "התשלום נכשל. אפשר לנסות שוב.";

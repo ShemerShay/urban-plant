@@ -20,7 +20,7 @@ import {
   isPosSpotPurchasable,
   shouldShowHeldForPaymentCheckoutMessage,
 } from "@/lib/posSpotHold";
-import { PAYMENT_FAILED_CHECKOUT_MESSAGE } from "@/lib/paymentResume";
+import { PAYMENT_FAILED_CHECKOUT_MESSAGE } from "@/lib/paymentResumeToken";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import { routes } from "@/lib/routes";
 type FormFields = {
@@ -301,9 +301,7 @@ export function CheckoutForm({
       </div>
 
       {paymentFailedMessage ? (
-        <p className="text-sm font-medium text-red-700" dir="rtl">
-          {paymentFailedMessage}
-        </p>
+        <p className="text-sm font-medium text-red-700">{paymentFailedMessage}</p>
       ) : null}
       {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
       {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}

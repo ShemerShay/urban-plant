@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { readCardcomPaymentStatus } from "@/lib/cardcomPaymentStatus";
+import { readCardcomPaymentStatus } from "@/lib/cardcomPaymentStatusServer";
 
 export async function GET(request: NextRequest) {
   const orderId = request.nextUrl.searchParams.get("orderId");

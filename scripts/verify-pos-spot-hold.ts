@@ -36,6 +36,12 @@ function assertGates(): void {
 
   assert.equal(shouldShowHeldForPaymentProductMessage("held_for_payment"), true);
   assert.equal(shouldShowHeldForPaymentCheckoutMessage("held_for_payment"), true);
+  // Resume holder may purchase while held, and must not see the "another customer" checkout block.
+  assert.equal(isPosSpotPurchasable("held_for_payment", { resumeHolder: true }), true);
+  assert.equal(
+    shouldShowHeldForPaymentCheckoutMessage("held_for_payment", { resumeHolder: true }),
+    false,
+  );
   for (const status of statuses.filter((s) => s !== "held_for_payment")) {
     assert.equal(
       shouldShowHeldForPaymentProductMessage(status),
@@ -60,9 +66,15 @@ function assertGates(): void {
   assert.equal(shouldShowHeldForPaymentProductMessage("sold"), false);
   assert.equal(shouldShowHeldForPaymentCheckoutMessage("sold"), false);
 
-  assert.ok(POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE.includes("תשלום"));
-  assert.ok(POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE.includes("תשלום"));
-  assert.equal(POS_HELD_FOR_PAYMENT_CTA, "בתהליך רכישה");
+  assert.equal(
+    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
+    "Another customer is currently purchasing this plant. Please check back shortly.",
+  );
+  assert.equal(
+    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
+    "This plant is currently being purchased by another customer.",
+  );
+  assert.equal(POS_HELD_FOR_PAYMENT_CTA, "Purchase in progress");
 
   console.log("verify-pos-spot-hold: pure gates ok");
 }

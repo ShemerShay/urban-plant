@@ -1,6 +1,7 @@
 /**
  * Cardcom webhook → GetLpResult verification → conditional order/POS finalization.
- * Server-only. No emails, no order_created events, no CheckoutForm wiring.
+ * After successful payment finalization, runs non-blocking document + email processing.
+ * Document/email failures never undo payment or POS.
  */
 
 import {
@@ -13,11 +14,16 @@ import {
   type CardcomLowProfileResult,
 } from "@/lib/cardcom";
 import { parseCardcomWebhookLowProfileResult } from "@/lib/cardcomWebhookParse";
+import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import {
   finalizeVerifiedPendingPaymentAtomic,
   getOrderByCheckoutSessionId,
 } from "@/lib/ordersStorage";
 import type { SavedOrder } from "@/lib/orderTypes";
+import {
+  processOrderDocumentAndEmail,
+  type ProcessOrderDocumentAndEmailDeps,
+} from "@/lib/processOrderDocumentAndEmail";
 import { isVerifiedPaidOrderStatus } from "@/lib/status";
 import { getPosSpotById } from "@/lib/posSpotStorage";
 
@@ -30,6 +36,11 @@ export type ProcessCardcomWebhookDeps = {
     lowProfileId: string,
     environment: CardcomEnvironment,
   ) => Promise<CardcomLowProfileResult>;
+  /** Injected post-payment document/email (tests). */
+  processDocumentAndEmail?: (
+    orderId: string,
+  ) => Promise<unknown>;
+  documentEmailDeps?: ProcessOrderDocumentAndEmailDeps;
 };
 
 export type ProcessCardcomWebhookResult = {
@@ -76,6 +87,37 @@ function verifyGetLpResultAgainstOrder(
     return { ok: false, reason: "coin_mismatch" };
   }
   return { ok: true };
+}
+
+function resolveVerifiedTransactionId(
+  result: CardcomLowProfileResult,
+): number | undefined {
+  const nested = result.transaction.transactionId;
+  if (typeof nested === "number" && Number.isFinite(nested)) {
+    return Math.trunc(nested);
+  }
+  if (typeof result.transactionId === "number" && Number.isFinite(result.transactionId)) {
+    return Math.trunc(result.transactionId);
+  }
+  return undefined;
+}
+
+async function runPostPaymentDocumentEmail(
+  orderId: string,
+  deps: ProcessCardcomWebhookDeps,
+): Promise<void> {
+  try {
+    if (deps.processDocumentAndEmail) {
+      await deps.processDocumentAndEmail(orderId);
+      return;
+    }
+    await processOrderDocumentAndEmail(orderId, deps.documentEmailDeps);
+  } catch (error) {
+    logWebhookOp("document_email_threw", {
+      orderId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
+  }
 }
 
 /**
@@ -130,6 +172,8 @@ export async function processCardcomWebhook(
         lowProfileId,
         orderStatus: orderBeforeVerify.orderStatus,
       });
+      // Safe retry of document/email without re-finalizing payment/POS.
+      await runPostPaymentDocumentEmail(orderBeforeVerify.orderId, deps);
       return {
         httpStatus: 200,
         body: { ok: true },
@@ -264,6 +308,7 @@ export async function processCardcomWebhook(
 
   if (isVerifiedPaidOrderStatus(order.orderStatus)) {
     if (order.checkoutSessionId === verified.lowProfileId) {
+      await runPostPaymentDocumentEmail(order.orderId, deps);
       return {
         httpStatus: 200,
         body: { ok: true },
@@ -308,11 +353,48 @@ export async function processCardcomWebhook(
     };
   }
 
-  const posSpot = await getPosSpotById(order.posSpotId);
+  // Abandoned holds expire after 17 minutes — late webhooks must fail closed.
+  await expireStalePaymentHold(order.posSpotId);
+  const orderAfterExpiry = await getOrderByCheckoutSessionId(verified.lowProfileId);
+  if (!orderAfterExpiry) {
+    return {
+      httpStatus: 200,
+      body: { ok: true },
+      outcome: "ignored_unknown",
+    };
+  }
+  if (orderAfterExpiry.orderStatus === "cancelled") {
+    logWebhookOp("order_cancelled_after_hold_expiry", {
+      orderId: orderAfterExpiry.orderId,
+      lowProfileId: verified.lowProfileId,
+    });
+    return {
+      httpStatus: 200,
+      body: { ok: true },
+      outcome: "ignored_cancelled",
+    };
+  }
+  if (isVerifiedPaidOrderStatus(orderAfterExpiry.orderStatus)) {
+    await runPostPaymentDocumentEmail(orderAfterExpiry.orderId, deps);
+    return {
+      httpStatus: 200,
+      body: { ok: true },
+      outcome: "already_finalized",
+    };
+  }
+  if (orderAfterExpiry.orderStatus !== "pending_payment") {
+    return {
+      httpStatus: 200,
+      body: { ok: true },
+      outcome: "ignored_ineligible",
+    };
+  }
+
+  const posSpot = await getPosSpotById(orderAfterExpiry.posSpotId ?? order.posSpotId);
   if (!posSpot || posSpot.status !== "held_for_payment") {
     logWebhookOp("pos_not_held", {
-      orderId: order.orderId,
-      posSpotId: order.posSpotId,
+      orderId: orderAfterExpiry.orderId,
+      posSpotId: orderAfterExpiry.posSpotId ?? null,
       posStatus: posSpot?.status ?? null,
     });
     return {
@@ -322,12 +404,15 @@ export async function processCardcomWebhook(
     };
   }
 
+  const cardcomTransactionId = resolveVerifiedTransactionId(verified);
+
   try {
     const finalized = await finalizeVerifiedPendingPaymentAtomic({
-      orderId: order.orderId,
+      orderId: orderAfterExpiry.orderId,
       checkoutSessionId: verified.lowProfileId,
-      posSpotId: order.posSpotId,
-      fulfillmentMethod: order.fulfillmentMethod,
+      posSpotId: orderAfterExpiry.posSpotId!,
+      fulfillmentMethod: orderAfterExpiry.fulfillmentMethod,
+      cardcomTransactionId,
     });
 
     if (!finalized.ok) {
@@ -337,6 +422,7 @@ export async function processCardcomWebhook(
         isVerifiedPaidOrderStatus(again.orderStatus) &&
         again.checkoutSessionId === verified.lowProfileId
       ) {
+        await runPostPaymentDocumentEmail(again.orderId, deps);
         return {
           httpStatus: 200,
           body: { ok: true },
@@ -361,7 +447,11 @@ export async function processCardcomWebhook(
       posSpotId: order.posSpotId,
       posStatus: "sold",
       cardcomEnvironment,
+      cardcomTransactionId: cardcomTransactionId ?? null,
     });
+
+    // Payment/POS are committed. Document/email failures must not change HTTP outcome.
+    await runPostPaymentDocumentEmail(finalized.order.orderId, deps);
 
     return {
       httpStatus: 200,

@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { TEL_AVIV_STREETS } from "../constants/telAvivStreets";
 
 async function main(): Promise<void> {
+  await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
 
@@ -183,6 +184,7 @@ async function main(): Promise<void> {
     coinId?: number;
     topCode?: number;
     txCode?: number;
+    transactionId?: number;
     /** When set, ignore the requested id and return this LowProfileId instead. */
     respondAsLowProfileId?: string;
   }) {
@@ -200,19 +202,27 @@ async function main(): Promise<void> {
           { responseCode: result.topCode },
         );
       }
+      const txId = result.transactionId ?? 209413394;
       return parseCardcomLowProfileResult({
         ResponseCode: 0,
         Description: "OK",
         LowProfileId: responseId,
         ReturnValue: result.returnValue,
+        TranzactionId: txId,
         TranzactionInfo: {
           ResponseCode: result.txCode ?? 0,
           Amount: result.amount,
           CoinId: result.coinId ?? 1,
+          TranzactionId: txId,
         },
       });
     };
   }
+
+  /** Existing webhook tests do not exercise Documents/email — stub post-payment. */
+  const skipDocumentEmail = {
+    processDocumentAndEmail: async () => ({ outcome: "skipped" as const }),
+  };
 
   try {
     // 2–3: webhook payload alone cannot finalize; GetLpResult always called
@@ -241,6 +251,7 @@ async function main(): Promise<void> {
           },
         },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
             returnValue: orderId,
@@ -267,6 +278,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lpStored },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lpStored,
             respondAsLowProfileId: lpVerified,
@@ -294,6 +306,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
             returnValue: randomUUID(),
@@ -318,6 +331,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
             returnValue: orderId,
@@ -342,6 +356,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
             returnValue: orderId,
@@ -367,6 +382,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
             returnValue: orderId,
@@ -392,6 +408,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
             returnValue: orderId,
@@ -416,6 +433,7 @@ async function main(): Promise<void> {
         lowProfileId: lp,
       });
       const deps = {
+        ...skipDocumentEmail,
         getLpResult: mockLp({
           lowProfileId: lp,
           returnValue: orderId,
@@ -439,6 +457,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: `lp-unknown-${randomUUID()}` },
         {
+          ...skipDocumentEmail,
           getLpResult: async (id, _env) => {
             void _env;
             getLpCalls += 1;
@@ -474,6 +493,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
             returnValue: orderId,
@@ -498,6 +518,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: async () => {
             getLpCalls += 1;
             throw new CardcomError(
@@ -525,6 +546,7 @@ async function main(): Promise<void> {
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
+          ...skipDocumentEmail,
           getLpResult: async () => {
             getLpCalls += 1;
             throw new CardcomError("Cardcom GetLpResult network error.", "network");

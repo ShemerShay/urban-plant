@@ -6,15 +6,15 @@
 import type { PosSpotStatus } from "./posSpotTypes";
 
 /** Customer-facing CTA when status is held_for_payment. */
-export const POS_HELD_FOR_PAYMENT_CTA = "בתהליך רכישה";
+export const POS_HELD_FOR_PAYMENT_CTA = "Purchase in progress";
 
 /** Shown under the product-page CTA only when status === held_for_payment. */
 export const POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE =
-  "לקוח אחר נמצא כרגע בתהליך התשלום. אם הרכישה לא תושלם, הצמח יחזור להיות זמין בעוד כמה דקות.";
+  "Another customer is currently purchasing this plant. Please check back shortly.";
 
 /** Shown above the checkout CTA only when status === held_for_payment. */
 export const POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE =
-  "לקוח אחר נמצא כרגע בתהליך התשלום עבור הצמח הזה.";
+  "This plant is currently being purchased by another customer.";
 
 /** Only `available` may begin a purchase / payment attempt.
  * Resume holders (matching payment_resume_token) may continue while held_for_payment.

@@ -197,6 +197,33 @@ export function getCardcomAuthFields(): CardcomAuthFields {
   };
 }
 
+/**
+ * ApiName + ApiPassword for Documents (and other password-auth APIs),
+ * matching the Cardcom environment stored on the order.
+ */
+export function getCardcomAuthFieldsForEnvironment(
+  environment: CardcomEnvironment = "production",
+): CardcomAuthFields {
+  if (environment === "test") {
+    const apiName = process.env.CARDCOM_TEST_API_NAME?.trim();
+    const apiPassword =
+      process.env.CARDCOM_TEST_API_PASSWORD?.trim() ||
+      process.env.CARDCOM_API_PASSWORD?.trim();
+    if (!apiName || !apiPassword) {
+      const missing = [
+        !apiName ? "CARDCOM_TEST_API_NAME" : null,
+        !apiPassword ? "CARDCOM_TEST_API_PASSWORD or CARDCOM_API_PASSWORD" : null,
+      ].filter(Boolean);
+      throw new CardcomError(
+        `Cardcom test Documents auth is not configured. Missing: ${missing.join(", ")}.`,
+        "config",
+      );
+    }
+    return { ApiName: apiName, ApiPassword: apiPassword };
+  }
+  return getCardcomAuthFields();
+}
+
 function normalizeOptionalText(
   value: string | undefined,
   field: string,

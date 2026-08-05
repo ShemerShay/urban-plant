@@ -75,7 +75,7 @@ export function DeliveryAddressFields({
           value={values.deliveryHouseNumber}
           onChange={(event) => onChange("deliveryHouseNumber", event.target.value)}
           onBlur={() => onFieldBlur?.("deliveryHouseNumber")}
-          placeholder="26ב"
+          placeholder="26b"
         />
         {errors.deliveryHouseNumber ? (
           <p className="text-xs text-red-600">{errors.deliveryHouseNumber}</p>

@@ -2,6 +2,8 @@
  * Retry Cardcom LowProfile/Create for an existing pending_payment order.
  * Requires payment_resume_token (holder proof). Same order row; new LowProfileId.
  * Does not create a second completed sale; does not release POS hold.
+ *
+ * Concurrency: claimPaymentRetryLock before Cardcom Create so only one Create runs.
  */
 
 import {
@@ -10,8 +12,11 @@ import {
   type CardcomEnvironment,
   type CreateCardcomLowProfileInput,
 } from "@/lib/cardcom";
+import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import {
+  claimPaymentRetryLock,
   getPendingOrderForPaymentResume,
+  releasePaymentRetryLock,
   rotateCheckoutSessionIdForResume,
 } from "@/lib/ordersStorage";
 import { getPosSpotById } from "@/lib/posSpotStorage";
@@ -28,7 +33,15 @@ export type RetryCardcomPaymentResult =
     }
   | {
       ok: false;
-      code: "validation" | "unauthorized" | "not_found" | "conflict" | "config" | "cardcom_error" | "server_error";
+      code:
+        | "validation"
+        | "unauthorized"
+        | "not_found"
+        | "conflict"
+        | "busy"
+        | "config"
+        | "cardcom_error"
+        | "server_error";
       error: string;
       httpStatus: number;
     };
@@ -68,8 +81,8 @@ export async function retryCardcomPayment(
     };
   }
 
-  const order = await getPendingOrderForPaymentResume(orderId, resumeToken);
-  if (!order) {
+  const orderBefore = await getPendingOrderForPaymentResume(orderId, resumeToken);
+  if (!orderBefore) {
     return {
       ok: false,
       code: "unauthorized",
@@ -78,12 +91,24 @@ export async function retryCardcomPayment(
     };
   }
 
-  if (!order.posSpotId) {
+  if (!orderBefore.posSpotId) {
     return {
       ok: false,
       code: "conflict",
       error: "Could not retry payment. Try again.",
       httpStatus: 409,
+    };
+  }
+
+  await expireStalePaymentHold(orderBefore.posSpotId);
+
+  const order = await getPendingOrderForPaymentResume(orderId, resumeToken);
+  if (!order || !order.posSpotId) {
+    return {
+      ok: false,
+      code: "unauthorized",
+      error: "Payment session is not available to retry.",
+      httpStatus: 403,
     };
   }
 
@@ -145,6 +170,35 @@ export async function retryCardcomPayment(
     };
   }
 
+  const claimed = await claimPaymentRetryLock({
+    orderId: order.orderId,
+    resumeToken: resume,
+  });
+  if (!claimed.ok) {
+    if (claimed.reason === "busy") {
+      return {
+        ok: false,
+        code: "busy",
+        error: "Payment is already being prepared. Please wait.",
+        httpStatus: 409,
+      };
+    }
+    if (claimed.reason === "not_pending" || claimed.reason === "token_mismatch") {
+      return {
+        ok: false,
+        code: "unauthorized",
+        error: "Payment session is not available to retry.",
+        httpStatus: 403,
+      };
+    }
+    return {
+      ok: false,
+      code: "conflict",
+      error: "Could not retry payment. Try again.",
+      httpStatus: 409,
+    };
+  }
+
   const callbacks = buildCardcomCallbackUrls(publicOrigin, {
     orderId: order.orderId,
     spotSlug,
@@ -179,6 +233,7 @@ export async function retryCardcomPayment(
   try {
     cardcomResult = await createFn(createInput);
   } catch (error) {
+    await releasePaymentRetryLock(order.orderId);
     if (error instanceof CardcomError && error.code === "config") {
       return {
         ok: false,
@@ -198,6 +253,7 @@ export async function retryCardcomPayment(
   const lowProfileId = cardcomResult.LowProfileId?.trim() ?? "";
   const paymentUrl = cardcomResult.Url?.trim() ?? "";
   if (!lowProfileId || !paymentUrl) {
+    await releasePaymentRetryLock(order.orderId);
     return {
       ok: false,
       code: "cardcom_error",
@@ -214,6 +270,7 @@ export async function retryCardcomPayment(
   });
 
   if (!rotated.ok) {
+    await releasePaymentRetryLock(order.orderId);
     return {
       ok: false,
       code:
@@ -226,6 +283,8 @@ export async function retryCardcomPayment(
       httpStatus: rotated.reason === "token_mismatch" ? 403 : 409,
     };
   }
+
+  await releasePaymentRetryLock(order.orderId);
 
   return {
     ok: true,

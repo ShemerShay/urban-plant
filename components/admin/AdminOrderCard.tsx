@@ -14,7 +14,7 @@ import { formatOrderDeliveryAddressDisplay } from "@/lib/deliveryAddress";
 import type { SavedOrder } from "@/lib/orderTypes";
 import { routes } from "@/lib/routes";
 import type { OrderStatus } from "@/lib/status";
-import { ORDER_STATUS_LABELS } from "@/lib/status";
+import { canAdminCancelOrder, ORDER_STATUS_LABELS } from "@/lib/status";
 
 interface AdminOrderCardProps {
   order: SavedOrder;
@@ -222,6 +222,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
   const status = order.orderStatus;
   const createdLabel = new Date(order.createdAt).toLocaleString();
   const isCancelled = status === "cancelled";
+  const showCancelButton = canAdminCancelOrder(status);
 
   return (
     <li className="rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
@@ -349,7 +350,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           </p>
         ) : null}
 
-        {!isCancelled ? (
+        {showCancelButton ? (
           <div className={`${order.deliveredAt || order.pickedUpAt ? "mt-3" : ""}`}>
             <button
               type="button"
