@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getPlantByIdAsync, updatePlant } from "@/lib/plantStorage";
+import { getPlantByIdAsync, updatePlant, deletePlant } from "@/lib/plantStorage";
 import { plantToWire, wireBodyToParseInput } from "@/lib/plantWire";
 import { parsePlantBody } from "@/lib/plantValidation";
 
@@ -47,6 +47,31 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ plant: plantToWire(plant) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update plant";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+  const { plantId: rawId } = await params;
+  const plantId = decodeURIComponent(rawId).trim();
+
+  if (!plantId) {
+    return NextResponse.json({ error: "Plant id is required" }, { status: 400 });
+  }
+
+  const existing = await getPlantByIdAsync(plantId);
+  if (!existing) {
+    return NextResponse.json({ error: "Plant not found" }, { status: 404 });
+  }
+
+  try {
+    const deleted = await deletePlant(plantId);
+    if (!deleted) {
+      return NextResponse.json({ error: "Plant not found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not delete plant";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

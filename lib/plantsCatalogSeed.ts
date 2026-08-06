@@ -14,7 +14,7 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80",
     ],
     labels: ["Easy to care", "Medium", "Statement leaves"],
-    light: "Indirect bright light",
+    light: "Bright indirect light",
     water: "Every 4–6 days",
     difficulty: "Easy",
     location: "Near a bright window",
@@ -24,7 +24,7 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "Water when the top soil feels dry.",
       "Wipe leaves occasionally for shine.",
     ],
-    commercialCopy: "A sculptural classic that feels premium without trying too hard.",
+    averageSize: "medium",
   },
   {
     id: "alocasia",
@@ -39,7 +39,7 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?auto=format&fit=crop&w=1200&q=80",
     ],
     labels: ["Moderate care", "Medium", "Tropical"],
-    light: "Indirect bright light",
+    light: "Medium light",
     water: "Every 4-6 days",
     difficulty: "Moderate",
     location: "Warm spot with indirect light",
@@ -49,7 +49,7 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "Higher humidity helps leaf edges stay crisp.",
       "Rotate weekly for even growth.",
     ],
-    commercialCopy: "High-impact greenery that elevates any shelf or seating nook.",
+    averageSize: "medium",
   },
   {
     id: "asparagus",
@@ -66,7 +66,7 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "https://images.unsplash.com/photo-1416879595882-3373a0480b7b?auto=format&fit=crop&w=1200&q=80",
     ],
     labels: ["Easy to care", "Small", "Trailing"],
-    light: "Indirect bright light",
+    light: "Low light",
     water: "Every 3-5 days",
     difficulty: "Easy",
     location: "Bright indirect spot",
@@ -76,7 +76,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "Prune brown stems to keep it airy.",
       "Protect from drying heat vents.",
     ],
-    commercialCopy: "Light, playful greenery—friendly for desks and small tables.",
   },
   {
     id: "olive-01",
@@ -92,7 +91,7 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "https://images.unsplash.com/photo-1485955900006-10f4d324d411?auto=format&fit=crop&w=1200&q=80",
     ],
     labels: ["Easy to care", "Small", "Flowering plant"],
-    light: "Indirect bright light",
+    light: "Direct sun",
     water: "Every 5-7 days",
     difficulty: "Moderate",
     location: "Near a bright window",
@@ -103,8 +102,7 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
       "Rotate the pot weekly for balanced growth.",
       "Wipe leaves gently once a month to remove dust.",
     ],
-    commercialCopy:
-      "A statement plant that instantly elevates your space with calm, natural elegance.",
+    averageSize: "large",
   },
 ];
 

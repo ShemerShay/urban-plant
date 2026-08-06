@@ -12,13 +12,15 @@ const CURRENCIES = new Set<PlantProduct["currency"]>(["ILS", "USD", "EUR"]);
 const DIFFICULTIES = new Set<CareLevel>(["Easy", "Moderate", "Advanced"]);
 const LIGHT_LEVELS = new Set<LightLevel>([
   "Low light",
-  "Indirect bright light",
-  "Full sun",
+  "Medium light",
+  "Bright indirect light",
+  "Direct sun",
 ]);
 const AVERAGE_SIZES = new Set<NonNullable<PlantProduct["averageSize"]>>([
   "small",
   "medium",
   "large",
+  "x-large",
 ]);
 
 export type PlantParseResult =
@@ -79,17 +81,14 @@ export function parsePlantBody(
   const name = cleanString(body.name);
   const subtitle = cleanString(body.subtitle);
   const description = cleanString(body.description);
-  const commercialCopy = cleanString(body.commercialCopy);
   const water = cleanString(body.water);
   const location = cleanString(body.location);
   const family = cleanString(body.family);
   const supplierName = cleanString(body.supplierName);
-  const maintenanceConditions = cleanString(body.maintenanceConditions);
 
   if (!name) return { ok: false, error: "name is required" };
   if (!subtitle) return { ok: false, error: "subtitle is required" };
   if (!description) return { ok: false, error: "description is required" };
-  if (!commercialCopy) return { ok: false, error: "commercialCopy is required" };
   if (!water) return { ok: false, error: "water is required" };
   if (!location) return { ok: false, error: "location is required" };
 
@@ -119,7 +118,8 @@ export function parsePlantBody(
   if (!LIGHT_LEVELS.has(lightRaw as LightLevel)) {
     return {
       ok: false,
-      error: 'light must be "Low light", "Indirect bright light", or "Full sun"',
+      error:
+        'light must be "Low light", "Medium light", "Bright indirect light", or "Direct sun"',
     };
   }
 
@@ -153,7 +153,7 @@ export function parsePlantBody(
   const averageSizeRaw = cleanString(body.averageSize);
   if (averageSizeRaw) {
     if (!AVERAGE_SIZES.has(averageSizeRaw as NonNullable<PlantProduct["averageSize"]>)) {
-      return { ok: false, error: "averageSize must be small, medium, or large" };
+      return { ok: false, error: "averageSize must be small, medium, large, or x-large" };
     }
     averageSize = averageSizeRaw as PlantProduct["averageSize"];
   }
@@ -176,10 +176,8 @@ export function parsePlantBody(
     location,
     petFriendly,
     careInstructions,
-    commercialCopy,
     ...(family ? { family } : {}),
     ...(averageSize ? { averageSize } : {}),
-    ...(maintenanceConditions ? { maintenanceConditions } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
   };

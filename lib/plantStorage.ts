@@ -20,13 +20,11 @@ type PlantRow = {
   light: string;
   water: string;
   average_size: string | null;
-  maintenance_conditions: string | null;
   supplier_name: string | null;
   difficulty: string;
   location: string;
   pet_friendly: boolean;
   care_instructions: unknown;
-  commercial_copy: string;
   created_at: string | Date | null;
 };
 
@@ -47,13 +45,12 @@ function mapPlantRow(row: PlantRow): PlantProduct {
     typeof row.supplier_name === "string" && row.supplier_name.trim()
       ? row.supplier_name.trim()
       : undefined;
-  const maintenanceConditions =
-    typeof row.maintenance_conditions === "string" && row.maintenance_conditions.trim()
-      ? row.maintenance_conditions.trim()
-      : undefined;
   const averageSizeRaw = row.average_size?.trim();
   const averageSize =
-    averageSizeRaw === "small" || averageSizeRaw === "medium" || averageSizeRaw === "large"
+    averageSizeRaw === "small" ||
+    averageSizeRaw === "medium" ||
+    averageSizeRaw === "large" ||
+    averageSizeRaw === "x-large"
       ? averageSizeRaw
       : undefined;
 
@@ -73,10 +70,8 @@ function mapPlantRow(row: PlantRow): PlantProduct {
     location: row.location,
     petFriendly: row.pet_friendly,
     careInstructions: parseJsonStringArray(row.care_instructions),
-    commercialCopy: row.commercial_copy,
     ...(family ? { family } : {}),
     ...(averageSize ? { averageSize } : {}),
-    ...(maintenanceConditions ? { maintenanceConditions } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(createdAt ? { createdAt } : {}),
   };
@@ -99,9 +94,9 @@ export async function readPlants(): Promise<PlantProduct[]> {
   const rows = await sql`
     SELECT
       id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size, maintenance_conditions,
+      images, labels, light, water, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, commercial_copy, created_at
+      care_instructions, created_at
     FROM plants
     ORDER BY name ASC
   `;
@@ -115,9 +110,9 @@ export async function getPlantByIdAsync(id: string): Promise<PlantProduct | unde
   const rows = await sql`
     SELECT
       id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size, maintenance_conditions,
+      images, labels, light, water, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, commercial_copy, created_at
+      care_instructions, created_at
     FROM plants
     WHERE id = ${trimmed}
     LIMIT 1
@@ -140,9 +135,9 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
   const rows = await sql`
     INSERT INTO plants (
       id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size, maintenance_conditions,
+      images, labels, light, water, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, commercial_copy, created_at
+      care_instructions, created_at
     )
     VALUES (
       ${plant.id},
@@ -157,20 +152,18 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.light},
       ${plant.water},
       ${plant.averageSize ?? null},
-      ${plant.maintenanceConditions ?? null},
       ${plant.supplierName ?? null},
       ${plant.difficulty},
       ${plant.location},
       ${plant.petFriendly},
       ${careJson}::jsonb,
-      ${plant.commercialCopy},
       ${plant.createdAt ?? new Date().toISOString()}::timestamptz
     )
     RETURNING
       id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size, maintenance_conditions,
+      images, labels, light, water, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, commercial_copy, created_at
+      care_instructions, created_at
   `;
   const row = (rows as PlantRow[])[0];
   if (!row) throw new Error("Could not create plant");
@@ -205,20 +198,29 @@ export async function updatePlant(
       light = ${plant.light},
       water = ${plant.water},
       average_size = ${plant.averageSize ?? null},
-      maintenance_conditions = ${plant.maintenanceConditions ?? null},
       supplier_name = ${plant.supplierName ?? null},
       difficulty = ${plant.difficulty},
       location = ${plant.location},
       pet_friendly = ${plant.petFriendly},
-      care_instructions = ${careJson}::jsonb,
-      commercial_copy = ${plant.commercialCopy}
+      care_instructions = ${careJson}::jsonb
     WHERE id = ${trimmed}
     RETURNING
       id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size, maintenance_conditions,
+      images, labels, light, water, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, commercial_copy, created_at
+      care_instructions, created_at
   `;
   const row = (rows as PlantRow[])[0];
   return row ? mapPlantRow(row) : null;
+}
+
+export async function deletePlant(id: string): Promise<boolean> {
+  const trimmed = id.trim();
+  if (!trimmed) return false;
+  const rows = await sql`
+    DELETE FROM plants
+    WHERE id = ${trimmed}
+    RETURNING id
+  `;
+  return (rows as { id: string }[]).length > 0;
 }

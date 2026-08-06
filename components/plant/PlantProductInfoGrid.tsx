@@ -6,7 +6,7 @@ interface PlantProductInfoGridProps {
   light: PlantProduct["light"];
   water: string;
   difficulty: PlantProduct["difficulty"];
-  labels: string[];
+  averageSize?: PlantProduct["averageSize"];
 }
 
 /** Soft sage panel — keep in sync with premium plant page tone */
@@ -14,17 +14,6 @@ const PANEL_CLASS =
   "rounded-[28px] bg-[#7a8f7c] p-6 shadow-none outline-none sm:p-8";
 
 const QUADRANT_ICON_SIZE = 36;
-
-function lightDisplay(light: PlantProduct["light"]): string {
-  switch (light) {
-    case "Low light":
-      return "Low light";
-    case "Indirect bright light":
-      return "Medium light";
-    case "Full sun":
-      return "Bright light";
-  }
-}
 
 function careDisplay(difficulty: PlantProduct["difficulty"]): string {
   switch (difficulty) {
@@ -37,12 +26,19 @@ function careDisplay(difficulty: PlantProduct["difficulty"]): string {
   }
 }
 
-function sizeDisplay(labels: string[]): string {
-  const joined = labels.join(" ").toLowerCase();
-  if (/\bsmall\b/.test(joined)) return "Small size";
-  if (/\bmedium\b/.test(joined)) return "Medium size";
-  if (/\blarge\b/.test(joined)) return "Large size";
-  return "Medium size";
+function sizeDisplay(averageSize: PlantProduct["averageSize"]): string {
+  switch (averageSize) {
+    case "small":
+      return "Small";
+    case "medium":
+      return "Medium";
+    case "large":
+      return "Large";
+    case "x-large":
+      return "X-Large";
+    default:
+      return "";
+  }
 }
 
 function IconSun() {
@@ -143,14 +139,14 @@ export function PlantProductInfoGrid({
   light,
   water,
   difficulty,
-  labels,
+  averageSize,
 }: PlantProductInfoGridProps) {
   return (
     <section id="plant-info-grid" className={PANEL_CLASS}>
       <div className="grid grid-cols-2">
         <Quadrant
           icon={<IconSun />}
-          text={lightDisplay(light)}
+          text={light}
           borders="border-b border-r border-white/30"
         />
         <Quadrant icon={<IconWater />} text={water} borders="border-b border-white/30" />
@@ -159,7 +155,7 @@ export function PlantProductInfoGrid({
           text={careDisplay(difficulty)}
           borders="border-r border-white/30"
         />
-        <Quadrant icon={<IconRuler />} text={sizeDisplay(labels)} borders="" />
+        <Quadrant icon={<IconRuler />} text={sizeDisplay(averageSize)} borders="" />
       </div>
     </section>
   );

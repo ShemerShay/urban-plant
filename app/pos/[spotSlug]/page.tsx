@@ -119,7 +119,7 @@ export default async function PosPage({ params }: PosPageProps) {
             light={plant.light}
             water={plant.water}
             difficulty={plant.difficulty}
-            labels={plant.labels}
+            averageSize={plant.averageSize}
           />
         </div>
 

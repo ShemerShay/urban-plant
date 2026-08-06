@@ -1,5 +1,9 @@
 export type CareLevel = "Easy" | "Moderate" | "Advanced";
-export type LightLevel = "Low light" | "Indirect bright light" | "Full sun";
+export type LightLevel =
+  | "Low light"
+  | "Medium light"
+  | "Bright indirect light"
+  | "Direct sun";
 
 export interface PlantProduct {
   id: string;
@@ -16,8 +20,7 @@ export interface PlantProduct {
   labels: string[];
   light: LightLevel;
   water: string;
-  averageSize?: "small" | "medium" | "large";
-  maintenanceConditions?: string;
+  averageSize?: "small" | "medium" | "large" | "x-large";
   supplierName?: string;
   baseSupplierPrice?: number;
   createdAt?: string;
@@ -25,5 +28,4 @@ export interface PlantProduct {
   location: string;
   petFriendly: boolean;
   careInstructions: string[];
-  commercialCopy: string;
 }
