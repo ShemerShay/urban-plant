@@ -15,7 +15,7 @@
       "Medium",
       "Statement leaves"
     ],
-    "light": "Indirect bright light",
+    "light": "Bright indirect light",
     "water": "Every 4–6 days",
     "difficulty": "Easy",
     "location": "Near a bright window",
@@ -25,7 +25,7 @@
       "Water when the top soil feels dry.",
       "Wipe leaves occasionally for shine."
     ],
-    "commercialCopy": "A sculptural classic that feels premium without trying too hard."
+    "averageSize": "medium"
   },
   {
     "id": "alocasia",
@@ -43,7 +43,7 @@
       "Medium",
       "Tropical"
     ],
-    "light": "Indirect bright light",
+    "light": "Medium light",
     "water": "Every 4-6 days",
     "difficulty": "Moderate",
     "location": "Warm spot with indirect light",
@@ -53,7 +53,7 @@
       "Higher humidity helps leaf edges stay crisp.",
       "Rotate weekly for even growth."
     ],
-    "commercialCopy": "High-impact greenery that elevates any shelf or seating nook."
+    "averageSize": "medium"
   },
   {
     "id": "asparagus",
@@ -71,7 +71,7 @@
       "Small",
       "Trailing"
     ],
-    "light": "Indirect bright light",
+    "light": "Low light",
     "water": "Every 3-5 days",
     "difficulty": "Easy",
     "location": "Bright indirect spot",
@@ -81,7 +81,6 @@
       "Prune brown stems to keep it airy.",
       "Protect from drying heat vents."
     ],
-    "commercialCopy": "Light, playful greenery—friendly for desks and small tables.",
     "family": "Asparagaceaes",
     "averageSize": "small"
   },
@@ -102,7 +101,7 @@
       "Small",
       "Flowering plant"
     ],
-    "light": "Indirect bright light",
+    "light": "Direct sun",
     "water": "Every 5-7 days",
     "difficulty": "Moderate",
     "location": "Near a bright window",
@@ -113,7 +112,7 @@
       "Rotate the pot weekly for balanced growth.",
       "Wipe leaves gently once a month to remove dust."
     ],
-    "commercialCopy": "A statement plant that instantly elevates your space with calm, natural elegance."
+    "averageSize": "large"
   },
   {
     "id": "succalnt",
@@ -131,7 +130,7 @@
       "Medium",
       "Statement leaves"
     ],
-    "light": "Indirect bright light",
+    "light": "Bright indirect light",
     "water": "7 days",
     "difficulty": "Easy",
     "location": "near the window",
@@ -141,7 +140,6 @@
       "Water when the top soil feels dry.",
       "Wipe leaves occasionally for shine."
     ],
-    "commercialCopy": "A sculptural classic that feels premium without trying too hard.",
     "averageSize": "small"
   },
   {
@@ -160,7 +158,7 @@
       "Medium",
       "Statement leaves"
     ],
-    "light": "Full sun",
+    "light": "Medium light",
     "water": "7 days",
     "difficulty": "Moderate",
     "location": "bear the window",
@@ -170,9 +168,8 @@
       "Water when the top soil feels dry.",
       "Wipe leaves occasionally for shine."
     ],
-    "commercialCopy": "A sculptural classic that feels premium without trying too hard.",
     "family": "Pothos",
-    "averageSize": "small",
+    "averageSize": "x-large",
     "createdAt": "2026-05-24T08:43:23.646Z"
   }
 ]

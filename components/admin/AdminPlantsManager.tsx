@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
+import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { formatPrice } from "@/lib/mockPlants";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
@@ -12,6 +13,7 @@ type PlantsApiResponse = {
   plants?: PlantProduct[];
   plant?: PlantProduct;
   error?: string;
+  ok?: boolean;
 };
 
 type PlantDraft = {
@@ -27,27 +29,35 @@ type PlantDraft = {
   light: PlantProduct["light"];
   water: string;
   averageSize: PlantProduct["averageSize"] | "";
-  maintenanceConditions: string;
   supplierName: string;
   baseSupplierPrice: string;
   difficulty: PlantProduct["difficulty"];
   location: string;
   petFriendly: boolean;
   careInstructionsText: string;
-  commercialCopy: string;
 };
 
 const LIGHT_OPTIONS: PlantProduct["light"][] = [
   "Low light",
-  "Indirect bright light",
-  "Full sun",
+  "Medium light",
+  "Bright indirect light",
+  "Direct sun",
 ];
 
 const DIFFICULTY_OPTIONS: PlantProduct["difficulty"][] = ["Easy", "Moderate", "Advanced"];
 
 const CURRENCY_OPTIONS: PlantProduct["currency"][] = ["ILS", "USD", "EUR"];
 
-const SIZE_OPTIONS: NonNullable<PlantProduct["averageSize"]>[] = ["small", "medium", "large"];
+const SIZE_OPTIONS: { value: NonNullable<PlantProduct["averageSize"]>; label: string }[] = [
+  { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
+  { value: "large", label: "Large" },
+  { value: "x-large", label: "X-Large" },
+];
+
+function averageSizeLabel(size: NonNullable<PlantProduct["averageSize"]>): string {
+  return SIZE_OPTIONS.find((option) => option.value === size)?.label ?? size;
+}
 
 function linesFromArray(values: string[]): string {
   return values.join("\n");
@@ -74,7 +84,6 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     light: plant.light,
     water: plant.water,
     averageSize: plant.averageSize ?? "",
-    maintenanceConditions: plant.maintenanceConditions ?? "",
     supplierName: plant.supplierName ?? "",
     baseSupplierPrice:
       typeof plant.baseSupplierPrice === "number" ? String(plant.baseSupplierPrice) : "",
@@ -82,7 +91,6 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     location: plant.location,
     petFriendly: plant.petFriendly,
     careInstructionsText: linesFromArray(plant.careInstructions),
-    commercialCopy: plant.commercialCopy,
   };
 }
 
@@ -97,17 +105,15 @@ function emptyDraft(): PlantDraft {
     currency: "ILS",
     imagesText: "",
     labelsText: "",
-    light: "Indirect bright light",
+    light: "Bright indirect light",
     water: "",
     averageSize: "",
-    maintenanceConditions: "",
     supplierName: "",
     baseSupplierPrice: "",
     difficulty: "Easy",
     location: "",
     petFriendly: false,
     careInstructionsText: "",
-    commercialCopy: "",
   };
 }
 
@@ -129,9 +135,6 @@ function draftToPayload(draft: PlantDraft, options?: { omitId?: boolean }): Reco
     light: draft.light,
     water: draft.water.trim(),
     ...(draft.averageSize ? { averageSize: draft.averageSize } : {}),
-    ...(draft.maintenanceConditions.trim()
-      ? { maintenanceConditions: draft.maintenanceConditions.trim() }
-      : {}),
     ...(draft.supplierName.trim() ? { supplierName: draft.supplierName.trim() } : {}),
     ...(baseSupplierPrice !== undefined && Number.isFinite(baseSupplierPrice)
       ? { baseSupplierPrice }
@@ -140,7 +143,6 @@ function draftToPayload(draft: PlantDraft, options?: { omitId?: boolean }): Reco
     location: draft.location.trim(),
     petFriendly: draft.petFriendly,
     careInstructions: arrayFromLines(draft.careInstructionsText),
-    commercialCopy: draft.commercialCopy.trim(),
   };
 }
 
@@ -162,6 +164,20 @@ function IconPencil({ className }: { className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
         d="M4 20h4l10.5-10.5a2.12 2.12 0 00-3-3L5 17v3zM14.5 6.5l3 3"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconTrash({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M10 11v6M14 11v6"
         stroke="currentColor"
         strokeWidth="1.75"
         strokeLinecap="round"
@@ -205,8 +221,6 @@ function plantMatchesSearch(plant: PlantProduct, query: string): boolean {
     plant.water,
     plant.difficulty,
     plant.location,
-    plant.commercialCopy,
-    plant.maintenanceConditions,
     plant.supplierName,
     ...plant.labels,
     ...plant.careInstructions,
@@ -408,8 +422,8 @@ function PlantFieldsForm({
           >
             <option value="">—</option>
             {SIZE_OPTIONS.map((size) => (
-              <option key={size} value={size}>
-                {size}
+              <option key={size.value} value={size.value}>
+                {size.label}
               </option>
             ))}
           </select>
@@ -437,22 +451,6 @@ function PlantFieldsForm({
             className={`${inputClassName} min-h-[5rem]`}
             value={draft.careInstructionsText}
             onChange={(e) => patch({ careInstructionsText: e.target.value })}
-          />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className={labelClassName}>Commercial copy</span>
-          <textarea
-            className={`${inputClassName} min-h-[4rem]`}
-            value={draft.commercialCopy}
-            onChange={(e) => patch({ commercialCopy: e.target.value })}
-          />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className={labelClassName}>Maintenance conditions (optional)</span>
-          <input
-            className={inputClassName}
-            value={draft.maintenanceConditions}
-            onChange={(e) => patch({ maintenanceConditions: e.target.value })}
           />
         </label>
         <label className="block">
@@ -525,7 +523,7 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
       {plant.averageSize ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">Average size</dt>
-          <dd className="text-slate-900">{plant.averageSize}</dd>
+          <dd className="text-slate-900">{averageSizeLabel(plant.averageSize)}</dd>
         </div>
       ) : null}
       <div className="flex flex-wrap gap-x-2">
@@ -546,16 +544,6 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           </ul>
         </dd>
       </div>
-      <div>
-        <dt className="font-medium text-slate-500">Commercial copy</dt>
-        <dd className="mt-0.5 text-slate-900">{plant.commercialCopy}</dd>
-      </div>
-      {plant.maintenanceConditions ? (
-        <div>
-          <dt className="font-medium text-slate-500">Maintenance</dt>
-          <dd className="mt-0.5 text-slate-900">{plant.maintenanceConditions}</dd>
-        </div>
-      ) : null}
       {plant.supplierName ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">Supplier</dt>
@@ -585,17 +573,22 @@ function AdminPlantCard({
   onStartEdit,
   onCancelEdit,
   onSaved,
+  onDeleted,
 }: {
   plant: PlantProduct;
   isEditing: boolean;
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onSaved: (plant: PlantProduct) => void;
+  onDeleted: (plantId: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState(() => plantToDraft(plant));
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isEditing) setDraft(plantToDraft(plant));
@@ -627,11 +620,30 @@ function AdminPlantCard({
     }
   }
 
+  async function confirmDelete() {
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(routes.api.plant(plant.id), { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
+      if (!res.ok) {
+        setDeleteError(data.error ?? "Could not delete plant");
+        return;
+      }
+      setDeleteOpen(false);
+      onDeleted(plant.id);
+    } catch {
+      setDeleteError("Network error. Try again.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   const headerImage = plant.images[0];
 
   return (
     <article className="overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-      <div className="flex items-stretch" id='plant-card'>
+      <div className="flex items-stretch" id="plant-card">
         <button
           type="button"
           onClick={() => setIsOpen((open) => !open)}
@@ -661,17 +673,31 @@ function AdminPlantCard({
           <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={isOpen} />
         </button>
         {!isEditing ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStartEdit();
-            }}
-            className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-            aria-label={`Edit ${plant.name}`}
-          >
-            <IconPencil className="h-5 w-5" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteError(null);
+                setDeleteOpen(true);
+              }}
+              className="flex w-12 shrink-0 items-center justify-center text-slate-500 transition hover:bg-slate-50 hover:text-red-700"
+              aria-label="Delete plant"
+            >
+              <IconTrash className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onStartEdit();
+              }}
+              className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
+              aria-label={`Edit ${plant.name}`}
+            >
+              <IconPencil className="h-5 w-5" />
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -705,6 +731,20 @@ function AdminPlantCard({
           )}
         </div>
       ) : null}
+
+      <AdminConfirmDialog
+        open={deleteOpen}
+        title="Delete plant?"
+        message={`Deleting “${plant.name}” permanently removes it. Offers that reference this plant may stop working. Are you sure you want to continue?`}
+        confirmLabel="Delete plant"
+        destructive
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          if (!deleteBusy) setDeleteOpen(false);
+        }}
+        onConfirm={() => void confirmDelete()}
+      />
     </article>
   );
 }
@@ -885,6 +925,10 @@ export function AdminPlantsManager() {
                     prev.map((item) => (item.id === updated.id ? updated : item)),
                   );
                   setEditingId(null);
+                }}
+                onDeleted={(plantId) => {
+                  setPlants((prev) => prev.filter((item) => item.id !== plantId));
+                  if (editingId === plantId) setEditingId(null);
                 }}
               />
             </li>

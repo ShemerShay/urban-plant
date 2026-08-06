@@ -79,10 +79,6 @@ function normalizePlant(raw) {
       typeof raw.averageSize === "string" && raw.averageSize.trim()
         ? raw.averageSize.trim()
         : null,
-    maintenanceConditions:
-      typeof raw.maintenanceConditions === "string" && raw.maintenanceConditions.trim()
-        ? raw.maintenanceConditions.trim()
-        : null,
     supplierName:
       typeof raw.supplierName === "string" && raw.supplierName.trim()
         ? raw.supplierName.trim()
@@ -91,8 +87,6 @@ function normalizePlant(raw) {
     location: typeof raw.location === "string" ? raw.location.trim() : "",
     petFriendly: raw.petFriendly === true,
     careInstructions,
-    commercialCopy:
-      typeof raw.commercialCopy === "string" ? raw.commercialCopy.trim() : "",
     createdAt:
       typeof raw.createdAt === "string" && raw.createdAt.trim()
         ? raw.createdAt.trim()
@@ -134,9 +128,9 @@ for (const item of parsed) {
   await sql`
     INSERT INTO plants (
       id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size, maintenance_conditions,
+      images, labels, light, water, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, commercial_copy, created_at
+      care_instructions, created_at
     )
     VALUES (
       ${plant.id},
@@ -151,13 +145,11 @@ for (const item of parsed) {
       ${plant.light},
       ${plant.water},
       ${plant.averageSize},
-      ${plant.maintenanceConditions},
       ${plant.supplierName},
       ${plant.difficulty},
       ${plant.location},
       ${plant.petFriendly},
       ${careJson}::jsonb,
-      ${plant.commercialCopy},
       ${plant.createdAt}::timestamptz
     )
     ON CONFLICT (id) DO UPDATE SET
@@ -172,13 +164,11 @@ for (const item of parsed) {
       light = EXCLUDED.light,
       water = EXCLUDED.water,
       average_size = EXCLUDED.average_size,
-      maintenance_conditions = EXCLUDED.maintenance_conditions,
       supplier_name = EXCLUDED.supplier_name,
       difficulty = EXCLUDED.difficulty,
       location = EXCLUDED.location,
       pet_friendly = EXCLUDED.pet_friendly,
       care_instructions = EXCLUDED.care_instructions,
-      commercial_copy = EXCLUDED.commercial_copy,
       created_at = COALESCE(plants.created_at, EXCLUDED.created_at)
   `;
   count += 1;
