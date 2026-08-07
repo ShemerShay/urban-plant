@@ -62,8 +62,6 @@ async function buildSnapshot(input: {
     productDescription: plant.description,
     offerId: offer.id,
     consumerPrice: offer.consumerPrice,
-    ...(typeof offer.supplierPrice === "number" ? { supplierPrice: offer.supplierPrice } : {}),
-    ...(offer.supplierName ? { supplierName: offer.supplierName } : {}),
     ...(posSpot ? { partnerLocationId: posSpot.partnerLocationId } : {}),
     ...(partner ? { partnerLocationName: partner.name } : {}),
     ...(posSpot ? { posSpotId: posSpot.id, posSpotDescription: posSpot.posName } : {}),

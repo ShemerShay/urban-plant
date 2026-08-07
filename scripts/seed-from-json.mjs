@@ -134,14 +134,6 @@ async function seedOffers(rows) {
     const status = raw.status === "inactive" ? "inactive" : "active";
     const createdAt =
       typeof raw.createdAt === "string" && raw.createdAt ? raw.createdAt : SEED_CREATED_AT;
-    const supplierPrice =
-      typeof raw.supplierPrice === "number" && Number.isFinite(raw.supplierPrice)
-        ? raw.supplierPrice
-        : null;
-    const supplierName =
-      typeof raw.supplierName === "string" && raw.supplierName.trim()
-        ? raw.supplierName.trim()
-        : null;
 
     if (!id || !productId || consumerPrice === null) {
       throw new Error(`offers.json: invalid offer row (id=${id || "?"})`);
@@ -149,22 +141,18 @@ async function seedOffers(rows) {
 
     await sql`
       INSERT INTO offers (
-        id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+        id, product_id, consumer_price, status, created_at
       )
       VALUES (
         ${id},
         ${productId},
         ${consumerPrice},
-        ${supplierPrice},
-        ${supplierName},
         ${status},
         ${createdAt}::timestamptz
       )
       ON CONFLICT (id) DO UPDATE SET
         product_id = EXCLUDED.product_id,
         consumer_price = EXCLUDED.consumer_price,
-        supplier_price = EXCLUDED.supplier_price,
-        supplier_name = EXCLUDED.supplier_name,
         status = EXCLUDED.status,
         created_at = EXCLUDED.created_at
     `;

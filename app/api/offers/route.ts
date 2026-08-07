@@ -28,8 +28,6 @@ export async function POST(request: NextRequest) {
   const record = body as Record<string, unknown>;
   const productId = cleanString(record.productId);
   const consumerPriceRaw = record.consumerPrice;
-  const supplierPriceRaw = record.supplierPrice;
-  const supplierName = cleanString(record.supplierName);
   const statusRaw = record.status;
 
   if (!productId) {
@@ -48,17 +46,6 @@ export async function POST(request: NextRequest) {
       { error: "consumerPrice must be a non-negative number" },
       { status: 400 },
     );
-  }
-
-  let supplierPrice: number | undefined;
-  if (supplierPriceRaw !== undefined && supplierPriceRaw !== null) {
-    if (typeof supplierPriceRaw !== "number" || !Number.isFinite(supplierPriceRaw) || supplierPriceRaw < 0) {
-      return NextResponse.json(
-        { error: "supplierPrice must be a non-negative number when provided" },
-        { status: 400 },
-      );
-    }
-    supplierPrice = supplierPriceRaw;
   }
 
   let status: OfferStatus | undefined;
@@ -82,8 +69,6 @@ export async function POST(request: NextRequest) {
   const offer = await appendOffer({
     productId,
     consumerPrice,
-    ...(supplierPrice !== undefined ? { supplierPrice } : {}),
-    ...(supplierName ? { supplierName } : {}),
     ...(status ? { status } : {}),
   });
 

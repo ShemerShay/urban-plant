@@ -13,18 +13,6 @@ function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function parseOptionalPrice(
-  raw: unknown,
-  fieldName: string,
-): { ok: true; value: number | null | undefined } | { ok: false; error: string } {
-  if (raw === undefined) return { ok: true, value: undefined };
-  if (raw === null) return { ok: true, value: null };
-  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) {
-    return { ok: false, error: `${fieldName} must be a non-negative number or null` };
-  }
-  return { ok: true, value: raw };
-}
-
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { offerId: rawId } = await params;
   const offerId = decodeURIComponent(rawId);
@@ -78,22 +66,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     consumerPrice = record.consumerPrice;
   }
 
-  const supplierPriceParsed = parseOptionalPrice(record.supplierPrice, "supplierPrice");
-  if (!supplierPriceParsed.ok) {
-    return NextResponse.json({ error: supplierPriceParsed.error }, { status: 400 });
-  }
-
-  let supplierName: string | null | undefined;
-  if (record.supplierName !== undefined) {
-    if (record.supplierName === null) {
-      supplierName = null;
-    } else if (typeof record.supplierName === "string") {
-      supplierName = record.supplierName.trim();
-    } else {
-      return NextResponse.json({ error: "supplierName must be a string or null" }, { status: 400 });
-    }
-  }
-
   let status: OfferStatus | undefined;
   if (record.status !== undefined) {
     if (record.status !== "active" && record.status !== "inactive") {
@@ -108,10 +80,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const offer = await updateOffer(offerId, {
     ...(productId !== undefined ? { productId } : {}),
     ...(consumerPrice !== undefined ? { consumerPrice } : {}),
-    ...(supplierPriceParsed.value !== undefined
-      ? { supplierPrice: supplierPriceParsed.value }
-      : {}),
-    ...(supplierName !== undefined ? { supplierName } : {}),
     ...(status ? { status } : {}),
   });
 

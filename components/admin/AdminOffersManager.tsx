@@ -22,8 +22,6 @@ type PlantsApiResponse = {
 type OfferDraft = {
   productId: string;
   consumerPrice: string;
-  supplierPrice: string;
-  supplierName: string;
   status: OfferStatus;
 };
 
@@ -37,8 +35,6 @@ function offerToDraft(offer: OfferWithProduct): OfferDraft {
   return {
     productId: offer.productId,
     consumerPrice: String(offer.consumerPrice),
-    supplierPrice: typeof offer.supplierPrice === "number" ? String(offer.supplierPrice) : "",
-    supplierName: offer.supplierName ?? "",
     status: offer.status,
   };
 }
@@ -47,26 +43,16 @@ function emptyDraft(): OfferDraft {
   return {
     productId: "",
     consumerPrice: "",
-    supplierPrice: "",
-    supplierName: "",
     status: "active",
   };
 }
 
 function draftToPayload(draft: OfferDraft): Record<string, unknown> {
   const consumerPrice = Number(draft.consumerPrice);
-  const supplierPriceTrimmed = draft.supplierPrice.trim();
-  const supplierPrice =
-    supplierPriceTrimmed === "" ? undefined : Number(supplierPriceTrimmed);
-  const supplierNameTrimmed = draft.supplierName.trim();
 
   return {
     productId: draft.productId.trim(),
     consumerPrice,
-    ...(supplierPrice !== undefined && Number.isFinite(supplierPrice)
-      ? { supplierPrice }
-      : { supplierPrice: null }),
-    ...(supplierNameTrimmed ? { supplierName: supplierNameTrimmed } : { supplierName: null }),
     status: draft.status,
   };
 }
@@ -126,8 +112,6 @@ function offerMatchesSearch(offer: OfferWithProduct, query: string): boolean {
     offer.plantSubtitle,
     offer.status,
     String(offer.consumerPrice),
-    offer.supplierName,
-    typeof offer.supplierPrice === "number" ? String(offer.supplierPrice) : "",
     offer.createdAt,
   ]
     .filter(Boolean)
@@ -225,12 +209,6 @@ function OfferFieldsForm({
                 ...(plant && !draft.consumerPrice
                   ? { consumerPrice: String(plant.price) }
                   : {}),
-                ...(plant?.supplierName && !draft.supplierName
-                  ? { supplierName: plant.supplierName }
-                  : {}),
-                ...(typeof plant?.baseSupplierPrice === "number" && !draft.supplierPrice
-                  ? { supplierPrice: String(plant.baseSupplierPrice) }
-                  : {}),
               });
             }}
             required
@@ -254,25 +232,6 @@ function OfferFieldsForm({
             value={draft.consumerPrice}
             onChange={(e) => patch({ consumerPrice: e.target.value })}
             required
-          />
-        </label>
-        <label className="block">
-          <span className={labelClassName}>Supplier price (optional)</span>
-          <input
-            className={inputClassName}
-            type="number"
-            min={0}
-            step={0.01}
-            value={draft.supplierPrice}
-            onChange={(e) => patch({ supplierPrice: e.target.value })}
-          />
-        </label>
-        <label className="block">
-          <span className={labelClassName}>Supplier name (optional)</span>
-          <input
-            className={inputClassName}
-            value={draft.supplierName}
-            onChange={(e) => patch({ supplierName: e.target.value })}
           />
         </label>
         <label className="block sm:col-span-2">
@@ -323,18 +282,6 @@ function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
           <dt className="font-medium text-slate-500">Consumer price</dt>
           <dd className="text-slate-900">{formatPrice(offer.consumerPrice, offer.currency)}</dd>
         </div>
-        {typeof offer.supplierPrice === "number" ? (
-          <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Supplier price</dt>
-            <dd className="text-slate-900">{offer.supplierPrice}</dd>
-          </div>
-        ) : null}
-        {offer.supplierName ? (
-          <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Supplier name</dt>
-            <dd className="text-slate-900">{offer.supplierName}</dd>
-          </div>
-        ) : null}
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">Status</dt>
           <dd className="capitalize text-slate-900">{offer.status}</dd>
@@ -561,8 +508,6 @@ export function AdminOffersManager() {
     setIsCreating(true);
     setCreateError(null);
     const payload = draftToPayload(createDraft);
-    if (payload.supplierPrice === null) delete payload.supplierPrice;
-    if (payload.supplierName === null) delete payload.supplierName;
 
     try {
       const res = await fetch(routes.api.offers(), {
@@ -619,7 +564,7 @@ export function AdminOffersManager() {
 
       <p className="mb-6 text-sm leading-relaxed text-slate-600">
         Sale offers linked to catalog plants. Images and currency come from the selected plant;
-        each offer sets its own consumer price and optional supplier details.
+        each offer sets its own consumer price.
       </p>
 
       {showCreate ? (

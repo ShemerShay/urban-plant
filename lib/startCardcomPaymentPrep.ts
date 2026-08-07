@@ -120,8 +120,6 @@ async function buildOrderSnapshot(input: {
     productDescription: plant.description,
     offerId: offer.id,
     consumerPrice: offer.consumerPrice,
-    ...(typeof offer.supplierPrice === "number" ? { supplierPrice: offer.supplierPrice } : {}),
-    ...(offer.supplierName ? { supplierName: offer.supplierName } : {}),
     partnerLocationId: posSpot.partnerLocationId,
     ...(partner ? { partnerLocationName: partner.name } : {}),
     posSpotId: posSpot.id,

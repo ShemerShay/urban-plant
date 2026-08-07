@@ -15,16 +15,12 @@ const SEED_CREATED_AT = "2026-05-17T00:00:00.000Z";
 export type NewOfferInput = {
   productId: string;
   consumerPrice: number;
-  supplierPrice?: number;
-  supplierName?: string;
   status?: OfferStatus;
 };
 
 export type UpdateOfferInput = {
   productId?: string;
   consumerPrice?: number;
-  supplierPrice?: number | null;
-  supplierName?: string | null;
   status?: OfferStatus;
 };
 
@@ -33,7 +29,6 @@ function defaultOffers(): Offer[] {
     id: randomUUID(),
     productId: plant.id,
     consumerPrice: plant.supplierPrice,
-    ...(plant.supplierName ? { supplierName: plant.supplierName } : {}),
     status: "active",
     createdAt: plant.createdAt ?? SEED_CREATED_AT,
   }));
@@ -43,8 +38,6 @@ type OfferRow = {
   id: string;
   product_id: string;
   consumer_price: string | number;
-  supplier_price: string | number | null;
-  supplier_name: string | null;
   status: string;
   created_at: string | Date;
 };
@@ -52,19 +45,11 @@ type OfferRow = {
 function mapOfferRow(row: OfferRow): Offer {
   const status: OfferStatus = row.status === "inactive" ? "inactive" : "active";
   const createdAt = toIsoString(row.created_at) ?? SEED_CREATED_AT;
-  const supplierPrice =
-    row.supplier_price != null ? parseNumeric(row.supplier_price) : undefined;
-  const supplierName =
-    typeof row.supplier_name === "string" && row.supplier_name.trim()
-      ? row.supplier_name.trim()
-      : undefined;
 
   return {
     id: row.id,
     productId: row.product_id,
     consumerPrice: parseNumeric(row.consumer_price),
-    ...(supplierPrice !== undefined ? { supplierPrice } : {}),
-    ...(supplierName ? { supplierName } : {}),
     status,
     createdAt,
   };
@@ -72,7 +57,7 @@ function mapOfferRow(row: OfferRow): Offer {
 
 export async function readOffers(): Promise<Offer[]> {
   const rows = await sql`
-    SELECT id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+    SELECT id, product_id, consumer_price, status, created_at
     FROM offers
     ORDER BY created_at ASC
   `;
@@ -85,14 +70,12 @@ export async function saveOffers(offers: Offer[]): Promise<void> {
   for (const offer of offers) {
     await sql`
       INSERT INTO offers (
-        id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+        id, product_id, consumer_price, status, created_at
       )
       VALUES (
         ${offer.id},
         ${offer.productId},
         ${offer.consumerPrice},
-        ${offer.supplierPrice ?? null},
-        ${offer.supplierName ?? null},
         ${offer.status},
         ${offer.createdAt}::timestamptz
       )
@@ -104,7 +87,7 @@ export async function getOfferById(id: string): Promise<Offer | undefined> {
   const trimmed = id.trim();
   if (!trimmed) return undefined;
   const rows = await sql`
-    SELECT id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+    SELECT id, product_id, consumer_price, status, created_at
     FROM offers
     WHERE id = ${trimmed}
     LIMIT 1
@@ -123,22 +106,18 @@ export async function appendOffer(input: NewOfferInput): Promise<Offer> {
     id: randomUUID(),
     productId,
     consumerPrice: input.consumerPrice,
-    ...(typeof input.supplierPrice === "number" ? { supplierPrice: input.supplierPrice } : {}),
-    ...(input.supplierName?.trim() ? { supplierName: input.supplierName.trim() } : {}),
     status,
     createdAt,
   };
 
   await sql`
     INSERT INTO offers (
-      id, product_id, consumer_price, supplier_price, supplier_name, status, created_at
+      id, product_id, consumer_price, status, created_at
     )
     VALUES (
       ${offer.id},
       ${offer.productId},
       ${offer.consumerPrice},
-      ${offer.supplierPrice ?? null},
-      ${offer.supplierName ?? null},
       ${offer.status},
       ${offer.createdAt}::timestamptz
     )
@@ -163,31 +142,10 @@ export async function updateOffer(
   const status: OfferStatus =
     input.status === "inactive" ? "inactive" : input.status === "active" ? "active" : existing.status;
 
-  let supplierPrice: number | undefined;
-  if (input.supplierPrice === null) {
-    supplierPrice = undefined;
-  } else if (typeof input.supplierPrice === "number") {
-    supplierPrice = input.supplierPrice;
-  } else {
-    supplierPrice = existing.supplierPrice;
-  }
-
-  let supplierName: string | undefined;
-  if (input.supplierName === null) {
-    supplierName = undefined;
-  } else if (input.supplierName !== undefined) {
-    const name = input.supplierName.trim();
-    supplierName = name ? name : undefined;
-  } else {
-    supplierName = existing.supplierName;
-  }
-
   const offer: Offer = {
     id: trimmed,
     productId,
     consumerPrice,
-    ...(supplierPrice !== undefined ? { supplierPrice } : {}),
-    ...(supplierName ? { supplierName } : {}),
     status,
     createdAt: existing.createdAt,
   };
@@ -197,8 +155,6 @@ export async function updateOffer(
     SET
       product_id = ${offer.productId},
       consumer_price = ${offer.consumerPrice},
-      supplier_price = ${offer.supplierPrice ?? null},
-      supplier_name = ${offer.supplierName ?? null},
       status = ${offer.status}
     WHERE id = ${trimmed}
   `;
