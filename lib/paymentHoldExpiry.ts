@@ -2,7 +2,12 @@
  * Abandoned Cardcom payment hold expiry (17 minutes).
  * Intentionally longer than Cardcom terminal TimeOut (15 minutes) so Cardcom can
  * redirect to FailedRedirectUrl before Urban Plant releases the POS.
- * Enforced server-side via lazy cleanup on read/request paths — not a browser timer.
+ *
+ * Enforcement:
+ * - Lazy cleanup on product/checkout/create/retry/webhook paths
+ * - Scheduled cleanup via {@link expireAllStalePaymentHolds} (Netlify cron → API route)
+ *
+ * Not a browser timer. TTL must stay at 17 minutes.
  */
 
 import "server-only";
@@ -23,13 +28,27 @@ export type ExpireStalePaymentHoldResult =
       cancelledOrderId: string | null;
     };
 
+export type ExpireAllStalePaymentHoldsResult = {
+  /** Spots that matched the stale criteria when scanned. */
+  candidateCount: number;
+  /** Spots successfully released by {@link expireStalePaymentHold}. */
+  expiredCount: number;
+  expiredPosSpotIds: string[];
+};
+
 /**
  * If this POS has been held_for_payment longer than the TTL without verified payment:
  * - cancel linked pending_payment order(s) (never sold/picked_up/delivered)
  * - return POS to available (never if already sold)
  *
  * Lazy: call on product/checkout reads, create, retry, and webhook before finalize.
+ * Scheduled: {@link expireAllStalePaymentHolds} reuses this same function per spot.
  * Runs as a single SQL statement (CTE) — cancel + POS release are atomic together.
+ *
+ * Concurrent Cardcom webhook safety: finalize requires pending_payment + held_for_payment
+ * in one atomic UPDATE. If expiry wins first, webhook sees cancelled / not held and
+ * fails closed (ignored_cancelled). If finalize wins first, expiry only cancels
+ * pending_payment and only releases while still held_for_payment — sold is untouched.
  */
 export async function expireStalePaymentHold(
   posSpotId: string,
@@ -118,6 +137,55 @@ export async function expireStalePaymentHold(
     return { expired: false, reason: "not_held" };
   }
   return { expired: false, reason: "not_stale" };
+}
+
+/**
+ * Background / cron entry point: find every held_for_payment spot past the TTL,
+ * then reuse {@link expireStalePaymentHold} per spot (same rules, idempotent).
+ *
+ * Candidate hold start matches single-spot expiry:
+ * COALESCE(payment_hold_started_at, MIN(pending_payment.created_at)).
+ */
+export async function expireAllStalePaymentHolds(): Promise<ExpireAllStalePaymentHoldsResult> {
+  const rows = await sql`
+    SELECT p.id
+    FROM pos_spots p
+    WHERE p.status = 'held_for_payment'
+      AND COALESCE(
+        p.payment_hold_started_at,
+        (
+          SELECT MIN(o.created_at)
+          FROM orders o
+          WHERE o.pos_spot_id = p.id
+            AND o.order_status = 'pending_payment'
+        )
+      ) IS NOT NULL
+      AND COALESCE(
+        p.payment_hold_started_at,
+        (
+          SELECT MIN(o.created_at)
+          FROM orders o
+          WHERE o.pos_spot_id = p.id
+            AND o.order_status = 'pending_payment'
+        )
+      ) <= (now() - interval '17 minutes')
+  `;
+
+  const candidateIds = (rows as { id: string }[]).map((r) => r.id);
+  const expiredPosSpotIds: string[] = [];
+
+  for (const id of candidateIds) {
+    const result = await expireStalePaymentHold(id);
+    if (result.expired) {
+      expiredPosSpotIds.push(result.posSpotId);
+    }
+  }
+
+  return {
+    candidateCount: candidateIds.length,
+    expiredCount: expiredPosSpotIds.length,
+    expiredPosSpotIds,
+  };
 }
 
 export async function expireStalePaymentHoldBySpotSlug(

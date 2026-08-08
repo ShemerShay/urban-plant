@@ -1,0 +1,10 @@
+# Netlify config for Urban Plant.
+# Next.js build/plugin is typically configured in the Netlify UI; this file
+# registers the payment-hold scheduled function.
+
+[functions]
+  directory = "netlify/functions"
+
+# Every 5 minutes: release abandoned held_for_payment spots (17-minute TTL).
+[functions."expire-payment-holds"]
+  schedule = "*/5 * * * *"

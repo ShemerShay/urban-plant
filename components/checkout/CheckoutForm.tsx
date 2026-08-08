@@ -139,13 +139,15 @@ export function CheckoutForm({
   const showHeldCheckoutMessage = shouldShowHeldForPaymentCheckoutMessage(posSpotStatus, {
     resumeHolder,
   });
+  /** Resume retry uses orderId + token only — do not gate on form canSubmit. */
+  const isResumeRetry = Boolean(paymentResume);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!purchaseAllowed) {
       return;
     }
-    if (!canSubmit) {
+    if (!isResumeRetry && !canSubmit) {
       revealValidationErrors();
       return;
     }
@@ -217,8 +219,10 @@ export function CheckoutForm({
     }
   }
 
-  const isSubmitDisabled = isSubmitting || !canSubmit || !purchaseAllowed;
-  const showValidationOverlay = !isSubmitting && purchaseAllowed && !canSubmit;
+  const isSubmitDisabled =
+    isSubmitting || !purchaseAllowed || (!isResumeRetry && !canSubmit);
+  const showValidationOverlay =
+    !isResumeRetry && !isSubmitting && purchaseAllowed && !canSubmit;
 
   const deliveryErrors: DeliveryAddressFieldErrors = {
     deliveryStreet: errors.deliveryStreet,
@@ -327,11 +331,7 @@ export function CheckoutForm({
             disabled={isSubmitDisabled}
             className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
           >
-            {isSubmitting
-              ? "Processing…"
-              : paymentResume
-                ? "Try payment again"
-                : "Complete Order"}
+            {isSubmitting ? "Processing…" : "Complete Order"}
           </button>
         </div>
       </div>

@@ -158,7 +158,7 @@ function ExpandablePocketCard({
   subtitle: string;
   spots: PosSpot[];
   actions?: ReactNode;
-  onEditSpot: (spot: PosSpot) => void;
+  onEditSpot: (spot: PosSpot) => void | Promise<void>;
   onArchiveSpot: (spot: PosSpot) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -398,7 +398,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     setCreateSpotOpen(true);
   }
 
-  function openEditSpot(spot: PosSpot) {
+  function applySpotToEditForm(spot: PosSpot) {
     setEditSpot(spot);
     setPosNumber(spot.posNumber ?? "");
     setPocketId(spot.pocketId ?? "");
@@ -414,8 +414,30 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
             ? "held_for_payment"
             : "available",
     );
+  }
+
+  async function openEditSpot(spot: PosSpot) {
     setSpotError(null);
-    setCreateSpotOpen(true);
+    setSpotBusy(true);
+    try {
+      const res = await fetch(routes.api.posSpot(spot.id), { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as {
+        posSpot?: PosSpot;
+        error?: string;
+      };
+      if (!res.ok || !data.posSpot) {
+        setLoadError(data.error ?? "Could not load latest POS Spot");
+        return;
+      }
+      const fresh = data.posSpot;
+      setPosSpots((prev) => prev.map((s) => (s.id === fresh.id ? fresh : s)));
+      applySpotToEditForm(fresh);
+      setCreateSpotOpen(true);
+    } catch {
+      setLoadError("Could not load latest POS Spot");
+    } finally {
+      setSpotBusy(false);
+    }
   }
 
   const selectedPocketName = pocketId ? pocketNameById.get(pocketId) : undefined;

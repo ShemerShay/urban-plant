@@ -7,6 +7,8 @@ import "server-only";
 
 import nodemailer from "nodemailer";
 
+import { translateCareInstructionsToHebrew } from "@/lib/careInstructionsHebrew";
+
 export type PurchaseEmailFulfillment = "delivery" | "pickup";
 
 export type BuildPurchaseEmailHtmlParams = {
@@ -14,6 +16,8 @@ export type BuildPurchaseEmailHtmlParams = {
   plantName: string;
   priceDisplay: string;
   fulfillmentMethod: PurchaseEmailFulfillment;
+  /** English care instructions from plant data; rendered in Hebrew when present. */
+  careInstructions?: string[];
 };
 
 export type SendPurchaseEmailAttachment = {
@@ -28,6 +32,8 @@ export type SendPurchaseEmailParams = {
   plantName: string;
   priceDisplay: string;
   fulfillmentMethod: PurchaseEmailFulfillment;
+  /** English care instructions from plant data; rendered in Hebrew when present. */
+  careInstructions?: string[];
   attachments?: SendPurchaseEmailAttachment[];
 };
 
@@ -42,25 +48,54 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function normalizeCareInstructions(
+  careInstructions: string[] | undefined,
+): string[] {
+  if (!careInstructions?.length) return [];
+  return careInstructions.map((line) => line.trim()).filter(Boolean);
+}
+
+function buildCareInstructionsBlock(
+  careInstructions: string[] | undefined,
+): string {
+  const english = normalizeCareInstructions(careInstructions);
+  if (english.length === 0) return "";
+
+  const hebrew = translateCareInstructionsToHebrew(english);
+  const items = hebrew
+    .map(
+      (line) =>
+        `<li style="margin:0 0 4px;padding:0;">${escapeHtml(line)}</li>`,
+    )
+    .join("");
+
+  return `<ul style="margin:12px 0 0;padding:0 1.25em 0 0;font-size:15px;line-height:1.5;color:#374151;direction:rtl;text-align:right;list-style-position:inside;">
+    ${items}
+  </ul>`;
+}
+
 /**
- * Existing Urban Plant confirmation HTML — do not change copy.
+ * Existing Urban Plant confirmation HTML — do not change English copy.
  */
 export function buildPurchaseEmailHtml(params: BuildPurchaseEmailHtmlParams): string {
   const greeting = params.fullName ? `Hi ${escapeHtml(params.fullName)},` : "Hi,";
   const priceLine = params.priceDisplay
     ? `<p style="margin:12px 0 0;font-size:15px;line-height:1.5;color:#374151;">Order total: <strong>${escapeHtml(params.priceDisplay)}</strong></p>`
     : "";
+  const careBlock = buildCareInstructionsBlock(params.careInstructions);
   const plantBlock =
     params.fulfillmentMethod === "pickup"
       ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
     <strong>${escapeHtml(params.plantName)}</strong>
   </p>
+  ${careBlock}
   <p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
     You may take the plant with you.
   </p>`
       : `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
     <strong>${escapeHtml(params.plantName)}</strong> — we’ll contact you within the next 1–3 business days to coordinate delivery.
-  </p>`;
+  </p>
+  ${careBlock}`;
 
   return `
 <!DOCTYPE html>
@@ -109,6 +144,7 @@ export async function sendPurchaseEmail(
   const priceDisplay = params.priceDisplay.trim();
   const fulfillmentMethod =
     params.fulfillmentMethod === "pickup" ? "pickup" : "delivery";
+  const careInstructions = normalizeCareInstructions(params.careInstructions);
 
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -128,6 +164,7 @@ export async function sendPurchaseEmail(
       plantName,
       priceDisplay,
       fulfillmentMethod,
+      ...(careInstructions.length > 0 ? { careInstructions } : {}),
     }),
     ...(params.attachments && params.attachments.length > 0
       ? {
