@@ -206,13 +206,11 @@ export function getCardcomAuthFieldsForEnvironment(
 ): CardcomAuthFields {
   if (environment === "test") {
     const apiName = process.env.CARDCOM_TEST_API_NAME?.trim();
-    const apiPassword =
-      process.env.CARDCOM_TEST_API_PASSWORD?.trim() ||
-      process.env.CARDCOM_API_PASSWORD?.trim();
+    const apiPassword = process.env.CARDCOM_TEST_API_PASSWORD?.trim();
     if (!apiName || !apiPassword) {
       const missing = [
         !apiName ? "CARDCOM_TEST_API_NAME" : null,
-        !apiPassword ? "CARDCOM_TEST_API_PASSWORD or CARDCOM_API_PASSWORD" : null,
+        !apiPassword ? "CARDCOM_TEST_API_PASSWORD" : null,
       ].filter(Boolean);
       throw new CardcomError(
         `Cardcom test Documents auth is not configured. Missing: ${missing.join(", ")}.`,

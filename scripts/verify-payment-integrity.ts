@@ -19,6 +19,7 @@ async function main(): Promise<void> {
     isPaymentHoldExpired,
     PAYMENT_HOLD_TTL_MS,
     expireStalePaymentHold,
+    expireAllStalePaymentHolds,
   } = await import("../lib/paymentHoldExpiry");
   const {
     appendOrder,
@@ -314,6 +315,121 @@ async function main(): Promise<void> {
       const next = await acquirePosSpotHoldForPayment(available.id);
       assert.equal(next.ok, true);
       await releasePosSpotHoldForPayment(available.id);
+      await setPosSpotStatus(available.id, "available");
+    }
+
+    // Scheduled bulk cleanup: stale hold released
+    {
+      const lp = `lp-bulk-stale-${randomUUID()}`;
+      const { orderId } = await seedPending(lp);
+      await sql`
+        UPDATE pos_spots
+        SET payment_hold_started_at = now() - interval '18 minutes'
+        WHERE id = ${available.id}::uuid
+      `;
+      const bulk = await expireAllStalePaymentHolds();
+      assert.ok(bulk.expiredPosSpotIds.includes(available.id));
+      assert.equal((await getOrderById(orderId))?.orderStatus, "cancelled");
+      assert.equal((await getPosSpotById(available.id))?.status, "available");
+      await setPosSpotStatus(available.id, "available");
+    }
+
+    // Scheduled bulk cleanup: fresh hold untouched
+    {
+      const lp = `lp-bulk-fresh-${randomUUID()}`;
+      const { orderId } = await seedPending(lp);
+      const bulk = await expireAllStalePaymentHolds();
+      assert.equal(bulk.expiredPosSpotIds.includes(available.id), false);
+      assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
+      assert.equal((await getPosSpotById(available.id))?.status, "held_for_payment");
+      await releasePosSpotHoldForPayment(available.id);
+      await sql`UPDATE orders SET order_status = 'cancelled', cancelled_at = now(), cancelled_by = 'system', cancellation_reason = 'cleanup' WHERE order_id = ${orderId}::uuid`;
+      await setPosSpotStatus(available.id, "available");
+    }
+
+    // Scheduled bulk cleanup: completed payment untouched
+    {
+      const lp = `lp-bulk-paid-${randomUUID()}`;
+      const { orderId, price } = await seedPending(lp);
+      await processCardcomWebhook(
+        { LowProfileId: lp },
+        {
+          getLpResult: async () =>
+            parseCardcomLowProfileResult({
+              ResponseCode: 0,
+              LowProfileId: lp,
+              ReturnValue: orderId,
+              TranzactionInfo: {
+                ResponseCode: 0,
+                Amount: price,
+                CoinId: 1,
+                TranzactionId: 800014,
+              },
+            }),
+          processDocumentAndEmail: async () => ({ outcome: "skipped" }),
+        },
+      );
+      await sql`
+        UPDATE pos_spots
+        SET payment_hold_started_at = now() - interval '18 minutes'
+        WHERE id = ${available.id}::uuid
+      `;
+      const bulk = await expireAllStalePaymentHolds();
+      assert.equal(bulk.expiredPosSpotIds.includes(available.id), false);
+      assert.equal((await getOrderById(orderId))?.orderStatus, "sold");
+      assert.equal((await getPosSpotById(available.id))?.status, "sold");
+      await setPosSpotStatus(available.id, "available");
+    }
+
+    // Scheduled bulk cleanup: repeated run is idempotent
+    {
+      const lp = `lp-bulk-idem-${randomUUID()}`;
+      const { orderId } = await seedPending(lp);
+      await sql`
+        UPDATE pos_spots
+        SET payment_hold_started_at = now() - interval '18 minutes'
+        WHERE id = ${available.id}::uuid
+      `;
+      const first = await expireAllStalePaymentHolds();
+      assert.ok(first.expiredPosSpotIds.includes(available.id));
+      const second = await expireAllStalePaymentHolds();
+      assert.equal(second.expiredPosSpotIds.includes(available.id), false);
+      assert.equal((await getOrderById(orderId))?.orderStatus, "cancelled");
+      assert.equal((await getPosSpotById(available.id))?.status, "available");
+      await setPosSpotStatus(available.id, "available");
+    }
+
+    // Scheduled bulk cleanup then late webhook remains fail-closed
+    {
+      const lp = `lp-bulk-late-${randomUUID()}`;
+      const { orderId, price } = await seedPending(lp);
+      await sql`
+        UPDATE pos_spots
+        SET payment_hold_started_at = now() - interval '18 minutes'
+        WHERE id = ${available.id}::uuid
+      `;
+      await expireAllStalePaymentHolds();
+      assert.equal((await getOrderById(orderId))?.orderStatus, "cancelled");
+      const late = await processCardcomWebhook(
+        { LowProfileId: lp },
+        {
+          getLpResult: async () =>
+            parseCardcomLowProfileResult({
+              ResponseCode: 0,
+              LowProfileId: lp,
+              ReturnValue: orderId,
+              TranzactionInfo: {
+                ResponseCode: 0,
+                Amount: price,
+                CoinId: 1,
+                TranzactionId: 800015,
+              },
+            }),
+        },
+      );
+      assert.equal(late.outcome, "ignored_cancelled");
+      assert.equal((await getOrderById(orderId))?.orderStatus, "cancelled");
+      assert.notEqual((await getPosSpotById(available.id))?.status, "sold");
       await setPosSpotStatus(available.id, "available");
     }
 

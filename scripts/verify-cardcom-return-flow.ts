@@ -245,7 +245,9 @@ async function main(): Promise<void> {
   // Never POST /api/orders or send email from the browser checkout path.
   const checkoutFormSrc = read("components/checkout/CheckoutForm.tsx");
   assert.match(checkoutFormSrc, /PAYMENT_FAILED_CHECKOUT_MESSAGE/);
-  assert.match(checkoutFormSrc, /Try payment again/);
+  assert.match(checkoutFormSrc, /Complete Order/);
+  assert.ok(!checkoutFormSrc.includes("Try payment again"));
+  assert.match(checkoutFormSrc, /isResumeRetry/);
   assert.match(checkoutFormSrc, /cardcomCreate/);
   assert.match(checkoutFormSrc, /cardcomRetry/);
   assert.ok(!checkoutFormSrc.includes("routes.api.orders()"));

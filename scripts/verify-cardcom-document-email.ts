@@ -141,6 +141,22 @@ async function main(): Promise<void> {
     assert.ok(htmlPickup.includes("Thank you for your purchase from Urban Plant"));
     assert.ok(htmlPickup.includes("You may take the plant with you."));
     assert.ok(htmlPickup.includes("Order total:"));
+    assert.ok(!htmlPickup.includes("direction:rtl"));
+
+    const htmlPickupCare = buildPurchaseEmailHtml({
+      fullName: "Ada",
+      plantName: "Monstera",
+      priceDisplay: "₪89",
+      fulfillmentMethod: "pickup",
+      careInstructions: [
+        "Water when the top soil feels dry.",
+        "",
+        "  ",
+      ],
+    });
+    assert.ok(htmlPickupCare.includes("השקו כשהאדמה העליונה מורגשת יבשה."));
+    assert.ok(!htmlPickupCare.includes("Water when the top soil feels dry."));
+    assert.ok(htmlPickupCare.includes("You may take the plant with you."));
 
     const htmlDelivery = buildPurchaseEmailHtml({
       fullName: "Ada",

@@ -32,7 +32,8 @@
     "db:migrate:orders-cardcom-document-email": "node scripts/apply-sql-file.mjs db/migrations/020_orders_cardcom_document_email.sql",
     "db:migrate:payment-hold-expiry": "node scripts/apply-sql-file.mjs db/migrations/021_payment_hold_expiry_and_retry_lock.sql",
     "db:migrate:plants-simplify": "node scripts/apply-sql-file.mjs db/migrations/022_plants_simplify_model.sql",
-    "db:migrate:offers-drop-supplier-fields": "node scripts/apply-sql-file.mjs db/migrations/023_offers_drop_supplier_fields.sql"
+    "db:migrate:offers-drop-supplier-fields": "node scripts/apply-sql-file.mjs db/migrations/023_offers_drop_supplier_fields.sql",
+    "db:migrate:stale-payment-hold-idx": "node scripts/apply-sql-file.mjs db/migrations/024_pos_spots_stale_payment_hold_idx.sql"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -24,6 +24,7 @@ import {
   markPurchaseEmailSent,
   saveCardcomDocumentOnOrder,
 } from "@/lib/ordersStorage";
+import { getPlantById } from "@/lib/plantCatalog";
 import { sendPurchaseEmail } from "@/lib/purchaseEmail";
 import { isVerifiedPaidOrderStatus } from "@/lib/status";
 
@@ -165,6 +166,22 @@ export async function processOrderDocumentAndEmail(
       throw new Error("Missing customer email for purchase confirmation");
     }
 
+    let careInstructions: string[] = [];
+    try {
+      const plant = order.plantId
+        ? await getPlantById(order.plantId)
+        : undefined;
+      careInstructions = (plant?.careInstructions ?? [])
+        .map((line) => line.trim())
+        .filter(Boolean);
+    } catch (error) {
+      console.error("[cardcom-document-email] care instructions lookup failed", {
+        orderId: order.orderId,
+        plantId: order.plantId,
+        error: safeErrorMessage(error),
+      });
+    }
+
     const sendEmail = deps.sendEmail ?? sendPurchaseEmail;
     await sendEmail({
       customerEmail,
@@ -172,6 +189,7 @@ export async function processOrderDocumentAndEmail(
       plantName: order.plantName || "your plant",
       priceDisplay: formatPrice(order.price, "ILS"),
       fulfillmentMethod: order.fulfillmentMethod,
+      ...(careInstructions.length > 0 ? { careInstructions } : {}),
       attachments: [
         {
           filename: pdf.filename,
