@@ -6,6 +6,7 @@ import { sql } from "@/lib/db";
 import { addCalendarDaysUtc, toIsoDateString, toIsoString, utcCalendarDateString } from "@/lib/storageUtils";
 
 import { normalizePosSpotSlug } from "./posSpotSlugUtils";
+import { sortPosSpotsByPosNumberAsc } from "./posSpotSort";
 import type { PosSpot, PosSpotStatus } from "./posSpotTypes";
 
 const SEED_CREATED_AT = "2026-05-17T00:00:00.000Z";
@@ -168,7 +169,7 @@ export async function readPosSpots(): Promise<PosSpot[]> {
     FROM pos_spots
     ORDER BY created_at ASC
   `;
-  return (rows as PosSpotRow[]).map(mapPosSpotRow);
+  return sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
 }
 
 export async function savePosSpots(spots: PosSpot[]): Promise<void> {
@@ -607,5 +608,5 @@ export async function readPosSpotsByPartner(partnerLocationId: string): Promise<
     WHERE partner_location_id = ${trimmed}
     ORDER BY created_at ASC
   `;
-  return (rows as PosSpotRow[]).map(mapPosSpotRow);
+  return sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
 }

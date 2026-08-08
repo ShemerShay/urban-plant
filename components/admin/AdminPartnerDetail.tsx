@@ -85,10 +85,12 @@ function IconChevron({ className, open }: { className?: string; open: boolean })
 
 function PocketSpotRow({
   spot,
+  offerName,
   onEdit,
   onArchive,
 }: {
   spot: PosSpot;
+  offerName: string;
   onEdit: () => void;
   onArchive: () => void;
 }) {
@@ -106,8 +108,8 @@ function PocketSpotRow({
           </div>
           <dl className="mt-2 grid gap-1">
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Display</dt>
-              <dd className="text-slate-900">{spot.posName}</dd>
+              <dt className="font-medium text-slate-500">Offer</dt>
+              <dd className="text-slate-900">{offerName}</dd>
             </div>
             <div className="flex flex-wrap gap-x-2">
               <dt className="font-medium text-slate-500">Slug</dt>
@@ -150,6 +152,7 @@ function ExpandablePocketCard({
   title,
   subtitle,
   spots,
+  offerNameById,
   actions,
   onEditSpot,
   onArchiveSpot,
@@ -157,6 +160,7 @@ function ExpandablePocketCard({
   title: string;
   subtitle: string;
   spots: PosSpot[];
+  offerNameById: Map<string, string>;
   actions?: ReactNode;
   onEditSpot: (spot: PosSpot) => void | Promise<void>;
   onArchiveSpot: (spot: PosSpot) => void;
@@ -193,6 +197,7 @@ function ExpandablePocketCard({
                 <PocketSpotRow
                   key={spot.id}
                   spot={spot}
+                  offerName={offerNameById.get(spot.currentOfferId) ?? "—"}
                   onEdit={() => onEditSpot(spot)}
                   onArchive={() => onArchiveSpot(spot)}
                 />
@@ -246,6 +251,17 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     return map;
   }, [pockets]);
 
+  const offerNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const offer of offers) map.set(offer.id, offer.productName);
+    return map;
+  }, [offers]);
+
+  const activeOffers = useMemo(
+    () => offers.filter((offer) => offer.status === "active"),
+    [offers],
+  );
+
   const loadAll = useCallback(async () => {
     setLoadError(null);
     try {
@@ -280,7 +296,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       setPartner(found);
       setPockets(pocketsData.pockets ?? []);
       setPosSpots(spotsData.posSpots ?? []);
-      setOffers((spotsData.offers ?? []).filter((o) => o.status === "active"));
+      setOffers(spotsData.offers ?? []);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load partner");
     } finally {
@@ -390,7 +406,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     setEditSpot(null);
     setPosNumber(suggestNextPosNumber(posSpots.map((s) => s.posNumber)));
     setPocketId("");
-    setCurrentOfferId(offers[0]?.id ?? "");
+    setCurrentOfferId(activeOffers[0]?.id ?? "");
     setSpotDescription("");
     setPlacementNotes("");
     setSpotStatus("available");
@@ -677,6 +693,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                     title={pocket.name}
                     subtitle={`${spots.length} POS spot${spots.length === 1 ? "" : "s"}`}
                     spots={spots}
+                    offerNameById={offerNameById}
                     onEditSpot={openEditSpot}
                     onArchiveSpot={(spot) => {
                       setArchiveError(null);
@@ -713,6 +730,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                   title="Unassigned"
                   subtitle={`${unassignedSpots.length} POS spot${unassignedSpots.length === 1 ? "" : "s"}`}
                   spots={unassignedSpots}
+                  offerNameById={offerNameById}
                   onEditSpot={openEditSpot}
                   onArchiveSpot={(spot) => {
                     setArchiveError(null);
@@ -769,8 +787,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
               details: (
                 <dl className="grid gap-1 text-sm">
                   <div className="flex flex-wrap gap-x-2">
-                    <dt className="font-medium text-slate-500">Display</dt>
-                    <dd className="text-slate-900">{spot.posName}</dd>
+                    <dt className="font-medium text-slate-500">Offer</dt>
+                    <dd className="text-slate-900">
+                      {offerNameById.get(spot.currentOfferId) ?? "—"}
+                    </dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
                     <dt className="font-medium text-slate-500">Pocket</dt>
@@ -908,7 +928,7 @@ This action cannot be undone.`
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
             <option value="">Select offer…</option>
-            {offers.map((offer) => (
+            {activeOffers.map((offer) => (
               <option key={offer.id} value={offer.id}>
                 {offer.productName}
               </option>

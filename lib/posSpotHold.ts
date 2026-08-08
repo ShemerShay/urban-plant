@@ -8,6 +8,9 @@ import type { PosSpotStatus } from "./posSpotTypes";
 /** Customer-facing CTA when status is held_for_payment. */
 export const POS_HELD_FOR_PAYMENT_CTA = "Purchase in progress";
 
+/** Customer-facing disabled CTA when status is sold. */
+export const POS_SOLD_CTA = "Already found a home";
+
 /** Shown under the product-page CTA only when status === held_for_payment. */
 export const POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE =
   "Another customer is currently purchasing this plant. Please check back shortly.";
@@ -44,5 +47,6 @@ export function productPageCtaText(
   availableCtaText: string,
 ): string {
   if (status === "held_for_payment") return POS_HELD_FOR_PAYMENT_CTA;
+  if (status === "sold") return POS_SOLD_CTA;
   return availableCtaText;
 }

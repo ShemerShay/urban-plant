@@ -14,6 +14,7 @@ import {
   POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
   POS_HELD_FOR_PAYMENT_CTA,
   POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
+  POS_SOLD_CTA,
   isPosSpotPurchasable,
   productPageCtaText,
   shouldShowHeldForPaymentCheckoutMessage,
@@ -58,7 +59,7 @@ function assertGates(): void {
   const buyCta = "Buy for ₪89";
   assert.equal(productPageCtaText("held_for_payment", buyCta), POS_HELD_FOR_PAYMENT_CTA);
   assert.equal(productPageCtaText("available", buyCta), buyCta);
-  assert.equal(productPageCtaText("sold", buyCta), buyCta);
+  assert.equal(productPageCtaText("sold", buyCta), POS_SOLD_CTA);
   assert.equal(productPageCtaText("inactive", buyCta), buyCta);
 
   // Sold disables purchase without held copy.
@@ -75,11 +76,58 @@ function assertGates(): void {
     "This plant is currently being purchased by another customer.",
   );
   assert.equal(POS_HELD_FOR_PAYMENT_CTA, "Purchase in progress");
+  assert.equal(POS_SOLD_CTA, "Already found a home");
+
+  // Product page must derive CTA + gate + message from one post-cleanup status.
+  // Documents the fixed race: never mix pre-expiry held copy with post-expiry enabled.
+  function productPageHoldUi(status: PosSpotStatus, buyCtaText: string) {
+    return {
+      ctaText: productPageCtaText(status, buyCtaText),
+      purchaseEnabled: isPosSpotPurchasable(status),
+      showHeldMessage: shouldShowHeldForPaymentProductMessage(status),
+    };
+  }
+
+  const preCleanup: PosSpotStatus = "held_for_payment";
+  const postCleanup: PosSpotStatus = "available";
+  // Old bug shape (must not be how the page renders):
+  assert.equal(productPageCtaText(preCleanup, buyCta), POS_HELD_FOR_PAYMENT_CTA);
+  assert.equal(isPosSpotPurchasable(postCleanup), true);
+
+  const afterExpiry = productPageHoldUi(postCleanup, buyCta);
+  assert.equal(afterExpiry.purchaseEnabled, true);
+  assert.equal(afterExpiry.ctaText, buyCta);
+  assert.equal(afterExpiry.showHeldMessage, false);
+  assert.notEqual(afterExpiry.ctaText, POS_HELD_FOR_PAYMENT_CTA);
+
+  const activeHold = productPageHoldUi("held_for_payment", buyCta);
+  assert.equal(activeHold.purchaseEnabled, false);
+  assert.equal(activeHold.ctaText, POS_HELD_FOR_PAYMENT_CTA);
+  assert.equal(activeHold.showHeldMessage, true);
+
+  const availableUi = productPageHoldUi("available", buyCta);
+  assert.equal(availableUi.purchaseEnabled, true);
+  assert.equal(availableUi.ctaText, buyCta);
+  assert.equal(availableUi.showHeldMessage, false);
+
+  for (const status of statuses) {
+    const ui = productPageHoldUi(status, buyCta);
+    const holdCopy =
+      ui.ctaText === POS_HELD_FOR_PAYMENT_CTA || ui.showHeldMessage;
+    if (holdCopy) {
+      assert.equal(
+        ui.purchaseEnabled,
+        false,
+        `${status}: hold copy must never pair with purchaseEnabled`,
+      );
+    }
+  }
 
   console.log("verify-pos-spot-hold: pure gates ok");
 }
 
 async function assertDbMutations(): Promise<void> {
+  await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   try {
     await loadEnvLocal();
