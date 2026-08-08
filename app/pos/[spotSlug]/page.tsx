@@ -14,7 +14,7 @@ import { formatBuyCta } from "@/lib/mockPlants";
 import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
-import { canPurchasePosSpot } from "@/lib/purchaseEligibility";
+import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
 import {
   POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
   productPageCtaText,
@@ -60,8 +60,13 @@ interface PosPageProps {
 
 export default async function PosPage({ params }: PosPageProps) {
   const { spotSlug } = await params;
-  const posSpot = await getPosSpotBySpotSlugEnsuringNextVisit(spotSlug);
-  if (!posSpot) notFound();
+  const ensured = await getPosSpotBySpotSlugEnsuringNextVisit(spotSlug);
+  if (!ensured) notFound();
+
+  // Expire stale holds before any status-derived UI (CTA, message, badge, gate).
+  const resolved = await getPosSpotForCustomerPurchase(ensured.spotSlug);
+  if (!resolved) notFound();
+  const { posSpot, purchaseEnabled } = resolved;
 
   const offer = await getOfferById(posSpot.currentOfferId);
   if (!offer || offer.status !== "active") notFound();
@@ -73,7 +78,6 @@ export default async function PosPage({ params }: PosPageProps) {
   const partnerName = knownPartner?.name?.trim() ?? "";
   const availableCtaText = formatBuyCta(offer.consumerPrice, plant.currency);
   const ctaText = productPageCtaText(posSpot.status, availableCtaText);
-  const purchaseEnabled = await canPurchasePosSpot(posSpot.spotSlug);
   const heldMessage = shouldShowHeldForPaymentProductMessage(posSpot.status)
     ? POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE
     : undefined;
@@ -98,7 +102,7 @@ export default async function PosPage({ params }: PosPageProps) {
           <PlantImageGallery images={plant.images} name={plant.name} />
           <div className="flex items-center gap-2">
             <div className="absolute top-5 left-5">
-              <PlantInventoryBadge spotSlug={posSpot.spotSlug} />
+              <PlantInventoryBadge status={posSpot.status} />
             </div>
           </div>
         </div>

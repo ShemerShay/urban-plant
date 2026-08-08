@@ -8,6 +8,7 @@ import QRCode from "react-qr-code";
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
+import { comparePosSpotsByPosNumberAsc } from "@/lib/posSpotSort";
 import { POS_HELD_FOR_PAYMENT_ADMIN_LABEL } from "@/lib/status";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
 import {
@@ -42,22 +43,6 @@ function subscribeToNothing(): () => void {
 
 function useClientOrigin(): string {
   return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
-}
-
-/** Sort POS spots so number 1 appears first (numeric when possible). */
-function comparePosNumberAsc(a: PosSpot, b: PosSpot): number {
-  const aNum = Number.parseInt(a.posNumber ?? "", 10);
-  const bNum = Number.parseInt(b.posNumber ?? "", 10);
-  const aOk = Number.isFinite(aNum);
-  const bOk = Number.isFinite(bNum);
-  if (aOk && bOk && aNum !== bNum) return aNum - bNum;
-  if (aOk && !bOk) return -1;
-  if (!aOk && bOk) return 1;
-  const byLabel = (a.posNumber ?? "").localeCompare(b.posNumber ?? "", undefined, {
-    numeric: true,
-  });
-  if (byLabel !== 0) return byLabel;
-  return a.spotName.localeCompare(b.spotName);
 }
 
 function formatCreatedAt(value: string | undefined): string | null {
@@ -182,8 +167,12 @@ function PosSpotCard({
 
           <dl className="space-y-2 text-sm">
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Display name</dt>
-              <dd className="text-slate-900">{spot.posName}</dd>
+              <dt className="font-medium text-slate-500">Offer</dt>
+              <dd className="text-slate-900">
+                {offer
+                  ? `${offer.productName} (${formatPrice(offer.consumerPrice, offer.currency)})`
+                  : "—"}
+              </dd>
             </div>
             <div className="flex flex-wrap gap-x-2">
               <dt className="font-medium text-slate-500">Spot slug</dt>
@@ -205,19 +194,6 @@ function PosSpotCard({
                 <dd className="text-slate-900">{location.address}</dd>
               </div>
             ) : null}
-            {offer ? (
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Offer</dt>
-                <dd className="text-slate-900">
-                  {offer.productName} ({formatPrice(offer.consumerPrice, offer.currency)})
-                </dd>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Offer</dt>
-                <dd className="text-slate-600">{spot.currentOfferId}</dd>
-              </div>
-            )}
             {spot.posNumber ? (
               <div className="flex flex-wrap gap-x-2">
                 <dt className="font-medium text-slate-500">POS number</dt>
@@ -349,7 +325,7 @@ export function AdminPosSpotList() {
         }
         const data = (await res.json()) as PosSpotsApiResponse;
         if (cancelled) return;
-        const spots = [...(data.posSpots ?? [])].sort(comparePosNumberAsc);
+        const spots = [...(data.posSpots ?? [])].sort(comparePosSpotsByPosNumberAsc);
         setPosSpots(spots);
         setOffers(data.offers ?? []);
         setLocations(data.locations ?? []);

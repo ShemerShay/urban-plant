@@ -16,11 +16,16 @@ export function FixedBottomCTA({
   messageBelow,
 }: FixedBottomCTAProps) {
   const disabled = !purchaseEnabled;
+  const hasMessageBelow = Boolean(messageBelow);
 
   return (
     <div
       id="plant-fixed-bottom-cta"
-      className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3"
+      className={
+        hasMessageBelow
+          ? "fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md bg-white px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3"
+          : "fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3"
+      }
     >
       {disabled ? (
         <div

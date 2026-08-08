@@ -14,6 +14,7 @@ import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { PartnerPaymentRecord } from "@/lib/partnerPayment";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
 import type { PosSpot } from "@/lib/posSpotTypes";
+import { comparePosSpotsByPosNumberAsc } from "@/lib/posSpotSort";
 import { routes } from "@/lib/routes";
 
 type PartnersApiResponse = {
@@ -649,16 +650,7 @@ export function AdminPartnersManager() {
       map.set(spot.partnerLocationId, list);
     }
     for (const list of map.values()) {
-      list.sort((a, b) => {
-        const aNum = Number.parseInt(a.posNumber ?? "", 10);
-        const bNum = Number.parseInt(b.posNumber ?? "", 10);
-        const aOk = Number.isFinite(aNum);
-        const bOk = Number.isFinite(bNum);
-        if (aOk && bOk && aNum !== bNum) return aNum - bNum;
-        if (aOk && !bOk) return -1;
-        if (!aOk && bOk) return 1;
-        return a.spotName.localeCompare(b.spotName);
-      });
+      list.sort(comparePosSpotsByPosNumberAsc);
     }
     return map;
   }, [posSpots]);

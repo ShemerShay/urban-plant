@@ -1,17 +1,15 @@
-import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import { INVENTORY_STATUS_LABELS } from "@/lib/status";
+import type { PosSpotStatus } from "@/lib/posSpotTypes";
 
-interface PlantShelfBadgeProps {
-  spotSlug: string;
+interface PlantInventoryBadgeProps {
+  /** Canonical POS status for this page render (post hold-expiry cleanup). */
+  status: PosSpotStatus;
 }
 
 /** Availability at the POS Spot that owns the QR. */
-export async function PlantInventoryBadge({ spotSlug }: PlantShelfBadgeProps) {
-  const posSpot = await getPosSpotBySpotSlug(spotSlug);
-  if (!posSpot) return null;
-
-  const label = INVENTORY_STATUS_LABELS[posSpot.status];
-  const isAvailable = posSpot.status === "available";
+export function PlantInventoryBadge({ status }: PlantInventoryBadgeProps) {
+  const label = INVENTORY_STATUS_LABELS[status];
+  const isAvailable = status === "available";
 
   return (
     <div
