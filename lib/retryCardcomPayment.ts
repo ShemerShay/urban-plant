@@ -431,7 +431,7 @@ async function retryLegacyOrderPayment(
 
   const createFn =
     deps.createLowProfile ??
-    ((payload: CreateCardomLowProfileInput) =>
+    ((payload: CreateCardcomLowProfileInput) =>
       createCardcomLowProfile(payload, { environment: cardcomEnvironment }));
 
   let cardcomResult: { LowProfileId?: string; Url?: string };
