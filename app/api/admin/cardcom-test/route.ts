@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       amount: offer.consumerPrice,
       fulfillmentMethod,
       warning:
-        "Confirming will create a pending_payment order and set this POS to held_for_payment, then call Cardcom test LowProfile/Create (terminal 1000).",
+        "Confirming will create a payment_attempt and set this POS to held_for_payment (owned by the attempt), then call Cardcom test LowProfile/Create (terminal 1000).",
       requiresConfirmHold: true,
     });
   }

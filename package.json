@@ -33,7 +33,9 @@
     "db:migrate:payment-hold-expiry": "node scripts/apply-sql-file.mjs db/migrations/021_payment_hold_expiry_and_retry_lock.sql",
     "db:migrate:plants-simplify": "node scripts/apply-sql-file.mjs db/migrations/022_plants_simplify_model.sql",
     "db:migrate:offers-drop-supplier-fields": "node scripts/apply-sql-file.mjs db/migrations/023_offers_drop_supplier_fields.sql",
-    "db:migrate:stale-payment-hold-idx": "node scripts/apply-sql-file.mjs db/migrations/024_pos_spots_stale_payment_hold_idx.sql"
+    "db:migrate:stale-payment-hold-idx": "node scripts/apply-sql-file.mjs db/migrations/024_pos_spots_stale_payment_hold_idx.sql",
+    "db:migrate:held-payment-hold-started-at-check": "node scripts/apply-sql-file.mjs db/migrations/025_pos_spots_held_for_payment_timestamp_check.sql",
+    "db:migrate:payment-attempts": "node scripts/apply-sql-file.mjs db/migrations/026_payment_attempts.sql"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

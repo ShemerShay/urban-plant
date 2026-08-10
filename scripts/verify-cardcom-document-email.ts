@@ -1,5 +1,6 @@
 /**
  * Focused verification: Cardcom document + Urban Plant email post-payment flow.
+ * Option B: startCardcomPaymentPrep + webhook finalize → real Order, then document/email.
  * Never calls real Cardcom Documents or Gmail — injects mocks.
  *
  * Run: npx tsx scripts/verify-cardcom-document-email.ts
@@ -14,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { TEL_AVIV_STREETS } from "../constants/telAvivStreets";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const TEST_PUBLIC_ORIGIN = "https://urban-plant-doc-email-verify.example.com";
 
 async function main(): Promise<void> {
   await import("./stub-server-only.mjs");
@@ -39,7 +41,10 @@ async function main(): Promise<void> {
   } = await import("../lib/ordersStorage");
   const { getOfferById } = await import("../lib/offerStorage");
   const {
-    acquirePosSpotHoldForPayment,
+    deletePaymentAttemptById,
+    getPaymentAttemptById,
+  } = await import("../lib/paymentAttemptStorage");
+  const {
     getPosSpotById,
     readPosSpots,
     releasePosSpotHoldForPayment,
@@ -49,6 +54,7 @@ async function main(): Promise<void> {
   const { processOrderDocumentAndEmail } = await import(
     "../lib/processOrderDocumentAndEmail"
   );
+  const { startCardcomPaymentPrep } = await import("../lib/startCardcomPaymentPrep");
   const { sql } = await import("../lib/db");
 
   // --- Unit: IsSendByEmail always false ---
@@ -199,54 +205,49 @@ async function main(): Promise<void> {
 
   const beforeStatus = available.status;
   const street = TEL_AVIV_STREETS[0] ?? "רוטשילד";
-  const createdIds: string[] = [];
+  const createdAttemptIds: string[] = [];
+  const createdOrderIds: string[] = [];
   const pdfBytes = Buffer.from("%PDF-1.4 mock urban plant document");
 
-  async function seedPending(input: {
+  async function seedAttempt(input: {
     email: string;
     fulfillment: "delivery" | "pickup";
     lowProfileId: string;
-    price?: number;
-  }): Promise<{ orderId: string; price: number }> {
+  }): Promise<{ attemptId: string; price: number; lowProfileId: string }> {
     await setPosSpotStatus(available!.id, "available");
-    const orderId = randomUUID();
-    const price = input.price ?? offer!.consumerPrice;
-    await appendOrder({
-      orderId,
-      checkoutSessionId: input.lowProfileId,
-      cardcomEnv: "test",
-      posSpotId: available!.id,
-      offerId: offer!.id,
-      plantId: offer!.productId,
-      plantName: "Document Email Verify Plant",
-      locationId: available!.partnerLocationId,
-      locationName: "Verify Partner",
-      locationAddress: null,
-      price,
-      fullName: "Document Email Verify",
-      customerEmail: input.email,
-      phone: "0546605603",
-      address: input.fulfillment === "delivery" ? `${street} 1` : "",
-      apartmentOrNotes: "",
-      fulfillmentMethod: input.fulfillment,
-      createdAt: new Date().toISOString(),
-      orderStatus: "pending_payment",
-      source: "online",
-      snapshot: {
-        productId: offer!.productId,
-        productName: "Document Email Verify Plant",
-        productDescription: "verify",
-        offerId: offer!.id,
-        consumerPrice: price,
-        posSpotId: available!.id,
+    const prep = await startCardcomPaymentPrep(
+      {
+        plantId: offer!.productId,
         spotSlug: available!.spotSlug,
-        fulfillmentType: input.fulfillment,
+        fullName: "Document Email Verify",
+        customerEmail: input.email,
+        phone: "0546605603",
+        fulfillmentMethod: input.fulfillment,
+        ...(input.fulfillment === "delivery"
+          ? { deliveryStreet: street, deliveryHouseNumber: "1", apartmentOrNotes: "" }
+          : { apartmentOrNotes: "" }),
       },
-    });
-    createdIds.push(orderId);
-    const hold = await acquirePosSpotHoldForPayment(available!.id);
-    assert.equal(hold.ok, true);
-    return { orderId, price };
+      {
+        publicOrigin: TEST_PUBLIC_ORIGIN,
+        createLowProfile: async () => ({
+          ResponseCode: 0,
+          Description: "OK",
+          LowProfileId: input.lowProfileId,
+          Url: `https://secure.cardcom.solutions/Interface/LowProfile.aspx?LowProfileId=${input.lowProfileId}`,
+        }),
+      },
+    );
+    assert.equal(prep.ok, true);
+    if (!prep.ok) throw new Error("prep failed");
+    createdAttemptIds.push(prep.attemptId);
+    const attempt = await getPaymentAttemptById(prep.attemptId);
+    assert.ok(attempt);
+    assert.equal(await getOrderById(prep.attemptId), null);
+    return {
+      attemptId: prep.attemptId,
+      price: attempt!.amount,
+      lowProfileId: prep.lowProfileId,
+    };
   }
 
   function mockLp(result: {
@@ -273,17 +274,23 @@ async function main(): Promise<void> {
     };
   }
 
+  async function releaseOwnedHold(): Promise<void> {
+    const spot = await getPosSpotById(available!.id);
+    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
+      await releasePosSpotHoldForPayment(available!.id, spot.paymentHoldAttemptId);
+    }
+  }
+
   try {
     // 1: transaction ID stored only after verified payment
     {
       const lp = `lp-doc-tx-${randomUUID()}`;
       const txId = 700000001;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "doc-tx@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
       });
-      assert.equal((await getOrderById(orderId))?.cardcomTransactionId, undefined);
 
       let createCalls = 0;
       let emailCalls = 0;
@@ -292,7 +299,7 @@ async function main(): Promise<void> {
         {
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
             transactionId: txId,
           }),
@@ -300,7 +307,9 @@ async function main(): Promise<void> {
             createDocument: async (input) => {
               createCalls += 1;
               assert.equal(input.dealNumber, txId);
-              assert.equal(input.externalId, orderId);
+              const attempt = await getPaymentAttemptById(attemptId);
+              assert.ok(attempt?.finalizedOrderId);
+              assert.equal(input.externalId, attempt!.finalizedOrderId);
               return {
                 documentType: "TaxInvoiceAndReceipt",
                 documentNumber: 800001,
@@ -319,7 +328,11 @@ async function main(): Promise<void> {
       );
       assert.equal(result.outcome, "finalized");
       assert.equal(result.httpStatus, 200);
-      const order = await getOrderById(orderId);
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.equal(attempt?.status, "finalized");
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
       assert.equal(order?.orderStatus, "sold");
       assert.equal(order?.cardcomTransactionId, txId);
       assert.equal(order?.purchaseEmailStatus, "sent");
@@ -336,7 +349,7 @@ async function main(): Promise<void> {
     {
       const lp = `lp-doc-dup-${randomUUID()}`;
       const txId = 700000002;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "doc-dup@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -346,7 +359,7 @@ async function main(): Promise<void> {
       const deps = {
         getLpResult: mockLp({
           lowProfileId: lp,
-          returnValue: orderId,
+          returnValue: attemptId,
           amount: price,
           transactionId: txId,
         }),
@@ -374,7 +387,10 @@ async function main(): Promise<void> {
       assert.equal(second.outcome, "already_finalized");
       assert.equal(createCalls, 1);
       assert.equal(emailCalls, 1);
-      const order = await getOrderById(orderId);
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
       assert.equal(order?.purchaseEmailStatus, "sent");
       await setPosSpotStatus(available.id, "available");
     }
@@ -383,7 +399,7 @@ async function main(): Promise<void> {
     {
       const lp = `lp-doc-claim-${randomUUID()}`;
       const txId = 700000003;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "doc-claim@example.com",
         fulfillment: "pickup",
         lowProfileId: lp,
@@ -393,13 +409,17 @@ async function main(): Promise<void> {
         {
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
             transactionId: txId,
           }),
           processDocumentAndEmail: async () => ({ outcome: "skipped" }),
         },
       );
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const orderId = attempt!.finalizedOrderId!;
       const order = await getOrderById(orderId);
       assert.equal(order?.orderStatus, "picked_up");
       assert.equal(order?.purchaseEmailStatus, "pending");
@@ -423,7 +443,7 @@ async function main(): Promise<void> {
     {
       const lp = `lp-doc-reuse-${randomUUID()}`;
       const txId = 700000004;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "doc-reuse@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -435,13 +455,17 @@ async function main(): Promise<void> {
         {
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
             transactionId: txId,
           }),
           processDocumentAndEmail: async () => ({ outcome: "skipped" }),
         },
       );
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const orderId = attempt!.finalizedOrderId!;
       await sql`
         UPDATE orders
         SET
@@ -478,7 +502,7 @@ async function main(): Promise<void> {
     {
       const lp = `lp-doc-badpdf-${randomUUID()}`;
       const txId = 700000005;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "doc-badpdf@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -489,7 +513,7 @@ async function main(): Promise<void> {
         {
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
             transactionId: txId,
           }),
@@ -508,7 +532,10 @@ async function main(): Promise<void> {
           },
         },
       );
-      const order = await getOrderById(orderId);
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
       assert.equal(order?.orderStatus, "sold");
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
       assert.equal(order?.purchaseEmailStatus, "failed");
@@ -522,7 +549,7 @@ async function main(): Promise<void> {
     {
       const lp = `lp-doc-retry-${randomUUID()}`;
       const txId = 700000006;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "doc-retry@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -536,7 +563,7 @@ async function main(): Promise<void> {
         {
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
             transactionId: txId,
           }),
@@ -566,6 +593,10 @@ async function main(): Promise<void> {
         },
       );
 
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const orderId = attempt!.finalizedOrderId!;
       let order = await getOrderById(orderId);
       assert.equal(order?.orderStatus, "sold");
       assert.equal(order?.purchaseEmailStatus, "failed");
@@ -603,12 +634,40 @@ async function main(): Promise<void> {
 
     // 8: email only after verified payment (pending order cannot claim)
     {
-      const lp = `lp-doc-pending-${randomUUID()}`;
-      const { orderId } = await seedPending({
-        email: "doc-pending@example.com",
-        fulfillment: "delivery",
-        lowProfileId: lp,
+      const orderId = randomUUID();
+      await appendOrder({
+        orderId,
+        checkoutSessionId: `lp-doc-pending-${randomUUID()}`,
+        cardcomEnv: "test",
+        posSpotId: available.id,
+        offerId: offer.id,
+        plantId: offer.productId,
+        plantName: "Document Email Pending Plant",
+        locationId: available.partnerLocationId,
+        locationName: "Verify Partner",
+        locationAddress: null,
+        price: offer.consumerPrice,
+        fullName: "Document Email Pending",
+        customerEmail: "doc-pending@example.com",
+        phone: "0546605603",
+        address: `${street} 1`,
+        apartmentOrNotes: "",
+        fulfillmentMethod: "delivery",
+        createdAt: new Date().toISOString(),
+        orderStatus: "pending_payment",
+        source: "online",
+        snapshot: {
+          productId: offer.productId,
+          productName: "Document Email Pending Plant",
+          productDescription: "verify",
+          offerId: offer.id,
+          consumerPrice: offer.consumerPrice,
+          posSpotId: available.id,
+          spotSlug: available.spotSlug,
+          fulfillmentType: "delivery",
+        },
       });
+      createdOrderIds.push(orderId);
       const result = await processOrderDocumentAndEmail(orderId, {
         createDocument: async () => {
           throw new Error("must not create before paid");
@@ -619,8 +678,6 @@ async function main(): Promise<void> {
       });
       assert.equal(result.outcome, "skipped");
       assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
-      await releasePosSpotHoldForPayment(available.id);
-      await setPosSpotStatus(available.id, "available");
     }
 
     // 9: CreateDocument request uses IsSendByEmail false in live builder path
@@ -644,12 +701,12 @@ async function main(): Promise<void> {
 
     console.log("verify-cardcom-document-email: ok");
   } finally {
-    for (const id of [...new Set(createdIds)]) {
-      await sql`DELETE FROM orders WHERE order_id = ${id}::uuid`;
+    await releaseOwnedHold();
+    for (const id of [...new Set(createdAttemptIds)]) {
+      await deletePaymentAttemptById(id);
     }
-    const spot = await getPosSpotById(available.id);
-    if (spot?.status === "held_for_payment") {
-      await releasePosSpotHoldForPayment(available.id);
+    for (const id of [...new Set(createdOrderIds)]) {
+      await sql`DELETE FROM orders WHERE order_id = ${id}::uuid`;
     }
     await setPosSpotStatus(available.id, beforeStatus);
   }

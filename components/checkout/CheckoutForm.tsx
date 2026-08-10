@@ -179,8 +179,8 @@ export function CheckoutForm({
         return;
       }
 
-      // First attempt: pending_payment + hold + Cardcom Create → hosted payment page.
-      // Browser never finalizes; webhook + GetLpResult mark sold/picked_up and send email.
+      // First attempt: payment_attempt + owned hold + Cardcom Create → hosted payment page.
+      // Browser never finalizes; webhook + GetLpResult create Order and send email.
       const response = await fetch(routes.api.cardcomCreate(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

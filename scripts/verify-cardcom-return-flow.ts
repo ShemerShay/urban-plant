@@ -53,6 +53,12 @@ async function main(): Promise<void> {
   assert.match(successSrc, /Return to plant/);
   assert.match(successSrc, /id="success-page"/);
   assert.match(successSrc, /CustomerRecoveryActions/);
+  // Phase 0: single-order lookup (not full-table readOrders + find).
+  assert.match(successSrc, /getOrderById/);
+  assert.ok(
+    !/\breadOrders\b/.test(successSrc),
+    "/success must not call readOrders()",
+  );
 
   // 3. no new checkout page
   assert.ok(exists("app/checkout/pos/[spotSlug]/page.tsx"));
