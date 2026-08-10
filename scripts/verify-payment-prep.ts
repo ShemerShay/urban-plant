@@ -1,6 +1,5 @@
 /**
- * Phase B-oriented verification (still valid under Phase C):
- * pending order + POS hold, with Cardcom Create mocked (no real network).
+ * Option B cutover verification: payment_attempt + owned hold (Cardcom Create mocked).
  *
  * Run: npx tsx scripts/verify-payment-prep.ts
  */
@@ -13,6 +12,7 @@ import { TEL_AVIV_STREETS } from "../constants/telAvivStreets";
 const TEST_PUBLIC_ORIGIN = "https://urban-plant-phase-b-verify.example.com";
 
 async function main(): Promise<void> {
+  await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
 
@@ -20,12 +20,15 @@ async function main(): Promise<void> {
   const { readEvents } = await import("../lib/eventStorage");
   const { getOrderById, readOrders } = await import("../lib/ordersStorage");
   const {
+    deletePaymentAttemptById,
+    getPaymentAttemptById,
+  } = await import("../lib/paymentAttemptStorage");
+  const {
     getPosSpotById,
     readPosSpots,
     releasePosSpotHoldForPayment,
     setPosSpotStatus,
   } = await import("../lib/posSpotStorage");
-  const { sql } = await import("../lib/db");
   const {
     CANCEL_REASON_PAYMENT_PREP_FAILED,
     CANCEL_REASON_POS_UNAVAILABLE_BEFORE_PAYMENT,
@@ -47,7 +50,7 @@ async function main(): Promise<void> {
   }
 
   const beforeStatus = available.status;
-  const street = TEL_AVIV_STREETS[0] ?? "רוטשילד";
+  const street = TEL_AVIV_STREETS[0] ?? "Rothschild";
   const baseInput = {
     plantId: offer.productId,
     spotSlug: available.spotSlug,
@@ -73,41 +76,41 @@ async function main(): Promise<void> {
     };
   };
 
-  const createdIds: string[] = [];
+  const createdAttemptIds: string[] = [];
   const eventCountBefore = (await readEvents()).length;
 
   try {
-    // 1–6: create pending + hold (+ mocked Cardcom)
     const first = await startCardcomPaymentPrep(baseInput, mockCreate());
     assert.equal(first.ok, true, "first prep should succeed");
     if (!first.ok) return;
-    createdIds.push(first.orderId);
+    createdAttemptIds.push(first.attemptId);
     assert.ok(first.lowProfileId);
     assert.ok(first.paymentUrl);
+    assert.equal(first.orderId, first.attemptId);
 
-    const order = await getOrderById(first.orderId);
-    assert.ok(order, "pending order row exists");
-    assert.equal(order!.orderStatus, "pending_payment");
-    assert.equal(order!.price, offer.consumerPrice);
-    assert.equal(order!.fullName, "Phase B Verify");
-    assert.equal(order!.customerEmail, "phase-b-verify@example.com");
-    assert.equal(order!.phone, "0546605603");
-    assert.equal(order!.fulfillmentMethod, "delivery");
-    assert.ok(order!.address.includes(street));
-    assert.equal(order!.apartmentOrNotes, "verify");
-    assert.ok(order!.snapshot);
-    assert.equal(order!.snapshot!.consumerPrice, offer.consumerPrice);
-    assert.equal(order!.snapshot!.offerId, offer.id);
-    assert.equal(order!.snapshot!.posSpotId, available.id);
-    assert.equal(order!.checkoutSessionId, first.lowProfileId);
-    assert.notEqual(order!.orderStatus, "sold");
-    assert.notEqual(order!.orderStatus, "picked_up");
+    // No Order before verified payment
+    assert.equal(await getOrderById(first.attemptId), null);
+    const pendingOrders = (await readOrders()).filter(
+      (o) =>
+        o.posSpotId === available.id && o.orderStatus === "pending_payment",
+    );
+    assert.equal(pendingOrders.length, 0, "new checkout must not create pending_payment Order");
+
+    const attempt = await getPaymentAttemptById(first.attemptId);
+    assert.ok(attempt);
+    assert.equal(attempt!.status, "awaiting_payment");
+    assert.equal(attempt!.amount, offer.consumerPrice);
+    assert.equal(attempt!.fullName, "Phase B Verify");
+    assert.equal(attempt!.customerEmail, "phase-b-verify@example.com");
+    assert.equal(attempt!.checkoutSessionId, first.lowProfileId);
+    assert.ok(attempt!.snapshot);
+    assert.equal(attempt!.snapshot!.posSpotId, available.id);
 
     const held = await getPosSpotById(available.id);
     assert.equal(held?.status, "held_for_payment");
-    assert.notEqual(held?.status, "sold");
+    assert.equal(held?.paymentHoldAttemptId, first.attemptId);
+    assert.ok(held?.paymentHoldStartedAt);
 
-    // 7–8: second attempt fails; no extra active pending
     const second = await startCardcomPaymentPrep(
       {
         ...baseInput,
@@ -120,29 +123,21 @@ async function main(): Promise<void> {
       assert.equal(second.code, "unavailable");
       assert.equal(second.httpStatus, 409);
     }
-    const extraPending = (await readOrders()).filter(
-      (o) =>
-        o.posSpotId === available.id &&
-        o.orderStatus === "pending_payment" &&
-        o.orderId !== first.orderId,
-    );
-    assert.equal(extraPending.length, 0);
 
-    // 11: post-hold failure compensation releases hold + cancels
     await compensatePaymentPrepFailure(
-      order!,
+      attempt!,
       available.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
       { releaseHold: true },
     );
-    assert.equal((await getOrderById(first.orderId))?.orderStatus, "cancelled");
+    assert.equal((await getPaymentAttemptById(first.attemptId))?.status, "cancelled");
     assert.equal(
-      (await getOrderById(first.orderId))?.cancellationReason,
+      (await getPaymentAttemptById(first.attemptId))?.failureReason,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
     );
     assert.equal((await getPosSpotById(available.id))?.status, "available");
+    assert.equal((await getPosSpotById(available.id))?.paymentHoldAttemptId, undefined);
 
-    // 9: hold-failure cancel reason helper (POS unavailable path)
     await setPosSpotStatus(available.id, "sold");
     const blocked = await startCardcomPaymentPrep(baseInput, mockCreate());
     assert.equal(blocked.ok, false);
@@ -158,32 +153,31 @@ async function main(): Promise<void> {
       mockCreate(),
     );
     assert.equal(again.ok, true);
-    if (again.ok) createdIds.push(again.orderId);
-    const againOrder = await getOrderById(again.ok ? again.orderId : "");
-    assert.ok(againOrder);
+    if (again.ok) createdAttemptIds.push(again.attemptId);
+    const againAttempt = await getPaymentAttemptById(again.ok ? again.attemptId : "");
+    assert.ok(againAttempt);
     await compensatePaymentPrepFailure(
-      againOrder!,
+      againAttempt!,
       available.id,
       CANCEL_REASON_POS_UNAVAILABLE_BEFORE_PAYMENT,
       { releaseHold: true },
     );
     assert.equal(
-      (await getOrderById(againOrder!.orderId))?.cancellationReason,
+      (await getPaymentAttemptById(againAttempt!.id))?.failureReason,
       CANCEL_REASON_POS_UNAVAILABLE_BEFORE_PAYMENT,
     );
 
-    // 12–16: no events / no sold from prep
     assert.equal((await readEvents()).length, eventCountBefore);
     assert.notEqual((await getPosSpotById(available.id))?.status, "sold");
 
     console.log("verify-payment-prep: ok (Cardcom mocked)");
   } finally {
-    for (const id of [...new Set(createdIds)]) {
-      await sql`DELETE FROM orders WHERE order_id = ${id}::uuid`;
+    for (const id of [...new Set(createdAttemptIds)]) {
+      await deletePaymentAttemptById(id);
     }
     const spot = await getPosSpotById(available.id);
-    if (spot?.status === "held_for_payment") {
-      await releasePosSpotHoldForPayment(available.id);
+    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
+      await releasePosSpotHoldForPayment(available.id, spot.paymentHoldAttemptId);
     }
     await setPosSpotStatus(available.id, beforeStatus);
   }

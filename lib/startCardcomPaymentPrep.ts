@@ -1,6 +1,6 @@
 /**
- * pending_payment order + POS hold + Cardcom LowProfile/Create.
- * Server-only. Does not send email, fire order_created, or mark POS sold.
+ * payment_attempt + owned POS hold + Cardcom LowProfile/Create.
+ * Server-only. Does not create an Order, send email, or mark POS sold.
  * Callers may inject createLowProfile for offline tests.
  */
 
@@ -21,12 +21,15 @@ import {
 import { getLocationById } from "@/lib/mockLocations";
 import { getOfferById } from "@/lib/offerStorage";
 import type { Offer } from "@/lib/offerTypes";
-import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "@/lib/orderTypes";
+import type { FulfillmentMethod, OrderSnapshot } from "@/lib/orderTypes";
 import {
-  appendOrder,
-  attachCheckoutSessionIdToPendingOrder,
-  cancelPendingPaymentOrder,
-} from "@/lib/ordersStorage";
+  attachCheckoutSessionIdToAttempt,
+  insertPaymentAttempt,
+  markPaymentAttemptTerminal,
+} from "@/lib/paymentAttemptStorage";
+import type { SavedPaymentAttempt } from "@/lib/paymentAttemptTypes";
+import { PAYMENT_HOLD_TTL_MS } from "@/lib/paymentHoldExpiry";
+import { createPaymentResumeToken } from "@/lib/paymentResume";
 import { getPlantById } from "@/lib/plantCatalog";
 import { isPosSpotPurchasable } from "@/lib/posSpotHold";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
@@ -40,7 +43,6 @@ import {
   buildCardcomCallbackUrls,
   getPublicAppOrigin,
 } from "@/lib/routes";
-import { createPaymentResumeToken } from "@/lib/paymentResume";
 import type { PlantProduct } from "@/lib/types";
 
 /** Cardcom ProductName max length (mirrored from lib/cardcom.ts). */
@@ -67,27 +69,19 @@ export type StartCardcomPaymentPrepInput = {
 };
 
 export type StartCardcomPaymentPrepDeps = {
-  /**
-   * Injected Cardcom Create. Defaults to real createCardcomLowProfile.
-   * Offline verify scripts must inject a mock — never hit live terminals.
-   */
   createLowProfile?: (
     input: CreateCardcomLowProfileInput,
   ) => Promise<CardcomLowProfileCreateResponse>;
-  /** Injected public HTTPS origin. Defaults to getPublicAppOrigin() / APP_ORIGIN. */
   publicOrigin?: string;
-  /**
-   * Cardcom credential/terminal set. Defaults to production.
-   * Only the protected admin test path may pass `"test"`.
-   * Never accepted from browser/checkout body.
-   */
   cardcomEnvironment?: CardcomEnvironment;
 };
 
 export type StartCardcomPaymentPrepResult =
   | {
       ok: true;
+      /** Correlation id (= payment_attempt.id = Cardcom ReturnValue). */
       orderId: string;
+      attemptId: string;
       lowProfileId: string;
       paymentUrl: string;
     }
@@ -130,23 +124,22 @@ async function buildOrderSnapshot(input: {
 }
 
 /**
- * Release hold (if requested) and cancel pending order conditionally.
- * Logs a sanitized operational error when hold release fails.
+ * Release owned hold (if requested) and mark attempt terminal.
  */
 export async function compensatePaymentPrepFailure(
-  order: SavedOrder,
+  attempt: SavedPaymentAttempt,
   posSpotId: string,
   reason: string,
   options?: { releaseHold?: boolean },
 ): Promise<void> {
   if (options?.releaseHold) {
     try {
-      const released = await releasePosSpotHoldForPayment(posSpotId);
+      const released = await releasePosSpotHoldForPayment(posSpotId, attempt.id);
       if (!released.ok) {
         console.error(
           "[payment-prep] POS hold release failed after payment prep error",
           {
-            orderId: order.orderId,
+            attemptId: attempt.id,
             posSpotId,
             outcome: released.outcome,
             reason,
@@ -156,26 +149,26 @@ export async function compensatePaymentPrepFailure(
     } catch {
       console.error(
         "[payment-prep] POS hold release threw after payment prep error",
-        { orderId: order.orderId, posSpotId, reason },
+        { attemptId: attempt.id, posSpotId, reason },
       );
     }
   }
   try {
-    await cancelPendingPaymentOrder(order.orderId, reason);
+    await markPaymentAttemptTerminal(attempt.id, "cancelled", reason);
   } catch {
-    console.error("[payment-prep] pending order cancel failed", {
-      orderId: order.orderId,
+    console.error("[payment-prep] attempt cancel failed", {
+      attemptId: attempt.id,
       reason,
     });
   }
 }
 
-function cardcomProductNameFromOrder(order: SavedOrder): string {
+function cardcomProductNameFromAttempt(attempt: SavedPaymentAttempt): string {
   const raw =
-    order.snapshot?.productName?.trim() ||
-    order.plantName.trim();
+    attempt.snapshot?.productName?.trim() ||
+    attempt.productName.trim();
   if (!raw) {
-    throw new Error("Pending order is missing product name for Cardcom Create.");
+    throw new Error("Payment attempt is missing product name for Cardcom Create.");
   }
   return raw.length > CARDCOM_PRODUCT_NAME_MAX_LENGTH
     ? raw.slice(0, CARDCOM_PRODUCT_NAME_MAX_LENGTH)
@@ -233,7 +226,6 @@ function mapCardcomFailure(error: unknown): {
         error: "Could not start payment. Try again.",
       };
     }
-    // network | http
     return {
       reason: CANCEL_REASON_CARDCOM_CREATE_FAILED,
       code: "cardcom_error",
@@ -251,9 +243,10 @@ function mapCardcomFailure(error: unknown): {
 }
 
 /**
- * Validate checkout, insert pending_payment order, acquire POS hold,
+ * Validate checkout, insert payment_attempt, acquire owned POS hold,
  * call Cardcom LowProfile/Create, attach LowProfileId.
- * Compensates (cancel + release hold) on any post-create failure.
+ * Compensates (cancel attempt + release owned hold) on any post-create failure.
+ * Does not create an Order.
  */
 export async function startCardcomPaymentPrep(
   input: StartCardcomPaymentPrepInput,
@@ -389,9 +382,10 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const orderId = randomUUID();
+  const attemptId = randomUUID();
   const paymentResumeToken = createPaymentResumeToken();
   const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + PAYMENT_HOLD_TTL_MS).toISOString();
   const snapshot = await buildOrderSnapshot({
     plant: catalogPlant,
     offer,
@@ -399,33 +393,29 @@ export async function startCardcomPaymentPrep(
     fulfillmentMethod,
   });
 
-  const pendingOrder: SavedOrder = {
-    id: orderId,
-    orderId,
+  const attempt: SavedPaymentAttempt = {
+    id: attemptId,
+    status: "created",
     posSpotId: posSpot.id,
     offerId: offer.id,
-    plantId: catalogPlant.id,
-    plantName: catalogPlant.name,
-    locationId: posSpot.partnerLocationId,
-    locationName: partner?.name ?? null,
-    locationAddress: partner?.address ?? null,
-    price: offer.consumerPrice,
+    productId: catalogPlant.id,
+    productName: catalogPlant.name,
     fullName: nameStr,
     customerEmail: emailTrim,
     phone: phoneStr,
     address: fulfillmentMethod === "delivery" ? addressStr : "",
     apartmentOrNotes: fulfillmentMethod === "delivery" ? notesStr : "",
     fulfillmentMethod,
-    createdAt,
-    orderStatus: "pending_payment",
-    source: "online",
+    amount: offer.consumerPrice,
     snapshot,
     paymentResumeToken,
-    // checkoutSessionId intentionally omitted (null in DB) until Cardcom Create.
+    expiresAt,
+    createdAt,
+    updatedAt: createdAt,
   };
 
   try {
-    await appendOrder(pendingOrder);
+    await insertPaymentAttempt(attempt);
   } catch {
     return {
       ok: false,
@@ -435,10 +425,10 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const hold = await acquirePosSpotHoldForPayment(posSpot.id);
+  const hold = await acquirePosSpotHoldForPayment(posSpot.id, attemptId);
   if (!hold.ok) {
     await compensatePaymentPrepFailure(
-      pendingOrder,
+      attempt,
       posSpot.id,
       CANCEL_REASON_POS_UNAVAILABLE_BEFORE_PAYMENT,
       { releaseHold: false },
@@ -454,14 +444,12 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  // --- Phase C: Cardcom LowProfile/Create (trusted values from pending order) ---
-
   let publicOrigin: string;
   try {
     publicOrigin = resolvePublicOrigin(deps.publicOrigin);
   } catch {
     await compensatePaymentPrepFailure(
-      pendingOrder,
+      attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_CREATE_FAILED,
       { releaseHold: true },
@@ -476,10 +464,10 @@ export async function startCardcomPaymentPrep(
 
   let productName: string;
   try {
-    productName = cardcomProductNameFromOrder(pendingOrder);
+    productName = cardcomProductNameFromAttempt(attempt);
   } catch {
     await compensatePaymentPrepFailure(
-      pendingOrder,
+      attempt,
       posSpot.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
       { releaseHold: true },
@@ -493,12 +481,12 @@ export async function startCardcomPaymentPrep(
   }
 
   if (
-    typeof pendingOrder.price !== "number" ||
-    !Number.isFinite(pendingOrder.price) ||
-    pendingOrder.price <= 0
+    typeof attempt.amount !== "number" ||
+    !Number.isFinite(attempt.amount) ||
+    attempt.amount <= 0
   ) {
     await compensatePaymentPrepFailure(
-      pendingOrder,
+      attempt,
       posSpot.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
       { releaseHold: true },
@@ -512,35 +500,35 @@ export async function startCardcomPaymentPrep(
   }
 
   const callbacks = buildCardcomCallbackUrls(publicOrigin, {
-    orderId: pendingOrder.orderId,
+    orderId: attempt.id,
     spotSlug: posSpot.spotSlug,
     resumeToken: paymentResumeToken,
   });
   const cardcomEnvironment: CardcomEnvironment =
     deps.cardcomEnvironment === "test" ? "test" : "production";
   const createInput: CreateCardcomLowProfileInput = {
-    amount: pendingOrder.price,
-    returnValue: pendingOrder.orderId,
+    amount: attempt.amount,
+    returnValue: attempt.id,
     productName,
     successRedirectUrl: callbacks.successRedirectUrl,
     failedRedirectUrl: callbacks.failedRedirectUrl,
     webHookUrl: callbacks.webHookUrl,
-    cardOwnerName: pendingOrder.fullName,
-    cardOwnerPhone: pendingOrder.phone,
-    cardOwnerEmail: pendingOrder.customerEmail,
+    cardOwnerName: attempt.fullName,
+    cardOwnerPhone: attempt.phone,
+    cardOwnerEmail: attempt.customerEmail,
   };
 
   const createFn =
     deps.createLowProfile ??
-    ((input: CreateCardcomLowProfileInput) =>
-      createCardcomLowProfile(input, { environment: cardcomEnvironment }));
+    ((createPayload: CreateCardcomLowProfileInput) =>
+      createCardcomLowProfile(createPayload, { environment: cardcomEnvironment }));
 
   let cardcomResult: CardcomLowProfileCreateResponse;
   try {
     cardcomResult = await createFn(createInput);
   } catch (error) {
     const mapped = mapCardcomFailure(error);
-    await compensatePaymentPrepFailure(pendingOrder, posSpot.id, mapped.reason, {
+    await compensatePaymentPrepFailure(attempt, posSpot.id, mapped.reason, {
       releaseHold: true,
     });
     return {
@@ -555,7 +543,7 @@ export async function startCardcomPaymentPrep(
   const paymentUrl = cardcomResult.Url?.trim() ?? "";
   if (!lowProfileId || !paymentUrl) {
     await compensatePaymentPrepFailure(
-      pendingOrder,
+      attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_RESPONSE_INVALID,
       { releaseHold: true },
@@ -570,14 +558,12 @@ export async function startCardcomPaymentPrep(
 
   let attach;
   try {
-    attach = await attachCheckoutSessionIdToPendingOrder(
-      pendingOrder.orderId,
-      lowProfileId,
-      { cardcomEnv: cardcomEnvironment },
-    );
+    attach = await attachCheckoutSessionIdToAttempt(attempt.id, lowProfileId, {
+      cardcomEnv: cardcomEnvironment,
+    });
   } catch {
     await compensatePaymentPrepFailure(
-      pendingOrder,
+      attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_SESSION_ATTACH_FAILED,
       { releaseHold: true },
@@ -592,7 +578,7 @@ export async function startCardcomPaymentPrep(
 
   if (!attach.ok) {
     await compensatePaymentPrepFailure(
-      pendingOrder,
+      attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_SESSION_ATTACH_FAILED,
       { releaseHold: true },
@@ -607,9 +593,9 @@ export async function startCardcomPaymentPrep(
 
   if (cardcomEnvironment === "test") {
     console.error("[cardcom-test] lowprofile_created", {
-      orderId: pendingOrder.orderId,
+      attemptId: attempt.id,
       lowProfileId,
-      orderStatus: "pending_payment",
+      attemptStatus: "awaiting_payment",
       posSpotId: posSpot.id,
       posStatus: "held_for_payment",
       environment: "test",
@@ -618,7 +604,8 @@ export async function startCardcomPaymentPrep(
 
   return {
     ok: true,
-    orderId: pendingOrder.orderId,
+    orderId: attempt.id,
+    attemptId: attempt.id,
     lowProfileId,
     paymentUrl,
   };

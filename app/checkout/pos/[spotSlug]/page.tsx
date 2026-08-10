@@ -8,6 +8,7 @@ import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
 import { getLocationById } from "@/lib/mockLocations";
 import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
+import { getAwaitingPaymentAttemptForResume } from "@/lib/paymentAttemptStorage";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
@@ -72,29 +73,52 @@ export default async function PosCheckoutPage({
     | undefined;
 
   if (orderId && isPaymentResumeTokenShape(resumeToken)) {
-    const pending = await getPendingOrderForPaymentResume(orderId, resumeToken);
+    const attempt = await getAwaitingPaymentAttemptForResume(orderId, resumeToken);
     if (
-      pending &&
-      pending.posSpotId === posSpot.id &&
-      (pending.snapshot?.spotSlug === posSpot.spotSlug || !pending.snapshot?.spotSlug)
+      attempt &&
+      attempt.posSpotId === posSpot.id &&
+      (attempt.snapshot?.spotSlug === posSpot.spotSlug || !attempt.snapshot?.spotSlug)
     ) {
       paymentResume = {
-        orderId: pending.orderId,
+        orderId: attempt.id,
         resumeToken,
         showPaymentFailedMessage: paymentFailedFlag,
         prefill: {
-          fullName: pending.fullName,
-          email: pending.customerEmail ?? "",
-          phone: pending.phone,
-          fulfillmentMethod: pending.fulfillmentMethod,
-          ...(pending.fulfillmentMethod === "delivery"
+          fullName: attempt.fullName,
+          email: attempt.customerEmail,
+          phone: attempt.phone,
+          fulfillmentMethod: attempt.fulfillmentMethod,
+          ...(attempt.fulfillmentMethod === "delivery"
             ? {
-                // Address is stored combined; leave street fields for customer to confirm.
-                apartmentOrNotes: pending.apartmentOrNotes,
+                apartmentOrNotes: attempt.apartmentOrNotes,
               }
             : {}),
         },
       };
+    } else {
+      const pending = await getPendingOrderForPaymentResume(orderId, resumeToken);
+      if (
+        pending &&
+        pending.posSpotId === posSpot.id &&
+        (pending.snapshot?.spotSlug === posSpot.spotSlug || !pending.snapshot?.spotSlug)
+      ) {
+        paymentResume = {
+          orderId: pending.orderId,
+          resumeToken,
+          showPaymentFailedMessage: paymentFailedFlag,
+          prefill: {
+            fullName: pending.fullName,
+            email: pending.customerEmail ?? "",
+            phone: pending.phone,
+            fulfillmentMethod: pending.fulfillmentMethod,
+            ...(pending.fulfillmentMethod === "delivery"
+              ? {
+                  apartmentOrNotes: pending.apartmentOrNotes,
+                }
+              : {}),
+          },
+        };
+      }
     }
   }
 

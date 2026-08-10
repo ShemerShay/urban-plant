@@ -50,4 +50,9 @@ export interface PosSpot {
   createdAt: string;
   /** When status became held_for_payment (for abandoned-hold expiry). */
   paymentHoldStartedAt?: string;
+  /**
+   * payment_attempts.id that owns this hold (Option B).
+   * Set on acquire; cleared on release / finalize / expiry.
+   */
+  paymentHoldAttemptId?: string;
 }

@@ -1,13 +1,7 @@
 /**
  * Abandoned Cardcom payment hold expiry (17 minutes).
- * Intentionally longer than Cardcom terminal TimeOut (15 minutes) so Cardcom can
- * redirect to FailedRedirectUrl before Urban Plant releases the POS.
- *
- * Enforcement:
- * - Lazy cleanup on product/checkout/create/retry/webhook paths
- * - Scheduled cleanup via {@link expireAllStalePaymentHolds} (Netlify cron → API route)
- *
- * Not a browser timer. TTL must stay at 17 minutes.
+ * Owned holds: expire awaiting attempt + release only that attempt's hold (no Order).
+ * Legacy holds (null owner): cancel pending_payment Orders + release as before.
  */
 
 import "server-only";
@@ -26,29 +20,20 @@ export type ExpireStalePaymentHoldResult =
       expired: true;
       posSpotId: string;
       cancelledOrderId: string | null;
+      expiredAttemptId?: string | null;
     };
 
 export type ExpireAllStalePaymentHoldsResult = {
-  /** Spots that matched the stale criteria when scanned. */
   candidateCount: number;
-  /** Spots successfully released by {@link expireStalePaymentHold}. */
   expiredCount: number;
   expiredPosSpotIds: string[];
 };
 
 /**
  * If this POS has been held_for_payment longer than the TTL without verified payment:
- * - cancel linked pending_payment order(s) (never sold/picked_up/delivered)
- * - return POS to available (never if already sold)
- *
- * Lazy: call on product/checkout reads, create, retry, and webhook before finalize.
- * Scheduled: {@link expireAllStalePaymentHolds} reuses this same function per spot.
- * Runs as a single SQL statement (CTE) — cancel + POS release are atomic together.
- *
- * Concurrent Cardcom webhook safety: finalize requires pending_payment + held_for_payment
- * in one atomic UPDATE. If expiry wins first, webhook sees cancelled / not held and
- * fails closed (ignored_cancelled). If finalize wins first, expiry only cancels
- * pending_payment and only releases while still held_for_payment — sold is untouched.
+ * - owned hold: expire awaiting payment_attempt; release only if owner matches
+ * - legacy hold: cancel linked pending_payment order(s); release hold
+ * Never releases sold / inactive / another attempt's hold.
  */
 export async function expireStalePaymentHold(
   posSpotId: string,
@@ -60,6 +45,7 @@ export async function expireStalePaymentHold(
     WITH candidate AS (
       SELECT
         p.id AS pos_spot_id,
+        p.payment_hold_attempt_id AS attempt_id,
         COALESCE(
           p.payment_hold_started_at,
           (
@@ -67,6 +53,11 @@ export async function expireStalePaymentHold(
             FROM orders o
             WHERE o.pos_spot_id = p.id
               AND o.order_status = 'pending_payment'
+          ),
+          (
+            SELECT MIN(a.created_at)
+            FROM payment_attempts a
+            WHERE a.id = p.payment_hold_attempt_id
           )
         ) AS hold_started_at
       FROM pos_spots p
@@ -74,10 +65,23 @@ export async function expireStalePaymentHold(
         AND p.status = 'held_for_payment'
     ),
     stale AS (
-      SELECT pos_spot_id, hold_started_at
+      SELECT pos_spot_id, attempt_id, hold_started_at
       FROM candidate
       WHERE hold_started_at IS NOT NULL
         AND hold_started_at <= (now() - interval '17 minutes')
+    ),
+    expired_attempts AS (
+      UPDATE payment_attempts a
+      SET
+        status = 'expired',
+        failure_reason = 'Payment hold expired',
+        payment_retry_lock_at = NULL,
+        updated_at = now()
+      FROM stale s
+      WHERE s.attempt_id IS NOT NULL
+        AND a.id = s.attempt_id
+        AND a.status = 'awaiting_payment'
+      RETURNING a.id
     ),
     cancelled_orders AS (
       UPDATE orders o
@@ -90,7 +94,8 @@ export async function expireStalePaymentHold(
         picked_up_at = NULL,
         payment_retry_lock_at = NULL
       FROM stale s
-      WHERE o.pos_spot_id = s.pos_spot_id
+      WHERE s.attempt_id IS NULL
+        AND o.pos_spot_id = s.pos_spot_id
         AND o.order_status = 'pending_payment'
       RETURNING o.order_id
     ),
@@ -98,15 +103,36 @@ export async function expireStalePaymentHold(
       UPDATE pos_spots p
       SET
         status = 'available',
-        payment_hold_started_at = NULL
+        payment_hold_started_at = NULL,
+        payment_hold_attempt_id = NULL
       FROM stale s
       WHERE p.id = s.pos_spot_id
         AND p.status = 'held_for_payment'
+        AND (
+          (
+            s.attempt_id IS NULL
+            AND p.payment_hold_attempt_id IS NULL
+          )
+          OR (
+            s.attempt_id IS NOT NULL
+            AND p.payment_hold_attempt_id = s.attempt_id
+            AND (
+              s.attempt_id IN (SELECT id FROM expired_attempts)
+              OR EXISTS (
+                SELECT 1
+                FROM payment_attempts a
+                WHERE a.id = s.attempt_id
+                  AND a.status <> 'awaiting_payment'
+              )
+            )
+          )
+        )
       RETURNING p.id
     )
     SELECT
       (SELECT id FROM released_pos LIMIT 1) AS released_pos_id,
       (SELECT order_id FROM cancelled_orders LIMIT 1) AS cancelled_order_id,
+      (SELECT id FROM expired_attempts LIMIT 1) AS expired_attempt_id,
       (SELECT hold_started_at FROM candidate LIMIT 1) AS hold_started_at,
       (SELECT status FROM pos_spots WHERE id = ${id}::uuid LIMIT 1) AS current_status
   `;
@@ -115,6 +141,7 @@ export async function expireStalePaymentHold(
     rows as {
       released_pos_id: string | null;
       cancelled_order_id: string | null;
+      expired_attempt_id: string | null;
       hold_started_at: string | Date | null;
       current_status: string | null;
     }[]
@@ -131,6 +158,7 @@ export async function expireStalePaymentHold(
       expired: true,
       posSpotId: row.released_pos_id,
       cancelledOrderId: row.cancelled_order_id,
+      expiredAttemptId: row.expired_attempt_id,
     };
   }
   if (row.current_status !== "held_for_payment") {
@@ -141,10 +169,7 @@ export async function expireStalePaymentHold(
 
 /**
  * Background / cron entry point: find every held_for_payment spot past the TTL,
- * then reuse {@link expireStalePaymentHold} per spot (same rules, idempotent).
- *
- * Candidate hold start matches single-spot expiry:
- * COALESCE(payment_hold_started_at, MIN(pending_payment.created_at)).
+ * then reuse {@link expireStalePaymentHold} per spot.
  */
 export async function expireAllStalePaymentHolds(): Promise<ExpireAllStalePaymentHoldsResult> {
   const rows = await sql`
@@ -158,6 +183,11 @@ export async function expireAllStalePaymentHolds(): Promise<ExpireAllStalePaymen
           FROM orders o
           WHERE o.pos_spot_id = p.id
             AND o.order_status = 'pending_payment'
+        ),
+        (
+          SELECT MIN(a.created_at)
+          FROM payment_attempts a
+          WHERE a.id = p.payment_hold_attempt_id
         )
       ) IS NOT NULL
       AND COALESCE(
@@ -167,6 +197,11 @@ export async function expireAllStalePaymentHolds(): Promise<ExpireAllStalePaymen
           FROM orders o
           WHERE o.pos_spot_id = p.id
             AND o.order_status = 'pending_payment'
+        ),
+        (
+          SELECT MIN(a.created_at)
+          FROM payment_attempts a
+          WHERE a.id = p.payment_hold_attempt_id
         )
       ) <= (now() - interval '17 minutes')
   `;

@@ -1,7 +1,7 @@
 /**
- * Payment-start: pending order + POS hold + Cardcom LowProfile/Create.
+ * Payment-start: payment_attempt + owned POS hold + Cardcom LowProfile/Create.
  * Used by CheckoutForm first payment and admin Cardcom test.
- * Does not finalize payment (webhook + GetLpResult) or send email.
+ * Does not create an Order or finalize payment (webhook + GetLpResult).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
     {
       ok: true,
       orderId: result.orderId,
+      attemptId: result.attemptId,
       lowProfileId: result.lowProfileId,
       paymentUrl: result.paymentUrl,
     },

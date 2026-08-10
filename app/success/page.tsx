@@ -2,8 +2,9 @@ import Image from "next/image";
 
 import { CustomerRecoveryActions } from "@/components/customer/CustomerRecoveryActions";
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
+import { isValidOrderIdUuid } from "@/lib/cardcomPaymentStatus";
 import { getPlantById } from "@/lib/plantCatalog";
-import { readOrders } from "@/lib/ordersStorage";
+import { getOrderById } from "@/lib/ordersStorage";
 import { posSpotPath } from "@/lib/routes";
 import { isVerifiedPaidOrderStatus } from "@/lib/status";
 
@@ -53,7 +54,12 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const emailFailed = readEmailFailed(sp.emailFailed);
   const orderId = readOrderId(sp.orderId);
   const plantId = readPlantId(sp.plantId);
-  const order = orderId ? (await readOrders()).find((o) => o.orderId === orderId) : undefined;
+  // Direct PK lookup — avoid loading all orders for one success page.
+  // Invalid UUID must behave like a missing order (same as a failed find).
+  const order =
+    orderId && isValidOrderIdUuid(orderId)
+      ? ((await getOrderById(orderId)) ?? undefined)
+      : undefined;
   // Prefer trusted order fields; query params are fallback for legacy redirects only.
   const isPickup = order
     ? order.fulfillmentMethod === "pickup"

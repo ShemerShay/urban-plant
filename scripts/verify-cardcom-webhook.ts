@@ -1,5 +1,6 @@
 /**
  * Phase E verification: Cardcom webhook + mocked GetLpResult + DB finalization.
+ * Option B: payment_attempt correlation; Order created only on verified success.
  * Never calls the real Cardcom API / Terminal 194476.
  *
  * Run: npx tsx scripts/verify-cardcom-webhook.ts
@@ -9,6 +10,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { TEL_AVIV_STREETS } from "../constants/telAvivStreets";
+
+const TEST_PUBLIC_ORIGIN = "https://urban-plant-webhook-verify.example.com";
 
 async function main(): Promise<void> {
   await import("./stub-server-only.mjs");
@@ -31,13 +34,17 @@ async function main(): Promise<void> {
     readOrders,
   } = await import("../lib/ordersStorage");
   const {
-    acquirePosSpotHoldForPayment,
+    deletePaymentAttemptById,
+    getPaymentAttemptById,
+  } = await import("../lib/paymentAttemptStorage");
+  const {
     getPosSpotById,
     readPosSpots,
     releasePosSpotHoldForPayment,
     setPosSpotStatus,
   } = await import("../lib/posSpotStorage");
   const { processCardcomWebhook } = await import("../lib/processCardcomWebhook");
+  const { startCardcomPaymentPrep } = await import("../lib/startCardcomPaymentPrep");
   const { sql } = await import("../lib/db");
 
   // --- Unit: webhook JSON parser (official LowProfileResult schema) ---
@@ -84,12 +91,12 @@ async function main(): Promise<void> {
   assert.equal(cardcomAmountsEqual(10.5, 10.4), false);
 
   const sampleLp = randomUUID();
-  const sampleOrderId = randomUUID();
+  const sampleAttemptId = randomUUID();
   const parsedOk = parseCardcomLowProfileResult({
     ResponseCode: 0,
     Description: "OK",
     LowProfileId: sampleLp,
-    ReturnValue: sampleOrderId,
+    ReturnValue: sampleAttemptId,
     TranzactionInfo: {
       ResponseCode: 0,
       Amount: 89.5,
@@ -98,7 +105,7 @@ async function main(): Promise<void> {
     },
   });
   assert.equal(parsedOk.lowProfileId, sampleLp);
-  assert.equal(parsedOk.returnValue, sampleOrderId);
+  assert.equal(parsedOk.returnValue, sampleAttemptId);
   assert.equal(parsedOk.transaction.amount, 89.5);
   assert.equal(parsedOk.transaction.coinId, 1);
 
@@ -126,55 +133,57 @@ async function main(): Promise<void> {
 
   const beforeStatus = available.status;
   const street = TEL_AVIV_STREETS[0] ?? "רוטשילד";
-  const createdIds: string[] = [];
+  const createdAttemptIds: string[] = [];
+  const createdOrderIds: string[] = [];
   const eventCountBefore = (await readEvents()).length;
   let getLpCalls = 0;
 
-  async function seedPending(input: {
+  async function seedAttempt(input: {
     email: string;
     fulfillment: "delivery" | "pickup";
-    lowProfileId: string;
-    price?: number;
-  }): Promise<{ orderId: string; price: number }> {
+    lowProfileId?: string;
+  }): Promise<{ attemptId: string; price: number; lowProfileId: string }> {
     await setPosSpotStatus(available!.id, "available");
-    const orderId = randomUUID();
-    const price = input.price ?? offer!.consumerPrice;
-    const createdAt = new Date().toISOString();
-    await appendOrder({
-      orderId,
-      checkoutSessionId: input.lowProfileId,
-      posSpotId: available!.id,
-      offerId: offer!.id,
-      plantId: offer!.productId,
-      plantName: "Webhook Verify Plant",
-      locationId: available!.partnerLocationId,
-      locationName: "Verify Partner",
-      locationAddress: null,
-      price,
-      fullName: "Webhook Verify",
-      customerEmail: input.email,
-      phone: "0546605603",
-      address: input.fulfillment === "delivery" ? `${street} 1` : "",
-      apartmentOrNotes: "",
-      fulfillmentMethod: input.fulfillment,
-      createdAt,
-      orderStatus: "pending_payment",
-      source: "online",
-      snapshot: {
-        productId: offer!.productId,
-        productName: "Webhook Verify Plant",
-        productDescription: "verify",
-        offerId: offer!.id,
-        consumerPrice: price,
-        posSpotId: available!.id,
+    const lp = input.lowProfileId ?? `lp-wh-${randomUUID()}`;
+    const prep = await startCardcomPaymentPrep(
+      {
+        plantId: offer!.productId,
         spotSlug: available!.spotSlug,
-        fulfillmentType: input.fulfillment,
+        fullName: "Webhook Verify",
+        customerEmail: input.email,
+        phone: "0546605603",
+        fulfillmentMethod: input.fulfillment,
+        ...(input.fulfillment === "delivery"
+          ? { deliveryStreet: street, deliveryHouseNumber: "1", apartmentOrNotes: "" }
+          : { apartmentOrNotes: "" }),
       },
-    });
-    createdIds.push(orderId);
-    const hold = await acquirePosSpotHoldForPayment(available!.id);
-    assert.equal(hold.ok, true);
-    return { orderId, price };
+      {
+        publicOrigin: TEST_PUBLIC_ORIGIN,
+        createLowProfile: async () => ({
+          ResponseCode: 0,
+          Description: "OK",
+          LowProfileId: lp,
+          Url: `https://secure.cardcom.solutions/Interface/LowProfile.aspx?LowProfileId=${lp}`,
+        }),
+      },
+    );
+    assert.equal(prep.ok, true, `prep should succeed for ${input.email}`);
+    if (!prep.ok) throw new Error("prep failed");
+    createdAttemptIds.push(prep.attemptId);
+    assert.equal(prep.orderId, prep.attemptId);
+    assert.equal(await getOrderById(prep.attemptId), null, "prep must not create Order");
+    const attempt = await getPaymentAttemptById(prep.attemptId);
+    assert.ok(attempt);
+    assert.equal(attempt!.status, "awaiting_payment");
+    assert.equal(
+      (await getPosSpotById(available!.id))?.paymentHoldAttemptId,
+      prep.attemptId,
+    );
+    return {
+      attemptId: prep.attemptId,
+      price: attempt!.amount,
+      lowProfileId: prep.lowProfileId,
+    };
   }
 
   function mockLp(result: {
@@ -224,17 +233,23 @@ async function main(): Promise<void> {
     processDocumentAndEmail: async () => ({ outcome: "skipped" as const }),
   };
 
+  async function releaseOwnedHold(): Promise<void> {
+    const spot = await getPosSpotById(available!.id);
+    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
+      await releasePosSpotHoldForPayment(available!.id, spot.paymentHoldAttemptId);
+    }
+  }
+
   try {
     // 2–3: webhook payload alone cannot finalize; GetLpResult always called
     {
       const lp = `lp-wh-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-payload-only@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
       });
       const callsBefore = getLpCalls;
-      // Full LowProfileResult webhook with spoofed Amount/ReturnValue — ignored for finalize.
       const result = await processCardcomWebhook(
         {
           ResponseCode: 0,
@@ -242,7 +257,7 @@ async function main(): Promise<void> {
           TerminalNumber: 194476,
           LowProfileId: lp,
           TranzactionId: 999001,
-          ReturnValue: orderId,
+          ReturnValue: attemptId,
           Operation: "ChargeOnly",
           TranzactionInfo: {
             ResponseCode: 0,
@@ -254,15 +269,24 @@ async function main(): Promise<void> {
           ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
           }),
         },
       );
       assert.equal(getLpCalls, callsBefore + 1);
       assert.equal(result.outcome, "finalized");
-      assert.equal((await getOrderById(orderId))?.orderStatus, "sold");
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.equal(attempt?.status, "finalized");
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
+      assert.equal(order?.orderStatus, "sold");
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
+      const ordersForSession = (await readOrders()).filter(
+        (o) => o.checkoutSessionId === lp,
+      );
+      assert.equal(ordersForSession.length, 1);
       await setPosSpotStatus(available.id, "available");
     }
 
@@ -270,7 +294,7 @@ async function main(): Promise<void> {
     {
       const lpStored = `lp-mismatch-store-${randomUUID()}`;
       const lpVerified = `lp-mismatch-verified-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-lp-mismatch@example.com",
         fulfillment: "delivery",
         lowProfileId: lpStored,
@@ -282,23 +306,24 @@ async function main(): Promise<void> {
           getLpResult: mockLp({
             lowProfileId: lpStored,
             respondAsLowProfileId: lpVerified,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
           }),
         },
       );
       assert.equal(result.outcome, "ignored_verification");
       assert.equal(result.httpStatus, 200);
-      assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
+      assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
+      assert.equal(await getOrderById(attemptId), null);
       assert.equal((await getPosSpotById(available.id))?.status, "held_for_payment");
-      await releasePosSpotHoldForPayment(available.id);
+      await releaseOwnedHold();
       await setPosSpotStatus(available.id, "available");
     }
 
     // 5: ReturnValue mismatch
     {
       const lp = `lp-rv-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-rv@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -315,15 +340,16 @@ async function main(): Promise<void> {
         },
       );
       assert.equal(result.outcome, "ignored_verification");
-      assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
-      await releasePosSpotHoldForPayment(available.id);
+      assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
+      assert.equal(await getOrderById(attemptId), null);
+      await releaseOwnedHold();
       await setPosSpotStatus(available.id, "available");
     }
 
     // 6: amount mismatch
     {
       const lp = `lp-amt-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-amt@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -334,21 +360,21 @@ async function main(): Promise<void> {
           ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price + 1,
           }),
         },
       );
       assert.equal(result.outcome, "ignored_verification");
-      assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
-      await releasePosSpotHoldForPayment(available.id);
+      assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
+      await releaseOwnedHold();
       await setPosSpotStatus(available.id, "available");
     }
 
     // 7: CoinId mismatch
     {
       const lp = `lp-coin-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-coin@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -359,48 +385,55 @@ async function main(): Promise<void> {
           ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
             coinId: 2,
           }),
         },
       );
       assert.equal(result.outcome, "ignored_verification");
-      assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
-      await releasePosSpotHoldForPayment(available.id);
+      assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
+      await releaseOwnedHold();
       await setPosSpotStatus(available.id, "available");
     }
 
     // 8–11: delivery + pickup finalization
     {
       const lp = `lp-del-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-delivery@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
       });
+      assert.equal(await getOrderById(attemptId), null);
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
           ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
           }),
         },
       );
       assert.equal(result.outcome, "finalized");
-      const order = await getOrderById(orderId);
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.equal(attempt?.status, "finalized");
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
       assert.equal(order?.orderStatus, "sold");
       assert.equal(order?.pickedUpAt, undefined);
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
+      const matches = (await readOrders()).filter((o) => o.checkoutSessionId === lp);
+      assert.equal(matches.length, 1);
       await setPosSpotStatus(available.id, "available");
     }
 
     {
       const lp = `lp-pick-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-pickup@example.com",
         fulfillment: "pickup",
         lowProfileId: lp,
@@ -411,13 +444,17 @@ async function main(): Promise<void> {
           ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
           }),
         },
       );
       assert.equal(result.outcome, "finalized");
-      const order = await getOrderById(orderId);
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.equal(attempt?.status, "finalized");
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
       assert.equal(order?.orderStatus, "picked_up");
       assert.ok(order?.pickedUpAt);
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
@@ -427,7 +464,7 @@ async function main(): Promise<void> {
     // 12: duplicate webhook idempotent
     {
       const lp = `lp-dup-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
+      const { attemptId, price } = await seedAttempt({
         email: "wh-dup@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -436,7 +473,7 @@ async function main(): Promise<void> {
         ...skipDocumentEmail,
         getLpResult: mockLp({
           lowProfileId: lp,
-          returnValue: orderId,
+          returnValue: attemptId,
           amount: price,
         }),
       };
@@ -445,9 +482,11 @@ async function main(): Promise<void> {
       assert.equal(first.outcome, "finalized");
       assert.equal(second.outcome, "already_finalized");
       assert.equal(second.httpStatus, 200);
-      const matches = (await readOrders()).filter(
-        (o) => o.checkoutSessionId === lp,
-      );
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.equal(attempt?.status, "finalized");
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const matches = (await readOrders()).filter((o) => o.checkoutSessionId === lp);
       assert.equal(matches.length, 1);
       await setPosSpotStatus(available.id, "available");
     }
@@ -474,43 +513,52 @@ async function main(): Promise<void> {
       assert.equal(result.httpStatus, 200);
     }
 
-    // 14: cancelled order
+    // 14: late success after expired attempt → needs_reconciliation, no Order
     {
-      const lp = `lp-cancel-${randomUUID()}`;
-      const { orderId, price } = await seedPending({
-        email: "wh-cancel@example.com",
+      const lp = `lp-late-${randomUUID()}`;
+      const { attemptId, price } = await seedAttempt({
+        email: "wh-late@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
       });
       await sql`
-        UPDATE orders
-        SET order_status = 'cancelled',
-            cancelled_at = now(),
-            cancelled_by = 'system',
-            cancellation_reason = 'verify_cancel'
-        WHERE order_id = ${orderId}::uuid
+        UPDATE payment_attempts
+        SET status = 'expired',
+            failure_reason = 'verify_expired',
+            updated_at = now()
+        WHERE id = ${attemptId}::uuid
       `;
+      await releaseOwnedHold();
+      await setPosSpotStatus(available.id, "available");
+
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
           ...skipDocumentEmail,
           getLpResult: mockLp({
             lowProfileId: lp,
-            returnValue: orderId,
+            returnValue: attemptId,
             amount: price,
           }),
         },
       );
-      assert.equal(result.outcome, "ignored_cancelled");
-      assert.equal((await getOrderById(orderId))?.orderStatus, "cancelled");
-      await releasePosSpotHoldForPayment(available.id);
+      assert.equal(result.outcome, "needs_reconciliation");
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.equal(attempt?.status, "needs_reconciliation");
+      assert.equal(attempt?.finalizedOrderId, undefined);
+      assert.equal(await getOrderById(attemptId), null);
+      const ordersForSession = (await readOrders()).filter(
+        (o) => o.checkoutSessionId === lp,
+      );
+      assert.equal(ordersForSession.length, 0);
+      assert.notEqual((await getPosSpotById(available.id))?.status, "sold");
       await setPosSpotStatus(available.id, "available");
     }
 
     // 15: malformed GetLpResult
     {
       const lp = `lp-malformed-${randomUUID()}`;
-      const { orderId } = await seedPending({
+      const { attemptId } = await seedAttempt({
         email: "wh-malformed@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -530,15 +578,15 @@ async function main(): Promise<void> {
       );
       assert.equal(result.outcome, "ignored_verification");
       assert.equal(result.httpStatus, 200);
-      assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
-      await releasePosSpotHoldForPayment(available.id);
+      assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
+      await releaseOwnedHold();
       await setPosSpotStatus(available.id, "available");
     }
 
     // 16: network failure
     {
       const lp = `lp-net-${randomUUID()}`;
-      const { orderId } = await seedPending({
+      const { attemptId } = await seedAttempt({
         email: "wh-net@example.com",
         fulfillment: "delivery",
         lowProfileId: lp,
@@ -555,8 +603,71 @@ async function main(): Promise<void> {
       );
       assert.equal(result.outcome, "upstream_error");
       assert.equal(result.httpStatus, 502);
-      assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
-      await releasePosSpotHoldForPayment(available.id);
+      assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
+      await releaseOwnedHold();
+      await setPosSpotStatus(available.id, "available");
+    }
+
+    // Legacy pending_order fallback: null hold owner + ReturnValue=orderId still finalizes
+    {
+      const lp = `lp-legacy-${randomUUID()}`;
+      await setPosSpotStatus(available.id, "available");
+      const orderId = randomUUID();
+      const price = offer.consumerPrice;
+      await appendOrder({
+        orderId,
+        checkoutSessionId: lp,
+        posSpotId: available.id,
+        offerId: offer.id,
+        plantId: offer.productId,
+        plantName: "Webhook Legacy Verify Plant",
+        locationId: available.partnerLocationId,
+        locationName: "Verify Partner",
+        locationAddress: null,
+        price,
+        fullName: "Webhook Legacy Verify",
+        customerEmail: "wh-legacy@example.com",
+        phone: "0546605603",
+        address: `${street} 1`,
+        apartmentOrNotes: "",
+        fulfillmentMethod: "delivery",
+        createdAt: new Date().toISOString(),
+        orderStatus: "pending_payment",
+        source: "online",
+        snapshot: {
+          productId: offer.productId,
+          productName: "Webhook Legacy Verify Plant",
+          productDescription: "verify",
+          offerId: offer.id,
+          consumerPrice: price,
+          posSpotId: available.id,
+          spotSlug: available.spotSlug,
+          fulfillmentType: "delivery",
+        },
+      });
+      createdOrderIds.push(orderId);
+      await sql`
+        UPDATE pos_spots
+        SET
+          status = 'held_for_payment',
+          payment_hold_started_at = now(),
+          payment_hold_attempt_id = NULL
+        WHERE id = ${available.id}::uuid
+      `;
+      const result = await processCardcomWebhook(
+        { LowProfileId: lp },
+        {
+          ...skipDocumentEmail,
+          getLpResult: mockLp({
+            lowProfileId: lp,
+            returnValue: orderId,
+            amount: price,
+          }),
+        },
+      );
+      assert.equal(result.outcome, "finalized");
+      assert.equal((await getOrderById(orderId))?.orderStatus, "sold");
+      assert.equal((await getPosSpotById(available.id))?.status, "sold");
       await setPosSpotStatus(available.id, "available");
     }
 
@@ -568,12 +679,13 @@ async function main(): Promise<void> {
       `verify-cardcom-webhook: ok (mocked GetLpResult calls≈${getLpCalls}, no real network)`,
     );
   } finally {
-    for (const id of [...new Set(createdIds)]) {
-      await sql`DELETE FROM orders WHERE order_id = ${id}::uuid`;
+    await releaseOwnedHold();
+    // Attempts reference orders via finalized_order_id — delete attempts first.
+    for (const id of [...new Set(createdAttemptIds)]) {
+      await deletePaymentAttemptById(id);
     }
-    const spot = await getPosSpotById(available.id);
-    if (spot?.status === "held_for_payment") {
-      await releasePosSpotHoldForPayment(available.id);
+    for (const id of [...new Set(createdOrderIds)]) {
+      await sql`DELETE FROM orders WHERE order_id = ${id}::uuid`;
     }
     await setPosSpotStatus(available.id, beforeStatus);
   }

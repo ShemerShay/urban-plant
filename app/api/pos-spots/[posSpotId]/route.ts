@@ -6,7 +6,12 @@ import { readOffers } from "@/lib/offerStorage";
 import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID } from "@/lib/offerTypes";
 import { getPocketById } from "@/lib/pocketStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
-import { getPosSpotById, PosSpotSlugConflictError, updatePosSpot } from "@/lib/posSpotStorage";
+import {
+  getPosSpotById,
+  PosSpotPaymentHoldLockedError,
+  PosSpotSlugConflictError,
+  updatePosSpot,
+} from "@/lib/posSpotStorage";
 import { formatPosSpotDisplayName } from "@/lib/posSpotSlugUtils";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 
@@ -246,6 +251,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (err) {
     if (err instanceof PosSpotSlugConflictError) {
       return NextResponse.json({ error: "Spot slug is already used by another POS Spot" }, { status: 409 });
+    }
+    if (err instanceof PosSpotPaymentHoldLockedError) {
+      return NextResponse.json(
+        {
+          error:
+            "This POS spot is held for an active payment attempt and cannot change status until the attempt completes or expires",
+        },
+        { status: 409 },
+      );
     }
     throw err;
   }
