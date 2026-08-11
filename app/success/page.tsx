@@ -1,5 +1,6 @@
 import Image from "next/image";
 
+import { TrackPurchaseCompleted } from "@/components/analytics/TrackPurchaseCompleted";
 import { CustomerRecoveryActions } from "@/components/customer/CustomerRecoveryActions";
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { isValidOrderIdUuid } from "@/lib/cardcomPaymentStatus";
@@ -86,6 +87,8 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const showCompletedPurchase = order
     ? isVerifiedPaidOrderStatus(order.orderStatus)
     : !orderId;
+  const trackVerifiedPurchase =
+    order && isVerifiedPaidOrderStatus(order.orderStatus) ? order : undefined;
 
   return (
     <main
@@ -94,6 +97,42 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
       data-page="success-page"
       className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-10"
     >
+      {trackVerifiedPurchase ? (
+        <TrackPurchaseCompleted
+          order_id={trackVerifiedPurchase.orderId}
+          pos_spot_id={trackVerifiedPurchase.posSpotId}
+          spot_slug={
+            trackVerifiedPurchase.snapshot?.spotSlug?.trim() || spotSlug || undefined
+          }
+          plant_id={
+            trackVerifiedPurchase.plantId ||
+            trackVerifiedPurchase.snapshot?.productId ||
+            undefined
+          }
+          plant_name={
+            trackVerifiedPurchase.snapshot?.productName ||
+            trackVerifiedPurchase.plantName ||
+            undefined
+          }
+          offer_id={
+            trackVerifiedPurchase.offerId ||
+            trackVerifiedPurchase.snapshot?.offerId ||
+            undefined
+          }
+          partner_id={
+            trackVerifiedPurchase.locationId ||
+            trackVerifiedPurchase.snapshot?.partnerLocationId ||
+            undefined
+          }
+          partner_name={
+            trackVerifiedPurchase.locationName ||
+            trackVerifiedPurchase.snapshot?.partnerLocationName ||
+            undefined
+          }
+          amount={trackVerifiedPurchase.price}
+          fulfillment_method={trackVerifiedPurchase.fulfillmentMethod}
+        />
+      ) : null}
       <RememberCustomerPath />
       <div className="flex-1 space-y-6">
         <section

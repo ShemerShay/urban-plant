@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { TrackCheckoutStarted } from "@/components/analytics/TrackCheckoutStarted";
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
 import { formatPrice } from "@/lib/mockPlants";
@@ -12,6 +13,7 @@ import { getAwaitingPaymentAttemptForResume } from "@/lib/paymentAttemptStorage"
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
+import { getPocketById } from "@/lib/pocketStorage";
 import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import { posSpotPath } from "@/lib/routes";
 
@@ -49,6 +51,20 @@ export default async function PosCheckoutPage({
 
   const partner = await getLocationById(posSpot.partnerLocationId);
   const pickupDisabled = Boolean(partner?.pickupDisabled);
+  const pocket = posSpot.pocketId ? await getPocketById(posSpot.pocketId) : undefined;
+  const partnerName = partner?.name?.trim() || undefined;
+  const analyticsContext = {
+    pos_spot_id: posSpot.id,
+    spot_slug: posSpot.spotSlug,
+    plant_id: plant.id,
+    plant_name: plant.name,
+    offer_id: offer.id,
+    partner_id: posSpot.partnerLocationId,
+    partner_name: partnerName,
+    pocket_id: posSpot.pocketId,
+    pocket_name: pocket?.name,
+    amount: offer.consumerPrice,
+  };
 
   const orderId = parseOrderIdQueryParam(readParam(sp.orderId));
   const resumeToken = readParam(sp.resume);
@@ -129,6 +145,7 @@ export default async function PosCheckoutPage({
       data-page="checkout-page"
       className="mx-auto min-h-screen w-full max-w-md px-4 py-6"
     >
+      <TrackCheckoutStarted {...analyticsContext} />
       <RememberCustomerPath />
       <div className="space-y-6">
         <Link
@@ -160,6 +177,7 @@ export default async function PosCheckoutPage({
             pickupDisabled={pickupDisabled}
             posSpotStatus={posSpot.status}
             paymentResume={paymentResume}
+            analyticsContext={analyticsContext}
           />
         </section>
       </div>

@@ -25,7 +25,11 @@ export const routes = {
     plants: () => "/admin/plants",
     offers: () => "/admin/offers",
     partners: () => "/admin/partners",
-    cardcomTest: () => "/admin/cardcom-test",
+    analytics: () => "/admin/analytics",
+    analyticsWithRange: (range: string) => {
+      const r = range.trim();
+      return r ? `/admin/analytics?range=${encodeURIComponent(r)}` : "/admin/analytics";
+    },
     partner: (partnerId: string) =>
       `/admin/partners/${encodeURIComponent(partnerId.trim())}`,
     partnerPockets: (partnerId: string) =>
@@ -109,8 +113,6 @@ export const routes = {
     },
     /** Resume holder: create a new Cardcom LowProfile for the same pending order. */
     cardcomRetry: () => "/api/payments/cardcom/retry",
-    /** Admin-only controlled Cardcom test Create (terminal 1000). */
-    adminCardcomTest: () => "/api/admin/cardcom-test",
   },
   plantLibrary: (filename: string) =>
     `/plant-library/${encodeURIComponent(filename.trim())}`,
