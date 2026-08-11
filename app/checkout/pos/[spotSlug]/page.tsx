@@ -123,16 +123,29 @@ export default async function PosCheckoutPage({
   }
 
   return (
-    <main id="checkout-page" className="mx-auto min-h-screen w-full max-w-md px-4 py-6">
+    <main
+      id="main-content"
+      tabIndex={-1}
+      data-page="checkout-page"
+      className="mx-auto min-h-screen w-full max-w-md px-4 py-6"
+    >
       <RememberCustomerPath />
       <div className="space-y-6">
-        <Link href={posSpotPath(posSpot.spotSlug)} className="inline-block text-sm text-emerald-700">
+        <Link
+          href={posSpotPath(posSpot.spotSlug)}
+          className="inline-flex min-h-11 items-center text-sm font-medium text-emerald-800 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+        >
           Back to plant
         </Link>
 
-        <section className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <p className="text-sm text-slate-500">You are ordering</p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">{plant.name}</h1>
+        <section
+          className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
+          aria-labelledby="checkout-order-heading"
+        >
+          <p className="text-sm text-slate-600">You are ordering</p>
+          <h1 id="checkout-order-heading" className="mt-1 text-2xl font-semibold text-emerald-950">
+            {plant.name}
+          </h1>
           <p className="mt-2 text-lg font-semibold text-emerald-950">
             {formatPrice(offer.consumerPrice, plant.currency)}
           </p>

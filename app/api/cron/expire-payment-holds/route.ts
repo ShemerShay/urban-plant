@@ -2,6 +2,8 @@
  * Scheduled hold cleanup entry point (Netlify cron → POST).
  * Reuses {@link expireAllStalePaymentHolds} / {@link expireStalePaymentHold}.
  * Auth: Authorization Bearer CRON_SECRET (required).
+ *
+ * Cron is background hygiene only — customer/Admin flows also lazy-expire.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,13 +24,18 @@ function authorizeCron(request: NextRequest): boolean {
 
 async function runExpire(): Promise<NextResponse> {
   if (!process.env.CRON_SECRET?.trim()) {
+    console.error("[cron/expire-payment-holds] CRON_SECRET is not configured");
     return NextResponse.json(
       { ok: false, error: "CRON_SECRET is not configured" },
       { status: 503 },
     );
   }
 
+  console.log("[cron/expire-payment-holds] start");
   const result = await expireAllStalePaymentHolds();
+  console.log(
+    `[cron/expire-payment-holds] done candidates=${result.candidateCount} released=${result.expiredCount}`,
+  );
   return NextResponse.json({
     ok: true,
     candidateCount: result.candidateCount,
@@ -39,12 +46,13 @@ async function runExpire(): Promise<NextResponse> {
 
 export async function POST(request: NextRequest) {
   if (!authorizeCron(request)) {
+    console.error("[cron/expire-payment-holds] unauthorized");
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
   try {
     return await runExpire();
   } catch (error) {
-    console.error("[cron/expire-payment-holds]", error);
+    console.error("[cron/expire-payment-holds] failed", error);
     return NextResponse.json(
       { ok: false, error: "Expire failed" },
       { status: 500 },

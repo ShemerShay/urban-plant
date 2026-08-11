@@ -1,6 +1,11 @@
 # Netlify config for Urban Plant.
 # Next.js build/plugin is typically configured in the Netlify UI; this file
 # registers the payment-hold scheduled function.
+#
+# Schedule is also declared as a string literal in
+# netlify/functions/expire-payment-holds.mts (export const config). Keep both
+# in sync. Prefer the in-source string literal — Netlify's Next runtime has
+# dropped schedules when only a non-literal / unresolved in-source config was present.
 
 [functions]
   directory = "netlify/functions"

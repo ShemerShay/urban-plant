@@ -5,6 +5,8 @@ import { DELIVERY_ADDRESS_PILOT_HINT, TEL_AVIV_CITY } from "@/lib/deliveryAddres
 const baseInputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
+const invalidInputClass = "border-red-400 focus:border-red-500 focus:ring-red-200/60";
+
 export interface DeliveryAddressFieldValues {
   deliveryStreet: string;
   deliveryHouseNumber: string;
@@ -29,8 +31,8 @@ export function DeliveryAddressFields({
   onFieldBlur,
 }: DeliveryAddressFieldsProps) {
   return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-slate-800">Delivery address</h3>
+    <fieldset className="space-y-4">
+      <legend className="text-sm font-semibold text-slate-800">Delivery address</legend>
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="deliveryCity">
@@ -44,13 +46,20 @@ export function DeliveryAddressFields({
           className={`${baseInputClass} cursor-default bg-slate-50 text-slate-700`}
           value={TEL_AVIV_CITY}
           aria-readonly="true"
+          aria-describedby="deliveryCity-hint"
         />
-        <p className="text-xs leading-relaxed text-slate-500">{DELIVERY_ADDRESS_PILOT_HINT}</p>
+        <p id="deliveryCity-hint" className="text-xs leading-relaxed text-slate-600">
+          {DELIVERY_ADDRESS_PILOT_HINT}
+        </p>
       </div>
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="deliveryStreet">
           Street
+          <span aria-hidden="true" className="text-red-700">
+            {" "}
+            *
+          </span>
         </label>
         <StreetSearchSelect
           id="deliveryStreet"
@@ -64,6 +73,10 @@ export function DeliveryAddressFields({
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="deliveryHouseNumber">
           House number
+          <span aria-hidden="true" className="text-red-700">
+            {" "}
+            *
+          </span>
         </label>
         <input
           id="deliveryHouseNumber"
@@ -71,14 +84,21 @@ export function DeliveryAddressFields({
           type="text"
           inputMode="text"
           autoComplete="off"
-          className={baseInputClass}
+          aria-required="true"
+          aria-invalid={errors.deliveryHouseNumber ? true : undefined}
+          aria-describedby={
+            errors.deliveryHouseNumber ? "deliveryHouseNumber-error" : undefined
+          }
+          className={`${baseInputClass} ${errors.deliveryHouseNumber ? invalidInputClass : ""}`}
           value={values.deliveryHouseNumber}
           onChange={(event) => onChange("deliveryHouseNumber", event.target.value)}
           onBlur={() => onFieldBlur?.("deliveryHouseNumber")}
           placeholder="26b"
         />
         {errors.deliveryHouseNumber ? (
-          <p className="text-xs text-red-600">{errors.deliveryHouseNumber}</p>
+          <p id="deliveryHouseNumber-error" className="text-xs text-red-700">
+            {errors.deliveryHouseNumber}
+          </p>
         ) : null}
       </div>
 
@@ -96,6 +116,6 @@ export function DeliveryAddressFields({
           placeholder="Door code, floor, delivery details..."
         />
       </div>
-    </div>
+    </fieldset>
   );
 }

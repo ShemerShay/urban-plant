@@ -6,9 +6,9 @@ import { readOffers } from "@/lib/offerStorage";
 import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID } from "@/lib/offerTypes";
 import { getPocketById } from "@/lib/pocketStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
+import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import {
   getPosSpotById,
-  PosSpotPaymentHoldLockedError,
   PosSpotSlugConflictError,
   updatePosSpot,
 } from "@/lib/posSpotStorage";
@@ -51,10 +51,16 @@ async function mapOffersForResponse() {
   );
 }
 
+/** Lazy-repair expired holds before Admin reads/edits. */
+async function getPosSpotForAdmin(id: string) {
+  await expireStalePaymentHold(id);
+  return getPosSpotById(id);
+}
+
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { posSpotId: rawId } = await params;
   const id = decodeURIComponent(rawId);
-  const posSpot = await getPosSpotById(id);
+  const posSpot = await getPosSpotForAdmin(id);
   if (!posSpot) {
     return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
   }
@@ -66,7 +72,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const { posSpotId: rawId } = await params;
   const id = decodeURIComponent(rawId);
 
-  const existing = await getPosSpotById(id);
+  const existing = await getPosSpotForAdmin(id);
   if (!existing) {
     return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
   }
@@ -251,15 +257,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (err) {
     if (err instanceof PosSpotSlugConflictError) {
       return NextResponse.json({ error: "Spot slug is already used by another POS Spot" }, { status: 409 });
-    }
-    if (err instanceof PosSpotPaymentHoldLockedError) {
-      return NextResponse.json(
-        {
-          error:
-            "This POS spot is held for an active payment attempt and cannot change status until the attempt completes or expires",
-        },
-        { status: 409 },
-      );
     }
     throw err;
   }

@@ -297,24 +297,32 @@ export async function setPosSpotStatus(id: string, status: PosSpotStatus): Promi
   `;
   const existing = (existingRows as Pick<PosSpotRow, "status" | "payment_hold_attempt_id">[])[0];
   if (!existing) return null;
-  if (hasAttemptOwnedPaymentHold(existing)) {
-    throw new PosSpotPaymentHoldLockedError();
-  }
+
+  const leavingHeld = existing.status === "held_for_payment" && status !== "held_for_payment";
+  const enteringHeld = existing.status !== "held_for_payment" && status === "held_for_payment";
+  const previousAttemptId =
+    typeof existing.payment_hold_attempt_id === "string" && existing.payment_hold_attempt_id.trim()
+      ? existing.payment_hold_attempt_id.trim()
+      : null;
 
   const rows =
     status === "held_for_payment"
-      ? await sql`
-          UPDATE pos_spots
-          SET
-            status = 'held_for_payment',
-            payment_hold_started_at = COALESCE(payment_hold_started_at, now())
-          WHERE id = ${id}::uuid
-            AND NOT (
-              status = 'held_for_payment'
-              AND payment_hold_attempt_id IS NOT NULL
-            )
-          RETURNING ${POS_SPOT_ROW_SQL}
-        `
+      ? enteringHeld
+        ? await sql`
+            UPDATE pos_spots
+            SET
+              status = 'held_for_payment',
+              payment_hold_started_at = now(),
+              payment_hold_attempt_id = NULL
+            WHERE id = ${id}::uuid
+            RETURNING ${POS_SPOT_ROW_SQL}
+          `
+        : await sql`
+            UPDATE pos_spots
+            SET status = 'held_for_payment'
+            WHERE id = ${id}::uuid
+            RETURNING ${POS_SPOT_ROW_SQL}
+          `
       : await sql`
           UPDATE pos_spots
           SET
@@ -322,26 +330,13 @@ export async function setPosSpotStatus(id: string, status: PosSpotStatus): Promi
             payment_hold_started_at = NULL,
             payment_hold_attempt_id = NULL
           WHERE id = ${id}::uuid
-            AND NOT (
-              status = 'held_for_payment'
-              AND payment_hold_attempt_id IS NOT NULL
-            )
           RETURNING ${POS_SPOT_ROW_SQL}
         `;
   const row = (rows as PosSpotRow[])[0];
-  if (!row) {
-    const againRows = await sql`
-      SELECT status, payment_hold_attempt_id
-      FROM pos_spots
-      WHERE id = ${id}::uuid
-      LIMIT 1
-    `;
-    const again = (againRows as Pick<PosSpotRow, "status" | "payment_hold_attempt_id">[])[0];
-    if (!again) return null;
-    if (hasAttemptOwnedPaymentHold(again)) {
-      throw new PosSpotPaymentHoldLockedError();
-    }
-    return null;
+  if (!row) return null;
+
+  if (leavingHeld && previousAttemptId) {
+    await expireAwaitingAttemptForAdminRelease(previousAttemptId);
   }
   return mapPosSpotRow(row);
 }
@@ -488,9 +483,8 @@ export class PosSpotSlugConflictError extends Error {
 }
 
 /**
- * Thrown when generic Admin/status writers try to change a hold owned by a
- * payment_attempt. Ownership-aware paths (acquire / release / finalize / expiry)
- * must not use setPosSpotStatus / updatePosSpot for hold transitions.
+ * @deprecated Admin may override attempt-owned holds. Kept for callers that still
+ * catch this error type; writers no longer throw it.
  */
 export class PosSpotPaymentHoldLockedError extends Error {
   constructor() {
@@ -499,15 +493,20 @@ export class PosSpotPaymentHoldLockedError extends Error {
   }
 }
 
-function hasAttemptOwnedPaymentHold(row: {
-  status: string;
-  payment_hold_attempt_id?: string | null;
-}): boolean {
-  return (
-    row.status === "held_for_payment" &&
-    typeof row.payment_hold_attempt_id === "string" &&
-    Boolean(row.payment_hold_attempt_id.trim())
-  );
+/** When Admin clears a hold, expire the linked awaiting attempt (best-effort). */
+async function expireAwaitingAttemptForAdminRelease(attemptId: string): Promise<void> {
+  const trimmed = attemptId.trim();
+  if (!trimmed) return;
+  await sql`
+    UPDATE payment_attempts
+    SET
+      status = 'expired',
+      failure_reason = 'Payment hold released by admin',
+      payment_retry_lock_at = NULL,
+      updated_at = now()
+    WHERE id = ${trimmed}::uuid
+      AND status = 'awaiting_payment'
+  `;
 }
 
 type PosSpotCheckDbRow = {
@@ -632,14 +631,17 @@ export async function updatePosSpot(
     patch.status === "inactive" ||
     patch.status === "held_for_payment";
   const updateStatus = Boolean(patch.updateStatus && statusIsValid);
-  if (updateStatus && hasAttemptOwnedPaymentHold(existingRow)) {
-    throw new PosSpotPaymentHoldLockedError();
-  }
   const statusForSql = updateStatus ? patch.status! : null;
-  const enteringHeldForPayment =
-    updateStatus && patch.status === "held_for_payment";
+  const wasHeld = existingRow.status === "held_for_payment";
+  const enteringHeldFromNonHeld =
+    updateStatus && patch.status === "held_for_payment" && !wasHeld;
   const leavingHeldForPayment =
-    updateStatus && patch.status !== "held_for_payment";
+    updateStatus && wasHeld && patch.status !== "held_for_payment";
+  const previousAttemptId =
+    typeof existingRow.payment_hold_attempt_id === "string" &&
+    existingRow.payment_hold_attempt_id.trim()
+      ? existingRow.payment_hold_attempt_id.trim()
+      : null;
 
   let nextCheckForSql: string | null = null;
   let checkByForSql: string | null | undefined;
@@ -693,40 +695,24 @@ export async function updatePosSpot(
         ELSE status
       END,
       payment_hold_started_at = CASE
-        WHEN ${enteringHeldForPayment} THEN COALESCE(payment_hold_started_at, now())
+        WHEN ${enteringHeldFromNonHeld} THEN now()
         WHEN ${leavingHeldForPayment} THEN NULL
         ELSE payment_hold_started_at
       END,
       payment_hold_attempt_id = CASE
+        WHEN ${enteringHeldFromNonHeld} THEN NULL
         WHEN ${leavingHeldForPayment} THEN NULL
         ELSE payment_hold_attempt_id
       END
     WHERE id = ${trimmedId}::uuid
-      AND (
-        NOT ${updateStatus}
-        OR NOT (
-          status = 'held_for_payment'
-          AND payment_hold_attempt_id IS NOT NULL
-        )
-      )
     RETURNING ${POS_SPOT_ROW_SQL}
   `;
 
   const row = (rows as PosSpotRow[])[0];
-  if (!row) {
-    if (updateStatus) {
-      const againRows = await sql`
-        SELECT status, payment_hold_attempt_id
-        FROM pos_spots
-        WHERE id = ${trimmedId}::uuid
-        LIMIT 1
-      `;
-      const again = (againRows as Pick<PosSpotRow, "status" | "payment_hold_attempt_id">[])[0];
-      if (again && hasAttemptOwnedPaymentHold(again)) {
-        throw new PosSpotPaymentHoldLockedError();
-      }
-    }
-    return null;
+  if (!row) return null;
+
+  if (leavingHeldForPayment && previousAttemptId) {
+    await expireAwaitingAttemptForAdminRelease(previousAttemptId);
   }
   return mapPosSpotRow(row);
 }

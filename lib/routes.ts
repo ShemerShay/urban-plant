@@ -39,6 +39,7 @@ export const routes = {
       `/checkout/pos/${encodeURIComponent(spotSlug.trim())}`,
   },
   customer: {
+    accessibility: () => "/accessibility",
     success: (params?: URLSearchParams | Record<string, string>) => {
       if (!params) return "/success";
       const qs =

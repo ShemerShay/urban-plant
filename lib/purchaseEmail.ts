@@ -8,6 +8,7 @@ import "server-only";
 import nodemailer from "nodemailer";
 
 import { translateCareInstructionsToHebrew } from "@/lib/careInstructionsHebrew";
+import { PUBLIC_CONTACT_EMAIL } from "@/lib/publicContact";
 
 export type PurchaseEmailFulfillment = "delivery" | "pickup";
 
@@ -38,7 +39,7 @@ export type SendPurchaseEmailParams = {
 };
 
 export const PURCHASE_EMAIL_SUBJECT = "Your Urban Plant order is confirmed";
-export const PURCHASE_EMAIL_REPLY_TO = "beherha@gmail.com";
+export const PURCHASE_EMAIL_REPLY_TO = PUBLIC_CONTACT_EMAIL;
 
 function escapeHtml(text: string): string {
   return text

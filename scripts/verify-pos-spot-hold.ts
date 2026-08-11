@@ -140,7 +140,6 @@ async function assertDbMutations(): Promise<void> {
   const {
     acquirePosSpotHoldForPayment,
     completePosSpotSaleFromHold,
-    PosSpotPaymentHoldLockedError,
     releasePosSpotHoldForPayment,
     setPosSpotStatus,
     updatePosSpot,
@@ -331,7 +330,7 @@ async function assertDbMutations(): Promise<void> {
     assert.equal(reloaded?.status, "available");
     assert.equal(reloaded?.paymentHoldStartedAt, undefined);
 
-    // Attempt-owned hold: generic Admin status writers must be blocked.
+    // Attempt-owned hold: Admin may deliberately override an active hold.
     const attemptAdmin = await insertAttempt();
     const ownedForAdmin = await acquirePosSpotHoldForPayment(spot.id, attemptAdmin);
     assert.equal(ownedForAdmin.ok, true);
@@ -339,48 +338,6 @@ async function assertDbMutations(): Promise<void> {
       (await getPosSpotById(spot.id))?.paymentHoldAttemptId,
       attemptAdmin,
     );
-
-    await assert.rejects(
-      () => setPosSpotStatus(spot.id, "available"),
-      (err: unknown) => err instanceof PosSpotPaymentHoldLockedError,
-    );
-    await assert.rejects(
-      () => setPosSpotStatus(spot.id, "sold"),
-      (err: unknown) => err instanceof PosSpotPaymentHoldLockedError,
-    );
-    await assert.rejects(
-      () => setPosSpotStatus(spot.id, "inactive"),
-      (err: unknown) => err instanceof PosSpotPaymentHoldLockedError,
-    );
-    await assert.rejects(
-      () =>
-        updatePosSpot(spot.id, {
-          partnerLocationId: spot.partnerLocationId,
-          posNumber: spot.posNumber ?? "",
-          posName: spot.posName,
-          currentOfferId: spot.currentOfferId,
-          updateStatus: true,
-          status: "available",
-        }),
-      (err: unknown) => err instanceof PosSpotPaymentHoldLockedError,
-    );
-    await assert.rejects(
-      () =>
-        updatePosSpot(spot.id, {
-          partnerLocationId: spot.partnerLocationId,
-          posNumber: spot.posNumber ?? "",
-          posName: spot.posName,
-          currentOfferId: spot.currentOfferId,
-          updateStatus: true,
-          status: "sold",
-        }),
-      (err: unknown) => err instanceof PosSpotPaymentHoldLockedError,
-    );
-
-    const stillOwned = await getPosSpotById(spot.id);
-    assert.equal(stillOwned?.status, "held_for_payment");
-    assert.equal(stillOwned?.paymentHoldAttemptId, attemptAdmin);
-    assert.ok(stillOwned?.paymentHoldStartedAt);
 
     // Non-status Admin edits remain allowed while owned.
     const nonStatusEdit = await updatePosSpot(spot.id, {
@@ -394,16 +351,28 @@ async function assertDbMutations(): Promise<void> {
     assert.equal(nonStatusEdit!.status, "held_for_payment");
     assert.equal(nonStatusEdit!.paymentHoldAttemptId, attemptAdmin);
 
-    // Ownership-aware release clears the lock; Admin may edit status again.
-    const unlocked = await releasePosSpotHoldForPayment(spot.id, attemptAdmin);
-    assert.equal(unlocked.ok, true);
-    const afterRelease = await getPosSpotById(spot.id);
-    assert.equal(afterRelease?.status, "available");
-    assert.equal(afterRelease?.paymentHoldAttemptId, undefined);
-    assert.equal(afterRelease?.paymentHoldStartedAt, undefined);
+    // Admin override: leave held_for_payment → available, clears timestamp + owner.
+    const adminOverride = await updatePosSpot(spot.id, {
+      partnerLocationId: spot.partnerLocationId,
+      posNumber: spot.posNumber ?? "",
+      posName: spot.posName,
+      currentOfferId: spot.currentOfferId,
+      updateStatus: true,
+      status: "available",
+    });
+    assert.equal(adminOverride?.status, "available");
+    assert.equal(adminOverride?.paymentHoldAttemptId, undefined);
+    assert.equal(adminOverride?.paymentHoldStartedAt, undefined);
 
-    const adminAfterUnlock = await setPosSpotStatus(spot.id, "available");
-    assert.equal(adminAfterUnlock?.status, "available");
+    // Admin may enter held_for_payment with a fresh timestamp (null owner).
+    const adminHold = await setPosSpotStatus(spot.id, "held_for_payment");
+    assert.equal(adminHold?.status, "held_for_payment");
+    assert.ok(adminHold?.paymentHoldStartedAt);
+    assert.equal(adminHold?.paymentHoldAttemptId, undefined);
+
+    const adminClear = await setPosSpotStatus(spot.id, "available");
+    assert.equal(adminClear?.status, "available");
+    assert.equal(adminClear?.paymentHoldStartedAt, undefined);
 
     console.log("verify-pos-spot-hold: DB atomic mutations ok");
   } finally {

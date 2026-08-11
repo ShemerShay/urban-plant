@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import {
+  LAST_GOOD_CUSTOMER_PATH_KEY,
   customerRecoveryWhatsAppUrl,
   resolveSafeReturnPath,
 } from "@/lib/customerRecovery";
@@ -30,6 +31,24 @@ function resolvePreferredReturnHref(
   return null;
 }
 
+function subscribeToRememberedPath(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === LAST_GOOD_CUSTOMER_PATH_KEY || event.key === null) {
+      onStoreChange();
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}
+
+function getRememberedReturnPathSnapshot(pathname: string): string | null {
+  return resolveSafeReturnPath(pathname);
+}
+
+const actionFocusClass =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+
 interface CustomerRecoveryActionsProps {
   whatsAppMessage?: string;
   /** Prefer this return target when safe (e.g. known spotSlug from success). */
@@ -46,25 +65,21 @@ export function CustomerRecoveryActions({
 }: CustomerRecoveryActionsProps) {
   const pathname = usePathname() ?? "";
   const preferredHref = resolvePreferredReturnHref(pathname, preferredReturnHref);
-  const [storedReturnHref, setStoredReturnHref] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (preferredHref) {
-      setStoredReturnHref(null);
-      return;
-    }
-    setStoredReturnHref(resolveSafeReturnPath(pathname));
-  }, [pathname, preferredHref]);
+  const storedReturnHref = useSyncExternalStore(
+    subscribeToRememberedPath,
+    () => getRememberedReturnPathSnapshot(pathname),
+    () => null,
+  );
 
   const returnHref = preferredHref ?? storedReturnHref;
   const whatsAppHref = customerRecoveryWhatsAppUrl(whatsAppMessage);
 
   return (
-    <div className={`${className} flex w-full flex-col gap-3`}>
+    <div className={`${className} flex w-full flex-col gap-3`} role="group" aria-label="Next steps">
       {returnHref ? (
         <Link
           href={returnHref}
-          className="block rounded-2xl bg-emerald-700 px-5 py-4 text-center text-sm font-semibold text-white transition hover:bg-emerald-600"
+          className={`flex min-h-12 items-center justify-center rounded-2xl bg-emerald-700 px-5 py-4 text-center text-sm font-semibold text-white transition hover:bg-emerald-600 ${actionFocusClass}`}
         >
           {returnLabel}
         </Link>
@@ -74,10 +89,13 @@ export function CustomerRecoveryActions({
           href={whatsAppHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-5 py-4 text-center text-sm font-semibold text-[#497863] transition hover:bg-emerald-50"
+          className={`inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-5 py-4 text-center text-sm font-semibold text-[#497863] transition hover:bg-emerald-50 ${actionFocusClass}`}
         >
           <IconWhatsApp className="size-5 shrink-0 text-[#25D366]" />
-          Contact Urban Plant on WhatsApp
+          <span>
+            Contact Urban Plant on WhatsApp
+            <span className="sr-only"> (opens in a new tab)</span>
+          </span>
         </a>
       ) : null}
     </div>

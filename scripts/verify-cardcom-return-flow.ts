@@ -51,7 +51,7 @@ async function main(): Promise<void> {
   assert.match(successSrc, /Thank you for your order/);
   assert.match(successSrc, /Order summary/);
   assert.match(successSrc, /Return to plant/);
-  assert.match(successSrc, /id="success-page"/);
+  assert.match(successSrc, /data-page="success-page"/);
   assert.match(successSrc, /CustomerRecoveryActions/);
   // Phase 0: single-order lookup (not full-table readOrders + find).
   assert.match(successSrc, /getOrderById/);

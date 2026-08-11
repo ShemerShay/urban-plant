@@ -6,6 +6,7 @@ import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
 import { isPosAssignableOffer } from "@/lib/offerTypes";
+import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPocketById } from "@/lib/pocketStorage";
 import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";
 import {
@@ -32,11 +33,19 @@ function cleanString(value: unknown): string {
 
 export async function GET(request: NextRequest) {
   const partnerId = cleanString(request.nextUrl.searchParams.get("partnerId"));
-  const [offers, allSpots, locations] = await Promise.all([
+  const [offers, allSpotsInitial, locations] = await Promise.all([
     readOffers(),
     readPosSpots(),
     readPartnerLocations(),
   ]);
+
+  // Lazy-repair expired holds so Admin lists show truth without waiting for cron.
+  const held = allSpotsInitial.filter((s) => s.status === "held_for_payment");
+  if (held.length > 0) {
+    await Promise.all(held.map((s) => expireStalePaymentHold(s.id)));
+  }
+  const allSpots = held.length > 0 ? await readPosSpots() : allSpotsInitial;
+
   const posSpots = partnerId
     ? allSpots.filter((spot) => spot.partnerLocationId === partnerId)
     : allSpots;
