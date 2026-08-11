@@ -33,7 +33,8 @@ const CARE_REASSURANCE =
 /** Near-black / warm grey — stronger than body, not CTA green. */
 const LANDING_HEADLINE_CLASS = "text-[#2a302c]";
 const LANDING_AVAILABILITY_PRIMARY_CLASS = "text-[#343a36]";
-const LANDING_CARE_CLASS = "text-neutral-400";
+/** Neutral-600 (~4.7:1 on page background) — WCAG AA for small text */
+const LANDING_CARE_CLASS = "text-neutral-600";
 
 function IconMegaphoneUnMuted({ className }: { className?: string }) {
   return (
@@ -87,7 +88,9 @@ export default async function PosPage({ params }: PosPageProps) {
 
   return (
     <main
-      id="plant-page"
+      id="main-content"
+      tabIndex={-1}
+      data-page="plant-page"
       className={`bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pt-10 ${
         heldMessage
           ? "pb-[calc(9.5rem+env(safe-area-inset-bottom))]"
@@ -144,7 +147,7 @@ export default async function PosPage({ params }: PosPageProps) {
             </span>
             <p>{AVAILABILITY_LINE_1}</p>
           </div>
-          <p className="text-[13px] leading-relaxed text-neutral-500">{AVAILABILITY_LINE_2}</p>
+          <p className="text-[13px] leading-relaxed text-neutral-600">{AVAILABILITY_LINE_2}</p>
         </div>
 
         <p className={`mt-10 w-full text-[13px] leading-6 ${LANDING_CARE_CLASS}`}>

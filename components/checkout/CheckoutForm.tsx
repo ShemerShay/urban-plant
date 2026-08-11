@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { CheckoutCustomerFields } from "@/components/checkout/CheckoutCustomerFields";
 import {
@@ -23,6 +23,7 @@ import {
 import { PAYMENT_FAILED_CHECKOUT_MESSAGE } from "@/lib/paymentResumeToken";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import { routes } from "@/lib/routes";
+
 type FormFields = {
   fullName: string;
   email: string;
@@ -64,6 +65,25 @@ interface CheckoutFormProps {
   paymentResume?: PaymentResumeProps;
 }
 
+const FIELD_FOCUS_ORDER: CheckoutFieldKey[] = [
+  "fullName",
+  "email",
+  "phone",
+  "deliveryStreet",
+  "deliveryHouseNumber",
+];
+
+const FIELD_ELEMENT_IDS: Record<CheckoutFieldKey, string> = {
+  fullName: "fullName",
+  email: "email",
+  phone: "phone",
+  deliveryStreet: "deliveryStreet",
+  deliveryHouseNumber: "deliveryHouseNumber",
+};
+
+const buttonFocusClass =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+
 export function CheckoutForm({
   plantId,
   plantName,
@@ -74,6 +94,9 @@ export function CheckoutForm({
   paymentResume,
 }: CheckoutFormProps) {
   const resumeHolder = Boolean(paymentResume);
+  const formHeadingId = useId();
+  const statusRegionId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
   const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>(
     paymentResume?.prefill.fulfillmentMethod === "pickup" && !pickupDisabled
       ? "pickup"
@@ -95,6 +118,7 @@ export function CheckoutForm({
     paymentResume?.showPaymentFailedMessage ? PAYMENT_FAILED_CHECKOUT_MESSAGE : null,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationSummary, setValidationSummary] = useState<string | null>(null);
 
   function markTouched(field: CheckoutFieldKey) {
     setTouched((prev) => ({ ...prev, [field]: true }));
@@ -107,6 +131,7 @@ export function CheckoutForm({
     }
     setSubmitError(null);
     setPrepMessage(null);
+    setValidationSummary(null);
   }
 
   function handleFulfillmentChange(next: FulfillmentMethod) {
@@ -126,10 +151,33 @@ export function CheckoutForm({
     }
     setSubmitError(null);
     setPrepMessage(null);
+    setValidationSummary(null);
+  }
+
+  function focusFirstInvalidField(nextErrors: Partial<Record<CheckoutFieldKey, string>>) {
+    for (const key of FIELD_FOCUS_ORDER) {
+      if (!nextErrors[key]) continue;
+      if (fulfillmentMethod === "pickup" && (key === "deliveryStreet" || key === "deliveryHouseNumber")) {
+        continue;
+      }
+      const el = document.getElementById(FIELD_ELEMENT_IDS[key]);
+      if (el instanceof HTMLElement) {
+        el.focus();
+        return;
+      }
+    }
   }
 
   function revealValidationErrors() {
     setShowAllErrors(true);
+    const nextErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
+    const count = Object.keys(nextErrors).length;
+    setValidationSummary(
+      count > 0
+        ? `Please fix ${count} field${count === 1 ? "" : "s"} before completing your order.`
+        : null,
+    );
+    window.setTimeout(() => focusFirstInvalidField(nextErrors), 0);
   }
 
   const fieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
@@ -141,6 +189,12 @@ export function CheckoutForm({
   });
   /** Resume retry uses orderId + token only — do not gate on form canSubmit. */
   const isResumeRetry = Boolean(paymentResume);
+
+  useEffect(() => {
+    if (paymentFailedMessage) {
+      document.getElementById(statusRegionId)?.focus();
+    }
+  }, [paymentFailedMessage, statusRegionId]);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -155,6 +209,7 @@ export function CheckoutForm({
     setIsSubmitting(true);
     setSubmitError(null);
     setPrepMessage(null);
+    setValidationSummary(null);
 
     try {
       // Resume holder: retry Cardcom on the same pending order (no new order).
@@ -219,10 +274,9 @@ export function CheckoutForm({
     }
   }
 
-  const isSubmitDisabled =
-    isSubmitting || !purchaseAllowed || (!isResumeRetry && !canSubmit);
-  const showValidationOverlay =
-    !isResumeRetry && !isSubmitting && purchaseAllowed && !canSubmit;
+  // Only disable for submitting / unavailable — keep enabled so keyboard users can
+  // activate submit and receive validation feedback (WCAG 3.3.1 / 3.3.3).
+  const isSubmitDisabled = isSubmitting || !purchaseAllowed;
 
   const deliveryErrors: DeliveryAddressFieldErrors = {
     deliveryStreet: errors.deliveryStreet,
@@ -230,18 +284,27 @@ export function CheckoutForm({
   };
 
   return (
-    <form id="checkout-form" onSubmit={onSubmit} className="space-y-4">
-      <h2 className="text-xl font-semibold text-emerald-950">
+    <form
+      id="checkout-form"
+      ref={formRef}
+      onSubmit={onSubmit}
+      className="space-y-4"
+      aria-labelledby={formHeadingId}
+      aria-busy={isSubmitting || undefined}
+      noValidate
+    >
+      <h2 id={formHeadingId} className="text-xl font-semibold text-emerald-950">
         {fulfillmentMethod === "delivery" ? "Delivery details" : "Pickup details"}
       </h2>
 
       <fieldset className="space-y-2">
-        <div className={pickupDisabled ? "" : "grid grid-cols-2 gap-2"}>
+        <legend className="sr-only">Fulfillment method</legend>
+        <div className={pickupDisabled ? "" : "grid grid-cols-2 gap-2"} role="group">
           <button
             type="button"
             aria-pressed={fulfillmentMethod === "delivery"}
             onClick={() => handleFulfillmentChange("delivery")}
-            className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+            className={`min-h-12 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${buttonFocusClass} ${
               fulfillmentMethod === "delivery"
                 ? "border-emerald-700 bg-emerald-50 text-emerald-900"
                 : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
@@ -254,7 +317,7 @@ export function CheckoutForm({
               type="button"
               aria-pressed={fulfillmentMethod === "pickup"}
               onClick={() => handleFulfillmentChange("pickup")}
-              className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+              className={`min-h-12 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${buttonFocusClass} ${
                 fulfillmentMethod === "pickup"
                   ? "border-emerald-700 bg-emerald-50 text-emerald-900"
                   : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
@@ -304,36 +367,42 @@ export function CheckoutForm({
         </p>
       </div>
 
-      {paymentFailedMessage ? (
-        <p className="text-sm font-medium text-red-700">{paymentFailedMessage}</p>
-      ) : null}
-      {submitError ? <p className="text-sm text-red-600">{submitError}</p> : null}
-      {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}
+      <div
+        id={statusRegionId}
+        tabIndex={-1}
+        className="space-y-2 outline-none"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        {paymentFailedMessage ? (
+          <p className="text-sm font-medium text-red-800">{paymentFailedMessage}</p>
+        ) : null}
+        {validationSummary ? (
+          <p className="text-sm font-medium text-red-800">{validationSummary}</p>
+        ) : null}
+        {submitError ? <p className="text-sm text-red-700">{submitError}</p> : null}
+        {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}
+      </div>
 
       <div>
         {showHeldCheckoutMessage ? (
-          <p className="mb-3 text-sm leading-5 text-amber-900">
+          <p className="mb-3 text-sm leading-5 text-amber-950" role="status">
             {POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE}
           </p>
         ) : null}
-        <div className="relative">
-          {showValidationOverlay ? (
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label="Show what is required to complete your order"
-              className="absolute inset-0 z-10 cursor-not-allowed rounded-2xl"
-              onClick={revealValidationErrors}
-            />
-          ) : null}
-          <button
-            type="submit"
-            disabled={isSubmitDisabled}
-            className="w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:hover:bg-neutral-300"
-          >
-            {isSubmitting ? "Processing…" : "Complete Order"}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={isSubmitDisabled}
+          aria-disabled={isSubmitDisabled || undefined}
+          className={`min-h-12 w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600 disabled:hover:bg-neutral-300 ${buttonFocusClass}`}
+        >
+          {isSubmitting ? "Processing…" : "Complete Order"}
+        </button>
+        {isSubmitting ? (
+          <p className="sr-only" role="status" aria-live="polite">
+            Processing your order. Please wait.
+          </p>
+        ) : null}
       </div>
     </form>
   );

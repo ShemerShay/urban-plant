@@ -26,6 +26,42 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Skip link: visible on keyboard focus only */
+.skip-link {
+  position: absolute;
+  inset-inline-start: 1rem;
+  top: 1rem;
+  z-index: 100;
+  transform: translateY(-160%);
+  border-radius: 0.75rem;
+  background: #163529;
+  color: #ffffff;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* Prefer reduced motion: shorten or disable non-essential motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 select,
 select option {
   color: #0f172a;

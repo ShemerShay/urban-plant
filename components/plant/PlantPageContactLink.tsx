@@ -1,4 +1,7 @@
+import Link from "next/link";
+
 import { buildWhatsAppChatUrl } from "@/lib/whatsappContact";
+import { routes } from "@/lib/routes";
 
 function IconWhatsApp({ className }: { className?: string }) {
   return (
@@ -8,28 +11,59 @@ function IconWhatsApp({ className }: { className?: string }) {
   );
 }
 
+/** Conventional universal-access figure (inline SVG; project has no icon package). */
+function IconAccessibility({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="7" r="1.25" fill="currentColor" stroke="none" />
+      <path d="M7.5 11.5h9" />
+      <path d="M12 10.75v3.25l-2.75 4" />
+      <path d="M12 14l2.75 4" />
+    </svg>
+  );
+}
+
 interface PlantPageContactLinkProps {
   whatsAppMessage: string;
 }
 
 const contactRowClassName =
-  "inline-flex max-w-full min-w-0 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center text-sm font-semibold text-[#497863] underline-offset-4 transition hover:text-[#163529] hover:underline";
+  "inline-flex max-w-full min-w-0 min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center text-sm font-semibold text-[#497863] underline-offset-4 transition hover:text-[#163529] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
 
-/** In-page footer link: stays in document flow at the bottom of the plant page (not in the fixed CTA bar). */
+const accessibilityLinkClassName =
+  "inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-[#6b756f] transition hover:text-[#497863] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+
+/** In-page utility row: WhatsApp contact + subtle accessibility entry (not in the fixed CTA bar). */
 export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkProps) {
   const href = buildWhatsAppChatUrl(whatsAppMessage);
 
   return (
-    <div className="mt-14 flex w-full shrink-0 justify-center px-1">
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={contactRowClassName}
-      >
+    <div className="mt-14 flex w-full shrink-0 items-center justify-center px-1">
+      <a href={href} target="_blank" rel="noopener noreferrer" className={contactRowClassName}>
         <IconWhatsApp className="size-5 shrink-0 text-[#25D366]" />
-        <span className="min-w-0 break-words">Ask us anything</span>
+        <span className="min-w-0 break-words">
+          Ask us anything
+          <span className="sr-only"> on WhatsApp (opens in a new tab)</span>
+        </span>
       </a>
+      <Link
+        href={routes.customer.accessibility()}
+        aria-label="Accessibility statement"
+        title="Accessibility"
+        className={accessibilityLinkClassName}
+      >
+        <IconAccessibility className="size-4" />
+      </Link>
     </div>
   );
 }

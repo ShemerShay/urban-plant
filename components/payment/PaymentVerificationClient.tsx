@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { CustomerRecoveryActions } from "@/components/customer/CustomerRecoveryActions";
 import {
@@ -10,7 +10,6 @@ import {
   parseOrderIdQueryParam,
   paymentCompletedRedirectPath,
   paymentVerificationRedirectPath,
-  shouldContinuePaymentStatusPolling,
   type CardcomPaymentStatusResponse,
 } from "@/lib/cardcomPaymentStatus";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
@@ -52,12 +51,13 @@ export function PaymentVerificationClient({
     : null;
   const [mode, setMode] = useState<UiMode>(orderId ? "verifying" : "invalid");
   const [pollSession, setPollSession] = useState(0);
-  const startedAtRef = useRef<number>(Date.now());
+  const startedAtRef = useRef<number>(0);
   const redirectedRef = useRef(false);
+  const titleId = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (!orderId) {
-      setMode("invalid");
       return;
     }
 
@@ -65,7 +65,6 @@ export function PaymentVerificationClient({
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     redirectedRef.current = false;
     startedAtRef.current = Date.now();
-    setMode("verifying");
 
     async function tick() {
       if (cancelled || redirectedRef.current) return;
@@ -98,14 +97,6 @@ export function PaymentVerificationClient({
         return;
       }
 
-      if (
-        status.state === "pending" ||
-        status.state === "not_found" ||
-        shouldContinuePaymentStatusPolling(status)
-      ) {
-        setMode("verifying");
-      }
-
       timeoutId = setTimeout(() => {
         void tick();
       }, PAYMENT_STATUS_POLL_MS);
@@ -119,8 +110,14 @@ export function PaymentVerificationClient({
     };
   }, [orderId, resumeToken, router, pollSession]);
 
+  useEffect(() => {
+    if (mode === "verifying") return;
+    headingRef.current?.focus();
+  }, [mode]);
+
   function checkAgain() {
     if (!orderId) return;
+    setMode("verifying");
     setPollSession((n) => n + 1);
   }
 
@@ -144,21 +141,40 @@ export function PaymentVerificationClient({
 
   return (
     <main
-      id="payment-success-page"
+      id="main-content"
+      tabIndex={-1}
+      data-page="payment-success-page"
       className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 py-10"
+      aria-busy={mode === "verifying" || undefined}
     >
       <div className="flex-1 space-y-6">
-        <section className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+        <section
+          className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
+          aria-labelledby={titleId}
+        >
           <p className="font-serif-display text-xl font-medium tracking-tight text-neutral-900">
             UrbanPlant
           </p>
-          <h1 className="mt-3 text-3xl font-semibold text-emerald-950">{title}</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
+          <h1
+            id={titleId}
+            ref={headingRef}
+            tabIndex={-1}
+            className="mt-3 text-3xl font-semibold text-emerald-950 outline-none"
+          >
+            {title}
+          </h1>
+          <p
+            className="mt-3 text-sm leading-6 text-slate-600"
+            role={mode === "verifying" ? "status" : undefined}
+            aria-live={mode === "verifying" ? "polite" : undefined}
+          >
+            {description}
+          </p>
           {mode === "timeout" ? (
             <button
               type="button"
               onClick={checkAgain}
-              className="mt-6 w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600"
+              className="mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
             >
               Check again
             </button>

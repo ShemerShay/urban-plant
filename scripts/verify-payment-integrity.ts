@@ -69,7 +69,10 @@ async function main(): Promise<void> {
   const now = Date.now();
   assert.equal(isPaymentHoldExpired(new Date(now - 16 * 60_000).toISOString(), now), false);
   assert.equal(isPaymentHoldExpired(new Date(now - 17 * 60_000).toISOString(), now), true);
-  assert.equal(isPaymentHoldExpired(null, now), false);
+  assert.equal(isPaymentHoldExpired(null, now), true);
+  assert.equal(isPaymentHoldExpired("", now), true);
+  assert.equal(isPaymentHoldExpired("not-a-date", now), true);
+  assert.equal(isPaymentHoldExpired(new Date(now - 60 * 60_000).toISOString(), now), true);
 
   const spots = await readPosSpots();
   const available = spots.find((s) => s.status === "available");

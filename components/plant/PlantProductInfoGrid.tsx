@@ -124,11 +124,24 @@ function IconRuler() {
 const cellBase =
   "flex min-h-[5.5rem] flex-col items-center justify-center gap-2.5 px-3 py-5 text-center sm:min-h-[6rem] sm:px-4";
 
-function Quadrant({ icon, text, borders }: { icon: ReactNode; text: string; borders: string }) {
+function Quadrant({
+  icon,
+  text,
+  label,
+  borders,
+}: {
+  icon: ReactNode;
+  text: string;
+  label: string;
+  borders: string;
+}) {
+  if (!text) return <div className={`${cellBase} ${borders}`} aria-hidden />;
+
   return (
-    <div id="plant-info-grid-cell" className={`${cellBase} ${borders}`}>
+    <div className={`${cellBase} ${borders}`}>
       {icon}
       <p className="max-w-[11rem] text-[13px] font-medium leading-snug tracking-tight text-white sm:max-w-none sm:text-sm">
+        <span className="sr-only">{label}: </span>
         {text}
       </p>
     </div>
@@ -142,20 +155,32 @@ export function PlantProductInfoGrid({
   averageSize,
 }: PlantProductInfoGridProps) {
   return (
-    <section id="plant-info-grid" className={PANEL_CLASS}>
+    <section id="plant-info-grid" className={PANEL_CLASS} aria-label="Plant care details">
       <div className="grid grid-cols-2">
         <Quadrant
           icon={<IconSun />}
           text={light}
+          label="Light"
           borders="border-b border-r border-white/30"
         />
-        <Quadrant icon={<IconWater />} text={water} borders="border-b border-white/30" />
+        <Quadrant
+          icon={<IconWater />}
+          text={water}
+          label="Water"
+          borders="border-b border-white/30"
+        />
         <Quadrant
           icon={<IconSprout />}
           text={careDisplay(difficulty)}
+          label="Care level"
           borders="border-r border-white/30"
         />
-        <Quadrant icon={<IconRuler />} text={sizeDisplay(averageSize)} borders="" />
+        <Quadrant
+          icon={<IconRuler />}
+          text={sizeDisplay(averageSize)}
+          label="Size"
+          borders=""
+        />
       </div>
     </section>
   );

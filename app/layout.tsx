@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Cormorant_Garamond, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Suspense } from "react";
+import { SkipToMainContent } from "@/components/customer/SkipToMainContent";
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { PostHogPageView } from "@/components/PostHogPageView";
 
@@ -37,6 +38,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col main-layout">
+          <Suspense fallback={null}>
+            <SkipToMainContent />
+          </Suspense>
           <PostHogProvider>
             <Suspense fallback={null}>
               <PostHogPageView />

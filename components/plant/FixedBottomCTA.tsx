@@ -9,6 +9,9 @@ interface FixedBottomCTAProps {
   messageBelow?: string;
 }
 
+const ctaFocusClass =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+
 export function FixedBottomCTA({
   href,
   ctaText,
@@ -17,6 +20,7 @@ export function FixedBottomCTA({
 }: FixedBottomCTAProps) {
   const disabled = !purchaseEnabled;
   const hasMessageBelow = Boolean(messageBelow);
+  const messageId = "plant-cta-status-message";
 
   return (
     <div
@@ -28,24 +32,28 @@ export function FixedBottomCTA({
       }
     >
       {disabled ? (
-        <div
-          role="button"
+        <button
+          type="button"
+          disabled
           aria-disabled="true"
-          tabIndex={-1}
-          className="flex w-full cursor-not-allowed items-center justify-center rounded-2xl bg-neutral-300 px-5 py-4 text-center text-base font-semibold text-neutral-500"
+          aria-describedby={messageBelow ? messageId : undefined}
+          className={`flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-2xl bg-neutral-300 px-5 py-4 text-center text-base font-semibold text-neutral-600 ${ctaFocusClass}`}
         >
           {ctaText}
-        </div>
+        </button>
       ) : (
         <Link
           href={href}
-          className="flex w-full items-center justify-center rounded-2xl bg-[#497863] px-5 py-4 text-center text-base font-semibold text-white shadow-[0_10px_40px_rgba(27,67,50,0.28)] transition hover:bg-[#163529] active:scale-[0.99]"
+          aria-describedby={messageBelow ? messageId : undefined}
+          className={`flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#497863] px-5 py-4 text-center text-base font-semibold text-white shadow-[0_10px_40px_rgba(27,67,50,0.28)] transition hover:bg-[#163529] active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 ${ctaFocusClass}`}
         >
           {ctaText}
         </Link>
       )}
       {messageBelow ? (
-        <p className="mt-2 text-center text-sm leading-5 text-neutral-600">{messageBelow}</p>
+        <p id={messageId} className="mt-2 text-center text-sm leading-5 text-neutral-600" role="status">
+          {messageBelow}
+        </p>
       ) : null}
     </div>
   );

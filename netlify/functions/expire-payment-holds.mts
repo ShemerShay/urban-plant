@@ -3,9 +3,13 @@
  * that reuses expireAllStalePaymentHolds / expireStalePaymentHold.
  *
  * Requires Netlify env: CRON_SECRET, and APP_ORIGIN (or URL).
+ * Non-2xx responses are returned as-is (do not report success on failure).
+ *
+ * Schedule must be a string literal here (and/or in netlify.toml). A variable
+ * reference is not statically extractable and can leave schedule unregistered.
  */
 
-const SCHEDULE = "*/5 * * * *";
+import type { Config } from "@netlify/functions";
 
 function siteOrigin(): string | null {
   const raw =
@@ -23,7 +27,9 @@ function siteOrigin(): string | null {
   }
 }
 
-export default async () => {
+export default async (_request: Request) => {
+  console.log("[expire-payment-holds] scheduled function start");
+
   const origin = siteOrigin();
   const secret = process.env.CRON_SECRET?.trim();
 
@@ -39,25 +45,45 @@ export default async () => {
   }
 
   const target = `${origin}/api/cron/expire-payment-holds`;
-  const res = await fetch(target, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secret}`,
-      Accept: "application/json",
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(target, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        Accept: "application/json",
+      },
+    });
+  } catch (error) {
+    console.error("[expire-payment-holds] fetch failed", error);
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "fetch to cron route failed",
+      }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
+  }
 
   const text = await res.text();
   console.log(
-    `[expire-payment-holds] ${res.status} ${text.slice(0, 500)}`,
+    `[expire-payment-holds] cron route status=${res.status} body=${text.slice(0, 500)}`,
   );
 
-  return new Response(text, {
+  if (!res.ok) {
+    console.error(
+      `[expire-payment-holds] cleanup failed with HTTP ${res.status}`,
+    );
+  }
+
+  // Propagate non-2xx so Netlify does not treat a failed cleanup as success.
+  return new Response(text || JSON.stringify({ ok: false, error: "empty cron response" }), {
     status: res.status,
     headers: { "content-type": "application/json" },
   });
 };
 
-export const config = {
-  schedule: SCHEDULE,
+// String literal required — Netlify extracts this at build time.
+export const config: Config = {
+  schedule: "*/5 * * * *",
 };
