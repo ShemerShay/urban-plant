@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { TrackPosScan } from "@/components/analytics/TrackPosScan";
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { FixedBottomCTA } from "@/components/plant/FixedBottomCTA";
 import { PlantPageContactLink } from "@/components/plant/PlantPageContactLink";
@@ -13,6 +14,7 @@ import { getLocationById } from "@/lib/mockLocations";
 import { formatBuyCta } from "@/lib/mockPlants";
 import { getPlantById } from "@/lib/plantCatalog";
 import { getOfferById } from "@/lib/offerStorage";
+import { getPocketById } from "@/lib/pocketStorage";
 import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
 import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
 import {
@@ -77,6 +79,7 @@ export default async function PosPage({ params }: PosPageProps) {
 
   const knownPartner = await getLocationById(posSpot.partnerLocationId);
   const partnerName = knownPartner?.name?.trim() ?? "";
+  const pocket = posSpot.pocketId ? await getPocketById(posSpot.pocketId) : undefined;
   const availableCtaText = formatBuyCta(offer.consumerPrice, plant.currency);
   const ctaText = productPageCtaText(posSpot.status, availableCtaText);
   const heldMessage = shouldShowHeldForPaymentProductMessage(posSpot.status)
@@ -97,6 +100,17 @@ export default async function PosPage({ params }: PosPageProps) {
           : "pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
       }`}
     >
+      <TrackPosScan
+        pos_spot_id={posSpot.id}
+        spot_slug={posSpot.spotSlug}
+        plant_id={plant.id}
+        plant_name={plant.name}
+        offer_id={offer.id}
+        partner_id={posSpot.partnerLocationId}
+        partner_name={partnerName || undefined}
+        pocket_id={posSpot.pocketId}
+        pocket_name={pocket?.name}
+      />
       <RememberCustomerPath />
       <PlantPageHeader knownPartner={knownPartner?.name ?? ""} />
 

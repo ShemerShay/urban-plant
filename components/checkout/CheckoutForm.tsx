@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { usePostHog } from "posthog-js/react";
 
 import { CheckoutCustomerFields } from "@/components/checkout/CheckoutCustomerFields";
 import {
@@ -8,6 +9,11 @@ import {
   type DeliveryAddressFieldErrors,
   type DeliveryAddressFieldValues,
 } from "@/components/checkout/DeliveryAddressFields";
+import {
+  ANALYTICS_EVENTS,
+  captureAnalyticsEvent,
+  type AnalyticsCommerceProps,
+} from "@/lib/analyticsEvents";
 import {
   canSubmitCheckout,
   getCheckoutFieldErrors,
@@ -63,6 +69,8 @@ interface CheckoutFormProps {
    * When set, submit retries Cardcom for that order instead of creating a new sale.
    */
   paymentResume?: PaymentResumeProps;
+  /** Optional commerce context for `payment_started` (analytics only). */
+  analyticsContext?: AnalyticsCommerceProps;
 }
 
 const FIELD_FOCUS_ORDER: CheckoutFieldKey[] = [
@@ -92,7 +100,9 @@ export function CheckoutForm({
   pickupDisabled = false,
   posSpotStatus,
   paymentResume,
+  analyticsContext,
 }: CheckoutFormProps) {
+  const posthog = usePostHog();
   const resumeHolder = Boolean(paymentResume);
   const formHeadingId = useId();
   const statusRegionId = useId();
@@ -225,11 +235,21 @@ export function CheckoutForm({
         const data = (await response.json().catch(() => ({}))) as {
           error?: string;
           paymentUrl?: string;
+          attemptId?: string;
+          orderId?: string;
         };
         if (!response.ok || !data.paymentUrl) {
           setSubmitError(data.error ?? "Could not restart payment. Try again.");
           return;
         }
+        captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
+          ...analyticsContext,
+          plant_id: plantId,
+          plant_name: plantName,
+          spot_slug: spotSlug,
+          fulfillment_method: fulfillmentMethod,
+          attempt_id: data.attemptId || data.orderId || paymentResume.orderId,
+        });
         window.location.assign(data.paymentUrl);
         return;
       }
@@ -259,6 +279,8 @@ export function CheckoutForm({
       const data = (await response.json().catch(() => ({}))) as {
         error?: string;
         paymentUrl?: string;
+        attemptId?: string;
+        orderId?: string;
       };
 
       if (!response.ok || !data.paymentUrl) {
@@ -266,6 +288,14 @@ export function CheckoutForm({
         return;
       }
 
+      captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
+        ...analyticsContext,
+        plant_id: plantId,
+        plant_name: plantName,
+        spot_slug: spotSlug,
+        fulfillment_method: fulfillmentMethod,
+        attempt_id: data.attemptId || data.orderId,
+      });
       window.location.assign(data.paymentUrl);
     } catch {
       setSubmitError("Network error. Try again.");

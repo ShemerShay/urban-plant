@@ -5,6 +5,11 @@ import { routes } from "@/lib/routes";
 /** Static admin pages (excludes dynamic segments such as partner detail). */
 const ADMIN_PAGES = [
   {
+    href: routes.admin.analytics(),
+    label: "Analytics",
+    description: "Scans, unique scanners, purchases, and conversion at a glance.",
+  },
+  {
     href: routes.admin.orders(),
     label: "Orders",
     description: "View and filter customer orders.",
@@ -23,11 +28,6 @@ const ADMIN_PAGES = [
     href: routes.admin.partners(),
     label: "Partners",
     description: "Manage partners, their pockets, and POS spots.",
-  },
-  {
-    href: routes.admin.cardcomTest(),
-    label: "Cardcom test",
-    description: "Controlled Cardcom test payment (terminal 1000 only).",
   },
 ] as const;
 
