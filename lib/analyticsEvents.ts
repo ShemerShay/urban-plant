@@ -57,6 +57,20 @@ export function cleanAnalyticsProps(
   return out;
 }
 
+function isPostHogReady(
+  posthog: AnalyticsCaptureClient | null | undefined,
+): posthog is AnalyticsCaptureClient {
+  if (!posthog) return false;
+  // posthog-js no-ops capture() until init sets __loaded.
+  if (
+    "__loaded" in posthog &&
+    (posthog as AnalyticsCaptureClient & { __loaded?: boolean }).__loaded === false
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Capture once per browser tab session for a stable id (e.g. spot id or order id).
  * Returns true if the event was sent (or attempted).
@@ -68,7 +82,9 @@ export function captureOncePerSession(
   props: AnalyticsCommerceProps,
 ): boolean {
   if (!shouldCaptureBusinessAnalytics()) return false;
-  if (!posthog || !dedupeId) return false;
+  if (!dedupeId) return false;
+  // Do not burn the session dedupe key if PostHog is not ready yet.
+  if (!isPostHogReady(posthog)) return false;
   const key = sessionKey(event, dedupeId);
   try {
     if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(key)) {
@@ -91,6 +107,6 @@ export function captureAnalyticsEvent(
   props: AnalyticsCommerceProps,
 ): void {
   if (!shouldCaptureBusinessAnalytics()) return;
-  if (!posthog) return;
+  if (!isPostHogReady(posthog)) return;
   posthog.capture(event, cleanAnalyticsProps(props));
 }
