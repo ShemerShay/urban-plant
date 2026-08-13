@@ -17,10 +17,15 @@ import { AdminEmptyState } from "@/components/admin/shared/AdminEmptyState";
 import { AdminEntityList } from "@/components/admin/shared/AdminEntityList";
 import { AdminFormModal } from "@/components/admin/shared/AdminFormModal";
 import { AdminManagementSection } from "@/components/admin/shared/AdminManagementSection";
+import {
+  AdminWaterPlantsPanel,
+  formatPosSpotWateredSummary,
+} from "@/components/admin/AdminWaterPlantsPanel";
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { Pocket } from "@/lib/pocketTypes";
 import { resolvePosSpotPocketLabel } from "@/lib/posSpotPocket";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
+import { isWateredRecently } from "@/lib/posSpotWatering";
 import { POS_HELD_FOR_PAYMENT_ADMIN_LABEL } from "@/lib/status";
 import {
   buildPosSpotNameAndSlug,
@@ -94,6 +99,8 @@ function PocketSpotRow({
   onEdit: () => void;
   onArchive: () => void;
 }) {
+  const wateredLabel = formatPosSpotWateredSummary(spot.lastWateredAt);
+  const wateredRecent = isWateredRecently(spot.lastWateredAt, 7);
   return (
     <li className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -110,6 +117,12 @@ function PocketSpotRow({
             <div className="flex flex-wrap gap-x-2">
               <dt className="font-medium text-slate-500">Offer</dt>
               <dd className="text-slate-900">{offerName}</dd>
+            </div>
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="font-medium text-slate-500">Watered</dt>
+              <dd className={wateredRecent ? "text-emerald-800" : "text-slate-900"}>
+                {wateredLabel}
+              </dd>
             </div>
             <div className="flex flex-wrap gap-x-2">
               <dt className="font-medium text-slate-500">Slug</dt>
@@ -244,6 +257,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [copyHint, setCopyHint] = useState<string | null>(null);
+  const [waterOpen, setWaterOpen] = useState(false);
 
   const pocketNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -661,13 +675,22 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         title="Pockets"
         description={`Physical areas inside ${partner.name}. Open a pocket to see its POS spots.`}
         actions={
-          <button
-            type="button"
-            onClick={openCreatePocket}
-            className="rounded-full bg-emerald-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-900"
-          >
-            Add pocket
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setWaterOpen(true)}
+              className="rounded-full border border-emerald-800 px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-50"
+            >
+              Water plants
+            </button>
+            <button
+              type="button"
+              onClick={openCreatePocket}
+              className="rounded-full bg-emerald-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-900"
+            >
+              Add pocket
+            </button>
+          </div>
         }
       >
         {pockets.length === 0 && unassignedSpots.length === 0 ? (
@@ -795,6 +818,18 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                   <div className="flex flex-wrap gap-x-2">
                     <dt className="font-medium text-slate-500">Pocket</dt>
                     <dd className="text-slate-900">{pocketLabel}</dd>
+                  </div>
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="font-medium text-slate-500">Watered</dt>
+                    <dd
+                      className={
+                        isWateredRecently(spot.lastWateredAt, 7)
+                          ? "text-emerald-800"
+                          : "text-slate-900"
+                      }
+                    >
+                      {formatPosSpotWateredSummary(spot.lastWateredAt)}
+                    </dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
                     <dt className="font-medium text-slate-500">Slug</dt>
@@ -1019,6 +1054,23 @@ This action cannot be undone.`
         onCancel={() => setArchiveTarget(null)}
         onConfirm={() => void confirmArchiveSpot()}
       />
+
+      {waterOpen ? (
+        <AdminWaterPlantsPanel
+          open
+          partnerId={partner.id}
+          partnerName={partner.name}
+          pockets={pockets}
+          posSpots={posSpots}
+          offers={offers}
+          onClose={() => setWaterOpen(false)}
+          onWatered={(updated) => {
+            if (updated.length === 0) return;
+            const byId = new Map(updated.map((s) => [s.id, s]));
+            setPosSpots((prev) => prev.map((s) => byId.get(s.id) ?? s));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AdminMultiSelect } from "@/components/admin/shared/AdminMultiSelect";
+import { adminSelectTriggerClassName } from "@/components/admin/shared/adminSelectionStyles";
 import type { OrdersFilterState } from "@/lib/adminOrdersFilterUtils";
 import { ordersQueryUrl } from "@/lib/adminOrdersFilterUtils";
 import type { OrderStatus } from "@/lib/status";
@@ -16,8 +17,10 @@ const ORDER_STATUSES: OrderStatus[] = [
   "cancelled",
 ];
 
-const selectClass =
-  "h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white pl-3 pr-9 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+const STATUS_OPTIONS = ORDER_STATUSES.map((status) => ({
+  value: status,
+  label: ORDER_STATUS_LABELS[status],
+}));
 
 export interface FilterOption {
   value: string;
@@ -47,84 +50,6 @@ function filterState(props: AdminOrdersFiltersProps): OrdersFilterState {
 function statusSummary(statuses: OrderStatus[]): string {
   if (statuses.length === 0) return "All";
   return statuses.map((status) => ORDER_STATUS_LABELS[status]).join(", ");
-}
-
-function AdminOrdersStatusMultiSelect({
-  currentStatuses,
-  onChange,
-}: {
-  currentStatuses: OrderStatus[];
-  onChange: (statuses: OrderStatus[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  function toggleStatus(status: OrderStatus) {
-    const next = currentStatuses.includes(status)
-      ? currentStatuses.filter((value) => value !== status)
-      : [...currentStatuses, status];
-    onChange(next);
-  }
-
-  return (
-    <div className="relative min-w-0" ref={rootRef}>
-      <button
-        type="button"
-        className={`${selectClass} cursor-pointer text-left`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="block truncate pr-1">{statusSummary(currentStatuses)}</span>
-      </button>
-
-      {open ? (
-        <div
-          className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-          role="listbox"
-          aria-multiselectable
-        >
-          {ORDER_STATUSES.map((status) => {
-            const checked = currentStatuses.includes(status);
-            return (
-              <label
-                key={status}
-                className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-slate-900 transition hover:bg-slate-50"
-                role="option"
-                aria-selected={checked}
-              >
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600/30"
-                  checked={checked}
-                  onChange={() => toggleStatus(status)}
-                />
-                {ORDER_STATUS_LABELS[status]}
-              </label>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export function AdminOrdersFilters({
@@ -160,9 +85,20 @@ export function AdminOrdersFilters({
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Status
         </span>
-        <AdminOrdersStatusMultiSelect
-          currentStatuses={currentStatuses}
-          onChange={(statuses) => navigate({ ...filters, statuses })}
+        <AdminMultiSelect
+          aria-label="Status"
+          options={STATUS_OPTIONS}
+          values={currentStatuses}
+          summary={statusSummary(currentStatuses)}
+          emptyLabel="All"
+          onChange={(values) =>
+            navigate({
+              ...filters,
+              statuses: values.filter((v): v is OrderStatus =>
+                ORDER_STATUSES.includes(v as OrderStatus),
+              ),
+            })
+          }
         />
       </label>
 
@@ -171,7 +107,7 @@ export function AdminOrdersFilters({
           Location
         </span>
         <select
-          className={selectClass}
+          className={adminSelectTriggerClassName}
           value={currentLocation}
           onChange={(e) => {
             const value = e.target.value as string | "all" | "__none__";
@@ -194,7 +130,7 @@ export function AdminOrdersFilters({
           Plant
         </span>
         <select
-          className={selectClass}
+          className={adminSelectTriggerClassName}
           value={currentPlant}
           onChange={(e) => {
             navigate({ ...filters, plant: e.target.value });
@@ -217,7 +153,7 @@ export function AdminOrdersFilters({
         </span>
         <input
           type="date"
-          className={selectClass}
+          className={adminSelectTriggerClassName}
           value={currentDateFrom ?? ""}
           onChange={(e) =>
             navigate({ ...filters, dateFrom: e.target.value || undefined })
@@ -231,7 +167,7 @@ export function AdminOrdersFilters({
         </span>
         <input
           type="date"
-          className={selectClass}
+          className={adminSelectTriggerClassName}
           value={currentDateTo ?? ""}
           onChange={(e) => navigate({ ...filters, dateTo: e.target.value || undefined })}
         />
