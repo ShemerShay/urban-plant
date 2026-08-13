@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
+import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { formatPrice } from "@/lib/mockPlants";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
@@ -441,7 +442,7 @@ function PlantFieldsForm({
             type="checkbox"
             checked={draft.petFriendly}
             onChange={(e) => patch({ petFriendly: e.target.checked })}
-            className="h-4 w-4 rounded border-slate-300 text-emerald-700"
+            className={adminCheckboxClassName}
           />
           <span className="text-sm text-slate-800">Pet friendly</span>
         </label>
