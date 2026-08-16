@@ -2,6 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  MAX_PLANT_IMAGE_SOURCE_BYTES,
+  MAX_PLANT_IMAGE_SOURCE_MB,
+  MAX_PLANT_IMAGE_UPLOAD_BYTES,
+  PLANT_IMAGE_PROCESSED_TOO_LARGE_MESSAGE,
+  PLANT_IMAGE_SOURCE_TOO_LARGE_MESSAGE,
+  PLANT_IMAGE_UPLOAD_FAILED_MESSAGE,
+  PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE,
+  resolvePlantImageMime,
+} from "@/lib/plantImageUpload";
+import { preparePlantImageForUpload } from "@/lib/preparePlantImageForUpload";
 import { routes } from "@/lib/routes";
 
 type LibraryImage = {
@@ -37,9 +48,9 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
 
   const uploadFiles = useCallback(
     async (files: FileList | File[]) => {
-      const list = Array.from(files).filter((file) => file.type.startsWith("image/"));
+      const list = Array.from(files);
       if (list.length === 0) {
-        setUploadError("Please choose an image file (JPEG, PNG, WebP, or GIF).");
+        setUploadError(PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE);
         return;
       }
 
@@ -49,21 +60,40 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
 
       try {
         for (const file of list) {
+          const mime = resolvePlantImageMime(file.type, file.name);
+          if (!mime) {
+            throw new Error(PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE);
+          }
+          if (file.size > MAX_PLANT_IMAGE_SOURCE_BYTES) {
+            throw new Error(PLANT_IMAGE_SOURCE_TOO_LARGE_MESSAGE);
+          }
+
+          const prepared = await preparePlantImageForUpload(file, mime);
+          if (prepared.size > MAX_PLANT_IMAGE_UPLOAD_BYTES) {
+            throw new Error(PLANT_IMAGE_PROCESSED_TOO_LARGE_MESSAGE);
+          }
+
           const body = new FormData();
-          body.append("file", file);
+          body.append("file", prepared);
           const res = await fetch(routes.api.plantImages(), { method: "POST", body });
-          const data = (await res.json().catch(() => ({}))) as {
+          const data = (await res.json().catch(() => null)) as {
             image?: LibraryImage;
             error?: string;
-          };
-          if (!res.ok || !data.image?.url) {
-            throw new Error(data.error ?? `Could not upload ${file.name}`);
+          } | null;
+          if (!res.ok || !data?.image?.url) {
+            if (typeof data?.error === "string" && data.error.trim()) {
+              throw new Error(data.error);
+            }
+            throw new Error(PLANT_IMAGE_UPLOAD_FAILED_MESSAGE);
           }
           uploaded.push(data.image.url);
         }
         onChange(mergeUnique(images, uploaded));
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Upload failed";
+        const message =
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : PLANT_IMAGE_UPLOAD_FAILED_MESSAGE;
         setUploadError(message);
         if (uploaded.length > 0) {
           onChange(mergeUnique(images, uploaded));
@@ -176,7 +206,10 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
         <p className="text-sm font-medium text-slate-800">
           {isUploading ? "Uploading…" : "Drag images here"}
         </p>
-        <p className="mt-1 text-xs text-slate-500">JPEG, PNG, WebP, or GIF · up to 5 MB each</p>
+        <p className="mt-1 text-xs text-slate-500">
+          JPEG, PNG, WebP, or GIF · photos up to {MAX_PLANT_IMAGE_SOURCE_MB} MB are resized
+          automatically
+        </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <button
             type="button"

@@ -10,12 +10,8 @@ import { PlantInventoryBadge } from "@/components/plant/PlantInventoryBadge";
 import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
 import { PlantProductAbout } from "@/components/plant/PlantProductAbout";
 import { PlantProductInfoGrid } from "@/components/plant/PlantProductInfoGrid";
-import { getLocationById } from "@/lib/mockLocations";
 import { formatBuyCta } from "@/lib/mockPlants";
-import { getPlantById } from "@/lib/plantCatalog";
-import { getOfferById } from "@/lib/offerStorage";
-import { getPocketById } from "@/lib/pocketStorage";
-import { getPosSpotBySpotSlugEnsuringNextVisit } from "@/lib/posSpotStorage";
+import { getPosLandingDetails } from "@/lib/posLandingRead";
 import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
 import {
   POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
@@ -63,23 +59,17 @@ interface PosPageProps {
 
 export default async function PosPage({ params }: PosPageProps) {
   const { spotSlug } = await params;
-  const ensured = await getPosSpotBySpotSlugEnsuringNextVisit(spotSlug);
-  if (!ensured) notFound();
 
   // Expire stale holds before any status-derived UI (CTA, message, badge, gate).
-  const resolved = await getPosSpotForCustomerPurchase(ensured.spotSlug);
+  const resolved = await getPosSpotForCustomerPurchase(spotSlug);
   if (!resolved) notFound();
   const { posSpot, purchaseEnabled } = resolved;
 
-  const offer = await getOfferById(posSpot.currentOfferId);
+  const { offer, plant, partner: knownPartner, pocket } = await getPosLandingDetails(posSpot);
   if (!offer || offer.status !== "active") notFound();
-
-  const plant = await getPlantById(offer.productId);
   if (!plant) notFound();
 
-  const knownPartner = await getLocationById(posSpot.partnerLocationId);
   const partnerName = knownPartner?.name?.trim() ?? "";
-  const pocket = posSpot.pocketId ? await getPocketById(posSpot.pocketId) : undefined;
   const availableCtaText = formatBuyCta(offer.consumerPrice, plant.currency);
   const ctaText = productPageCtaText(posSpot.status, availableCtaText);
   const heldMessage = shouldShowHeldForPaymentProductMessage(posSpot.status)

@@ -34,7 +34,7 @@ function defaultOffers(): Offer[] {
   }));
 }
 
-type OfferRow = {
+export type OfferRow = {
   id: string;
   product_id: string;
   consumer_price: string | number;
@@ -42,7 +42,7 @@ type OfferRow = {
   created_at: string | Date;
 };
 
-function mapOfferRow(row: OfferRow): Offer {
+export function mapOfferRow(row: OfferRow): Offer {
   const status: OfferStatus = row.status === "inactive" ? "inactive" : "active";
   const createdAt = toIsoString(row.created_at) ?? SEED_CREATED_AT;
 
