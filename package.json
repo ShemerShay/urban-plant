@@ -49,6 +49,7 @@
     "react-dom": "19.2.4",
     "react-qr-code": "^2.0.21",
     "server-only": "^0.0.1",
+    "sharp": "^0.34.5",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -2,6 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  MAX_PLANT_IMAGE_UPLOAD_BYTES,
+  PLANT_IMAGE_PROCESSED_TOO_LARGE_MESSAGE,
+  PLANT_IMAGE_UNPROCESSABLE_MESSAGE,
+  PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE,
+  PlantImageUploadError,
+  resolvePlantImageMime,
+} from "@/lib/plantImageUpload";
 import { routes } from "@/lib/routes";
 
 /** Public URL prefix for the plant image library (filesystem folder name matches). */
@@ -9,7 +17,6 @@ export const PLANT_LIBRARY_PUBLIC_PREFIX = "/plant-library";
 
 const LIBRARY_DIR = path.join(process.cwd(), "public", "plant-library");
 
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": ".jpg",
   "image/png": ".png",
@@ -18,8 +25,6 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 
 const SAFE_FILENAME = /^[a-z0-9][a-z0-9-]*\.(jpg|jpeg|png|webp|gif)$/i;
-
-export const MAX_PLANT_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export type PlantLibraryImage = {
   url: string;
@@ -100,19 +105,29 @@ export async function savePlantLibraryImage(
   mimeType: string,
   originalName: string,
 ): Promise<PlantLibraryImage> {
-  if (!ALLOWED_MIME.has(mimeType)) {
-    throw new Error("File must be JPEG, PNG, WebP, or GIF");
+  const resolvedMime = resolvePlantImageMime(mimeType, originalName);
+  if (!resolvedMime) {
+    throw new PlantImageUploadError(PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE);
   }
-  if (buffer.byteLength > MAX_PLANT_IMAGE_BYTES) {
-    throw new Error("Image must be 5 MB or smaller");
+  if (buffer.byteLength > MAX_PLANT_IMAGE_UPLOAD_BYTES) {
+    throw new PlantImageUploadError(PLANT_IMAGE_PROCESSED_TOO_LARGE_MESSAGE);
   }
 
-  const filename = buildFilename(mimeType, originalName);
+  let optimized;
+  try {
+    const { optimizePlantImage } = await import("@/lib/optimizePlantImage");
+    optimized = await optimizePlantImage(buffer, resolvedMime);
+  } catch {
+    throw new PlantImageUploadError(PLANT_IMAGE_UNPROCESSABLE_MESSAGE);
+  }
+  const storedBuffer = optimized.data;
+  const storedMime = optimized.mimeType;
+  const filename = buildFilename(storedMime, originalName);
 
   if (useDatabaseStorage()) {
     try {
       const { savePlantLibraryImageToDb } = await import("@/lib/plantImageDbStorage");
-      return await savePlantLibraryImageToDb(buffer, mimeType, filename);
+      return await savePlantLibraryImageToDb(storedBuffer, storedMime, filename);
     } catch (error) {
       if (isMissingPlantLibraryTableError(error)) {
         throw new Error(
@@ -125,7 +140,7 @@ export async function savePlantLibraryImage(
 
   await ensurePlantLibraryDir();
   const filePath = path.join(LIBRARY_DIR, filename);
-  await writeFile(filePath, buffer);
+  await writeFile(filePath, storedBuffer);
 
   return {
     url: routes.plantLibrary(filename),

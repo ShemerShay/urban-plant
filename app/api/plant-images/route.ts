@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { listPlantLibraryImages, savePlantLibraryImage } from "@/lib/plantImageStorage";
+import {
+  MAX_PLANT_IMAGE_UPLOAD_BYTES,
+  PLANT_IMAGE_PROCESSED_TOO_LARGE_MESSAGE,
+  PLANT_IMAGE_UNPROCESSABLE_MESSAGE,
+  PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE,
+  PlantImageUploadError,
+} from "@/lib/plantImageUpload";
 import { readPlants } from "@/lib/plantStorage";
 
 function isLocalLibraryUrl(url: string): boolean {
   return url.startsWith("/plant-library/");
+}
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
 }
 
 export async function GET() {
@@ -32,16 +43,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_PLANT_IMAGE_UPLOAD_BYTES + 65_536) {
+    return jsonError(PLANT_IMAGE_PROCESSED_TOO_LARGE_MESSAGE, 400);
+  }
+
   let formData: FormData;
   try {
     formData = await request.formData();
   } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+    return jsonError(PLANT_IMAGE_PROCESSED_TOO_LARGE_MESSAGE, 400);
   }
 
   const file = formData.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: 'Missing "file" field' }, { status: 400 });
+    return jsonError(PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE, 400);
   }
 
   const mimeType = file.type || "application/octet-stream";
@@ -51,8 +67,9 @@ export async function POST(request: NextRequest) {
     const saved = await savePlantLibraryImage(buffer, mimeType, file.name || "plant");
     return NextResponse.json({ image: saved }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Upload failed";
-    const status = message.includes("must be") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    if (error instanceof PlantImageUploadError) {
+      return jsonError(error.message, 400);
+    }
+    return jsonError(PLANT_IMAGE_UNPROCESSABLE_MESSAGE, 500);
   }
 }
