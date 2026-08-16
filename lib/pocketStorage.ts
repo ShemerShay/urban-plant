@@ -3,7 +3,7 @@ import { toIsoString } from "@/lib/storageUtils";
 
 import type { Pocket } from "./pocketTypes";
 
-type PocketRow = {
+export type PocketRow = {
   id: string;
   partner_location_id: string;
   name: string;
@@ -40,7 +40,7 @@ export function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-function mapPocketRow(row: PocketRow): Pocket {
+export function mapPocketRow(row: PocketRow): Pocket {
   return {
     id: row.id,
     partnerLocationId: row.partner_location_id,

@@ -5,16 +5,12 @@ import { TrackCheckoutStarted } from "@/components/analytics/TrackCheckoutStarte
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
 import { formatPrice } from "@/lib/mockPlants";
-import { getPlantById } from "@/lib/plantCatalog";
-import { getOfferById } from "@/lib/offerStorage";
-import { getLocationById } from "@/lib/mockLocations";
 import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
 import { getAwaitingPaymentAttemptForResume } from "@/lib/paymentAttemptStorage";
-import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
-import { getPocketById } from "@/lib/pocketStorage";
-import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
+import { getPosLandingDetails } from "@/lib/posLandingRead";
+import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
 import { posSpotPath } from "@/lib/routes";
 
 interface PosCheckoutPageProps {
@@ -37,21 +33,15 @@ export default async function PosCheckoutPage({
 }: PosCheckoutPageProps) {
   const { spotSlug } = await params;
   const sp = await searchParams;
-  let posSpot = await getPosSpotBySpotSlug(spotSlug);
-  if (!posSpot) notFound();
+  const resolved = await getPosSpotForCustomerPurchase(spotSlug);
+  if (!resolved) notFound();
+  const { posSpot } = resolved;
 
-  await expireStalePaymentHold(posSpot.id);
-  posSpot = (await getPosSpotBySpotSlug(spotSlug)) ?? posSpot;
-
-  const offer = await getOfferById(posSpot.currentOfferId);
+  const { offer, plant, partner, pocket } = await getPosLandingDetails(posSpot);
   if (!offer || offer.status !== "active") notFound();
-
-  const plant = await getPlantById(offer.productId);
   if (!plant) notFound();
 
-  const partner = await getLocationById(posSpot.partnerLocationId);
   const pickupDisabled = Boolean(partner?.pickupDisabled);
-  const pocket = posSpot.pocketId ? await getPocketById(posSpot.pocketId) : undefined;
   const partnerName = partner?.name?.trim() || undefined;
   const analyticsContext = {
     pos_spot_id: posSpot.id,

@@ -23,7 +23,8 @@ assert.match(helpers, /NODE_ENV === ["']production["']/);
 
 const posPage = read("app/pos/[spotSlug]/page.tsx");
 assert.match(posPage, /TrackPosScan/);
-assert.match(posPage, /getPocketById/);
+assert.match(posPage, /getPosLandingDetails/);
+assert.match(posPage, /pocket_name/);
 
 const checkoutPage = read("app/checkout/pos/[spotSlug]/page.tsx");
 assert.match(checkoutPage, /TrackCheckoutStarted/);

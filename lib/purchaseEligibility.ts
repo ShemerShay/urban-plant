@@ -3,15 +3,15 @@
  * Lazily expires abandoned held_for_payment holds (17 minutes) before checking.
  */
 
-import { expireStalePaymentHoldBySpotSlug } from "@/lib/paymentHoldExpiry";
+import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { isPosSpotPurchasable } from "@/lib/posSpotHold";
 import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import type { PosSpot } from "@/lib/posSpotTypes";
 
 /**
- * Expire any stale hold for this slug, then return one fresh POS row + purchase gate.
- * Callers must derive CTA / messages / badges from the returned `posSpot.status`
- * (do not keep a pre-expiry snapshot).
+ * Return one POS row + purchase gate. Expiry runs only when the loaded row is
+ * `held_for_payment` (available / sold / inactive are already a no-op for expiry).
+ * Callers must derive CTA / messages / badges from the returned `posSpot.status`.
  */
 export async function getPosSpotForCustomerPurchase(
   spotSlug: string,
@@ -19,9 +19,18 @@ export async function getPosSpotForCustomerPurchase(
   const slug = spotSlug.trim();
   if (!slug) return undefined;
 
-  await expireStalePaymentHoldBySpotSlug(slug);
-  const posSpot = await getPosSpotBySpotSlug(slug);
+  let posSpot = await getPosSpotBySpotSlug(slug);
   if (!posSpot) return undefined;
+
+  if (posSpot.status === "held_for_payment") {
+    const expiry = await expireStalePaymentHold(posSpot.id);
+    // `not_stale` means the CTE did not UPDATE pos_spots. Other results may have
+    // changed status (released, sold, or concurrent release) — re-read then.
+    const holdUnchanged = !expiry.expired && expiry.reason === "not_stale";
+    if (!holdUnchanged) {
+      posSpot = (await getPosSpotBySpotSlug(slug)) ?? posSpot;
+    }
+  }
 
   return {
     posSpot,

@@ -7,7 +7,7 @@ import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
 
-type PlantRow = {
+export type PlantRow = {
   id: string;
   name: string;
   family: string | null;
@@ -36,7 +36,7 @@ function parseJsonStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function mapPlantRow(row: PlantRow): PlantProduct {
+export function mapPlantRow(row: PlantRow): PlantProduct {
   const supplierPrice = parseNumeric(row.supplier_price);
   const createdAt = toIsoString(row.created_at);
   const family =

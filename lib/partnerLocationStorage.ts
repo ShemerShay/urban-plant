@@ -15,7 +15,7 @@ export interface PartnerLocation {
   createdAt?: string;
 }
 
-type PartnerLocationRow = {
+export type PartnerLocationRow = {
   id: string;
   name: string;
   address: string;
@@ -25,7 +25,7 @@ type PartnerLocationRow = {
   created_at: string | Date;
 };
 
-function mapPartnerLocationRow(row: PartnerLocationRow): PartnerLocation {
+export function mapPartnerLocationRow(row: PartnerLocationRow): PartnerLocation {
   const createdAt = toIsoString(row.created_at);
   return {
     id: row.id,
