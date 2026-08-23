@@ -31,6 +31,18 @@ function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** When the body omits a Hebrew field, keep the existing catalog value on update. */
+export function localizedFieldFromBody(
+  body: Record<string, unknown>,
+  existing: string | undefined,
+  camel: string,
+  snake: string,
+): string | undefined {
+  if (!(camel in body) && !(snake in body)) return existing;
+  const value = cleanString(body[camel] ?? body[snake]);
+  return value || undefined;
+}
+
 function parseStringArray(value: unknown, field: string): string[] | null {
   if (Array.isArray(value)) {
     const items = value
@@ -79,9 +91,13 @@ export function parsePlantBody(
   }
 
   const name = cleanString(body.name);
+  const nameHe = cleanString(body.nameHe ?? body.name_he);
   const subtitle = cleanString(body.subtitle);
+  const subtitleHe = cleanString(body.subtitleHe ?? body.subtitle_he);
   const description = cleanString(body.description);
+  const descriptionHe = cleanString(body.descriptionHe ?? body.description_he);
   const water = cleanString(body.water);
+  const waterHe = cleanString(body.waterHe ?? body.water_he);
   const location = cleanString(body.location);
   const family = cleanString(body.family);
   const supplierName = cleanString(body.supplierName);
@@ -176,7 +192,11 @@ export function parsePlantBody(
     location,
     petFriendly,
     careInstructions,
+    ...(nameHe ? { nameHe } : {}),
     ...(family ? { family } : {}),
+    ...(subtitleHe ? { subtitleHe } : {}),
+    ...(descriptionHe ? { descriptionHe } : {}),
+    ...(waterHe ? { waterHe } : {}),
     ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),

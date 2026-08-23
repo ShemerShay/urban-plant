@@ -66,6 +66,47 @@ if (!updated || updated.supplierPrice !== 99) {
 }
 console.log("OK: updatePlant");
 
+const withHe = await updatePlant(testId, {
+  ...updated,
+  nameHe: "שם בדיקה",
+});
+if (
+  !withHe ||
+  withHe.name !== "Verify Plant Updated" ||
+  withHe.subtitle !== updated.subtitle ||
+  withHe.description !== updated.description ||
+  withHe.water !== updated.water ||
+  withHe.nameHe !== "שם בדיקה"
+) {
+  console.error("FAIL: Hebrew save changed English or did not persist", withHe);
+  process.exit(1);
+}
+console.log("OK: Hebrew save left English fields unchanged");
+
+const { localizedPlantText } = await import("../lib/plantDisplay.ts");
+const { localizedFieldFromBody } = await import("../lib/plantValidation.ts");
+if (localizedPlantText("he", "Fiddle Leaf Fig", undefined) !== "Fiddle Leaf Fig") {
+  console.error("FAIL: missing Hebrew should fall back to English");
+  process.exit(1);
+}
+if (localizedPlantText("he", "Fiddle Leaf Fig", "פיקוס כינורי מדיום") !== "פיקוס כינורי מדיום") {
+  console.error("FAIL: Hebrew locale should use non-empty Hebrew");
+  process.exit(1);
+}
+if (localizedPlantText("en", "Fiddle Leaf Fig", "פיקוס כינורי מדיום") !== "Fiddle Leaf Fig") {
+  console.error("FAIL: English locale should keep English");
+  process.exit(1);
+}
+if (localizedFieldFromBody({}, "דרצנה", "nameHe", "name_he") !== "דרצנה") {
+  console.error("FAIL: omitted Hebrew field must keep existing value");
+  process.exit(1);
+}
+if (localizedFieldFromBody({ nameHe: "" }, "דרצנה", "nameHe", "name_he") !== undefined) {
+  console.error("FAIL: empty Hebrew field should clear");
+  process.exit(1);
+}
+console.log("OK: localizedPlantText fallback");
+
 const { sql } = await import("../lib/db.ts");
 await sql`DELETE FROM plants WHERE id = ${testId}`;
 const gone = await getPlantByIdAsync(testId);

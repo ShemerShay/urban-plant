@@ -1,6 +1,9 @@
+"use client";
+
 import { StreetSearchSelect } from "@/components/checkout/StreetSearchSelect";
+import { useLocale } from "@/components/locale/LocaleProvider";
 import type { CheckoutFieldKey } from "@/lib/checkoutValidation";
-import { DELIVERY_ADDRESS_PILOT_HINT, TEL_AVIV_CITY } from "@/lib/deliveryAddress";
+import { t } from "@/lib/messages";
 
 const baseInputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
@@ -30,13 +33,16 @@ export function DeliveryAddressFields({
   onChange,
   onFieldBlur,
 }: DeliveryAddressFieldsProps) {
+  const locale = useLocale();
   return (
     <fieldset className="space-y-4">
-      <legend className="text-sm font-semibold text-slate-800">Delivery address</legend>
+      <legend className="text-sm font-semibold text-slate-800">
+        {t(locale, "checkout.address.legend")}
+      </legend>
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="deliveryCity">
-          City
+          {t(locale, "checkout.address.city")}
         </label>
         <input
           id="deliveryCity"
@@ -44,18 +50,18 @@ export function DeliveryAddressFields({
           type="text"
           readOnly
           className={`${baseInputClass} cursor-default bg-slate-50 text-slate-700`}
-          value={TEL_AVIV_CITY}
+          value={t(locale, "checkout.city.telAviv")}
           aria-readonly="true"
           aria-describedby="deliveryCity-hint"
         />
         <p id="deliveryCity-hint" className="text-xs leading-relaxed text-slate-600">
-          {DELIVERY_ADDRESS_PILOT_HINT}
+          {t(locale, "checkout.address.pilotHint")}
         </p>
       </div>
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="deliveryStreet">
-          Street
+          {t(locale, "checkout.address.street")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
             *
@@ -72,7 +78,7 @@ export function DeliveryAddressFields({
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="deliveryHouseNumber">
-          House number
+          {t(locale, "checkout.address.houseNumber")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
             *
@@ -93,7 +99,7 @@ export function DeliveryAddressFields({
           value={values.deliveryHouseNumber}
           onChange={(event) => onChange("deliveryHouseNumber", event.target.value)}
           onBlur={() => onFieldBlur?.("deliveryHouseNumber")}
-          placeholder="26b"
+          placeholder={t(locale, "checkout.placeholder.houseNumber")}
         />
         {errors.deliveryHouseNumber ? (
           <p id="deliveryHouseNumber-error" className="text-xs text-red-700">
@@ -104,7 +110,7 @@ export function DeliveryAddressFields({
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="apartmentOrNotes">
-          Apartment / floor / notes (optional)
+          {t(locale, "checkout.address.notes")}
         </label>
         <textarea
           id="apartmentOrNotes"
@@ -113,7 +119,7 @@ export function DeliveryAddressFields({
           value={values.apartmentOrNotes}
           onChange={(event) => onChange("apartmentOrNotes", event.target.value)}
           rows={3}
-          placeholder="Door code, floor, delivery details..."
+          placeholder={t(locale, "checkout.placeholder.notes")}
         />
       </div>
     </fieldset>

@@ -14,12 +14,14 @@ function read(rel: string): string {
 const page = read("app/admin/analytics/page.tsx");
 assert.match(page, /loadBusinessAnalytics/);
 assert.match(page, /parseAnalyticsRange/);
+assert.match(page, /getLocale/);
 
 const dash = read("components/admin/AdminAnalyticsDashboard.tsx");
-assert.match(dash, /Total scans/i);
-assert.match(dash, /Unique scanners/i);
-assert.match(dash, /Purchases/);
-assert.match(dash, /Scan → Checkout/);
+assert.match(dash, /analyticsRangeLabel/);
+assert.match(dash, /admin\.analytics\.totalScans/);
+assert.match(dash, /admin\.analytics\.uniqueScanners/);
+assert.match(dash, /admin\.analytics\.purchases/);
+assert.match(dash, /admin\.analytics\.scanToCheckout/);
 assert.doesNotMatch(dash, /POSTHOG_PERSONAL_API_KEY/);
 assert.doesNotMatch(dash, /purchase_completed/);
 
@@ -41,7 +43,7 @@ const routes = read("lib/routes.ts");
 assert.match(routes, /analytics:\s*\(\)\s*=>\s*"\/admin\/analytics"/);
 
 const adminIndex = read("app/admin/page.tsx");
-assert.match(adminIndex, /Analytics/);
+assert.match(adminIndex, /admin\.home\.analytics/);
 
 const envExample = read(".env.example");
 assert.match(envExample, /POSTHOG_PERSONAL_API_KEY/);

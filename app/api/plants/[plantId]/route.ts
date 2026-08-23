@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getPlantByIdAsync, updatePlant, deletePlant } from "@/lib/plantStorage";
 import { plantToWire, wireBodyToParseInput } from "@/lib/plantWire";
-import { parsePlantBody } from "@/lib/plantValidation";
+import { localizedFieldFromBody, parsePlantBody } from "@/lib/plantValidation";
 
 interface RouteParams {
   params: Promise<{ plantId: string }>;
@@ -39,6 +39,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const plant = await updatePlant(plantId, {
       ...parsed.plant,
+      nameHe: localizedFieldFromBody(record, existing.nameHe, "nameHe", "name_he"),
+      subtitleHe: localizedFieldFromBody(
+        record,
+        existing.subtitleHe,
+        "subtitleHe",
+        "subtitle_he",
+      ),
+      descriptionHe: localizedFieldFromBody(
+        record,
+        existing.descriptionHe,
+        "descriptionHe",
+        "description_he",
+      ),
+      waterHe: localizedFieldFromBody(record, existing.waterHe, "waterHe", "water_he"),
       ...(existing.createdAt ? { createdAt: existing.createdAt } : {}),
     });
     if (!plant) {

@@ -1,5 +1,10 @@
+"use client";
+
 import type { ReactNode } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { careLabel, lightLabel, sizeLabel } from "@/lib/displayLabels";
+import { t } from "@/lib/messages";
 import { PlantProduct } from "@/lib/types";
 
 interface PlantProductInfoGridProps {
@@ -14,32 +19,6 @@ const PANEL_CLASS =
   "rounded-[28px] bg-[#7a8f7c] p-6 shadow-none outline-none sm:p-8";
 
 const QUADRANT_ICON_SIZE = 36;
-
-function careDisplay(difficulty: PlantProduct["difficulty"]): string {
-  switch (difficulty) {
-    case "Easy":
-      return "Easy care";
-    case "Moderate":
-      return "Moderate care";
-    case "Advanced":
-      return "Attentive care";
-  }
-}
-
-function sizeDisplay(averageSize: PlantProduct["averageSize"]): string {
-  switch (averageSize) {
-    case "small":
-      return "Small";
-    case "medium":
-      return "Medium";
-    case "large":
-      return "Large";
-    case "x-large":
-      return "X-Large";
-    default:
-      return "";
-  }
-}
 
 function IconSun() {
   return (
@@ -154,31 +133,32 @@ export function PlantProductInfoGrid({
   difficulty,
   averageSize,
 }: PlantProductInfoGridProps) {
+  const locale = useLocale();
   return (
-    <section id="plant-info-grid" className={PANEL_CLASS} aria-label="Plant care details">
+    <section id="plant-info-grid" className={PANEL_CLASS} aria-label={t(locale, "plant.info.aria")}>
       <div className="grid grid-cols-2">
         <Quadrant
           icon={<IconSun />}
-          text={light}
-          label="Light"
-          borders="border-b border-r border-white/30"
+          text={lightLabel(locale, light)}
+          label={t(locale, "plant.info.light")}
+          borders="border-b [border-inline-end-width:1px] border-white/30"
         />
         <Quadrant
           icon={<IconWater />}
           text={water}
-          label="Water"
+          label={t(locale, "plant.info.water")}
           borders="border-b border-white/30"
         />
         <Quadrant
           icon={<IconSprout />}
-          text={careDisplay(difficulty)}
-          label="Care level"
-          borders="border-r border-white/30"
+          text={careLabel(locale, difficulty)}
+          label={t(locale, "plant.info.care")}
+          borders="[border-inline-end-width:1px] border-white/30"
         />
         <Quadrant
           icon={<IconRuler />}
-          text={sizeDisplay(averageSize)}
-          label="Size"
+          text={sizeLabel(locale, averageSize)}
+          label={t(locale, "plant.info.size")}
           borders=""
         />
       </div>

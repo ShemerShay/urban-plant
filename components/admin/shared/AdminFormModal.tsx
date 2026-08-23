@@ -2,6 +2,9 @@
 
 import type { ReactNode } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
+
 type AdminFormModalProps = {
   open: boolean;
   title: string;
@@ -21,12 +24,15 @@ export function AdminFormModal({
   children,
   error,
   busy = false,
-  submitLabel = "Save",
-  cancelLabel = "Cancel",
+  submitLabel: submitLabelProp,
+  cancelLabel: cancelLabelProp,
   onSubmit,
   onCancel,
   canSubmit = true,
 }: AdminFormModalProps) {
+  const locale = useLocale();
+  const submitLabel = submitLabelProp ?? t(locale, "admin.shared.save");
+  const cancelLabel = cancelLabelProp ?? t(locale, "admin.shared.cancel");
   if (!open) return null;
 
   return (
@@ -57,7 +63,7 @@ export function AdminFormModal({
             disabled={busy || !canSubmit}
             className="rounded-full bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-60"
           >
-            {busy ? "Saving…" : submitLabel}
+            {busy ? t(locale, "admin.shared.saving") : submitLabel}
           </button>
         </div>
       </div>

@@ -1,5 +1,9 @@
+"use client";
+
 import type { CheckoutFieldKey, CheckoutFormValues } from "@/lib/checkoutValidation";
 import { normalizeIsraeliMobilePhoneInput } from "@/lib/formValidation";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
 
 const baseInputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
@@ -30,11 +34,12 @@ export function CheckoutCustomerFields({
   onChange,
   onFieldBlur,
 }: CheckoutCustomerFieldsProps) {
+  const locale = useLocale();
   return (
     <>
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="fullName">
-          Full name
+          {t(locale, "checkout.field.fullName")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
             *
@@ -53,7 +58,7 @@ export function CheckoutCustomerFields({
           value={values.fullName}
           onChange={(event) => onChange("fullName", event.target.value)}
           onBlur={() => onFieldBlur("fullName")}
-          placeholder="Jane Doe"
+          placeholder={t(locale, "checkout.placeholder.fullName")}
         />
         {errors.fullName ? (
           <p id="fullName-error" className="text-xs text-red-700">
@@ -63,7 +68,7 @@ export function CheckoutCustomerFields({
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="email">
-          Email
+          {t(locale, "checkout.field.email")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
             *
@@ -82,7 +87,7 @@ export function CheckoutCustomerFields({
           value={values.email}
           onChange={(event) => onChange("email", event.target.value)}
           onBlur={() => onFieldBlur("email")}
-          placeholder="jane.doe@example.com"
+          placeholder={t(locale, "checkout.placeholder.email")}
         />
         {errors.email ? (
           <p id="email-error" className="text-xs text-red-700">
@@ -92,7 +97,7 @@ export function CheckoutCustomerFields({
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-700" htmlFor="phone">
-          Phone number
+          {t(locale, "checkout.field.phone")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
             *

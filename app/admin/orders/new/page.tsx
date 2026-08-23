@@ -6,21 +6,26 @@
 import Link from "next/link";
 
 import { AdminNewOrderForm } from "@/components/admin/AdminNewOrderForm";
+import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 
-export default function AdminNewOrderPage() {
+export default async function AdminNewOrderPage() {
+  const locale = await getLocale();
   return (
     <main
       id="admin-new-order-page"
       className="mx-auto min-h-screen w-full max-w-md px-4 py-6 pb-10"
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-emerald-950">New order</h1>
+        <h1 className="text-2xl font-semibold text-emerald-950">
+          {t(locale, "admin.orders.new")}
+        </h1>
         <Link
           href={routes.admin.orders()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          Back to orders
+          {t(locale, "admin.orders.back")}
         </Link>
       </div>
 

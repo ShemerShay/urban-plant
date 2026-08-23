@@ -14,6 +14,8 @@ import {
   parsePlant,
   parseStatuses,
 } from "@/lib/adminOrdersFilterUtils";
+import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
 import { readOrders } from "@/lib/ordersStorage";
 
 function firstParam(v: string | string[] | undefined): string | undefined {
@@ -33,6 +35,7 @@ interface AdminOrdersPageProps {
 }
 
 export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageProps) {
+  const locale = await getLocale();
   const sp = await searchParams;
   const statusFilters = parseStatuses(sp.status);
   const locationFilter = parseLocation(firstParam(sp.location));
@@ -60,7 +63,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
   }
   const locationOptions: FilterOption[] = [];
   if (hasNoLocationOrder) {
-    locationOptions.push({ value: "__none__", label: "No location" });
+    locationOptions.push({ value: "__none__", label: t(locale, "admin.orders.noLocation") });
   }
   const sortedLocIds = [...locationMap.keys()].sort((a, b) =>
     (locationMap.get(a) ?? a).localeCompare(locationMap.get(b) ?? b),
@@ -84,7 +87,9 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
       className="mx-auto min-h-screen w-full max-w-3xl px-4 py-6 pb-10"
     >
       <div className="mb-6 flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-emerald-950">Orders</h1>
+        <h1 className="text-2xl font-semibold text-emerald-950">
+          {t(locale, "admin.orders.title")}
+        </h1>
         <AdminOrdersHeaderMenu filteredOrders={orders} />
       </div>
 
@@ -101,8 +106,8 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
       {orders.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
           {allOrders.length === 0
-            ? "No orders yet."
-            : "No orders match the selected filters."}
+            ? t(locale, "admin.orders.empty")
+            : t(locale, "admin.orders.noMatch")}
         </p>
       ) : (
         <ul className="space-y-4">

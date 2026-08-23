@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 
 import { CustomerDeadEnd } from "@/components/customer/CustomerDeadEnd";
 import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
+import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
 import { getPendingOrderForPaymentResume, getOrderById } from "@/lib/ordersStorage";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
 import { routes } from "@/lib/routes";
@@ -23,6 +25,7 @@ function readParam(raw: string | string[] | undefined): string | null {
  * If old links include orderId+resume, bounce to the same checkout.
  */
 export default async function PaymentFailedPage({ searchParams }: PaymentFailedPageProps) {
+  const locale = await getLocale();
   const sp = await searchParams;
   const orderId = parseOrderIdQueryParam(readParam(sp.orderId));
   const resume = readParam(sp.resume);
@@ -44,14 +47,14 @@ export default async function PaymentFailedPage({ searchParams }: PaymentFailedP
 
   return (
     <CustomerDeadEnd
-      title="Payment wasn’t completed"
-      description="Payment failed. Please try again from the plant page, or contact Urban Plant."
+      title={t(locale, "payment.failed.title")}
+      description={t(locale, "payment.failed.body")}
       whatsAppMessage={
         orderId
-          ? `Hi Urban Plant — my payment didn’t complete for order ${orderId}.`
-          : "Hi Urban Plant — my payment didn’t complete and I need help."
+          ? t(locale, "payment.failed.whatsapp.withOrder", { orderId })
+          : t(locale, "payment.failed.whatsapp.withoutOrder")
       }
-      returnLabel="Return to previous page"
+      returnLabel={t(locale, "recovery.returnPrevious")}
     />
   );
 }

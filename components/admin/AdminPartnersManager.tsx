@@ -4,13 +4,17 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { StreetSearchSelect } from "@/components/checkout/StreetSearchSelect";
+import { useLocale } from "@/components/locale/LocaleProvider";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
+import { displayApiError } from "@/lib/displayLabels";
 import {
   formatDeliveryAddressLine,
+  formatStoredDeliveryAddressDisplay,
   isTelAvivStreet,
   parseStoredDeliveryAddress,
-  TEL_AVIV_CITY,
 } from "@/lib/deliveryAddress";
+import type { Locale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { PartnerPaymentRecord } from "@/lib/partnerPayment";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
@@ -110,6 +114,7 @@ function paymentDraftIsComplete(row: PaymentDraft): boolean {
 
 function draftPaymentsToRecords(
   rows: PaymentDraft[],
+  locale: Locale,
 ): PartnerPaymentRecord[] | { error: string } {
   const records: PartnerPaymentRecord[] = [];
 
@@ -119,13 +124,15 @@ function draftPaymentsToRecords(
 
     if (!paymentDraftIsComplete(row)) {
       return {
-        error: `Payment ${i + 1}: fill when paid, amount, and who, or remove the row.`,
+        error: t(locale, "admin.partners.validation.paymentIncomplete", { n: i + 1 }),
       };
     }
 
     const how_much = Number(row.how_much);
     if (!Number.isFinite(how_much) || how_much < 0) {
-      return { error: `Payment ${i + 1}: amount must be a non-negative number.` };
+      return {
+        error: t(locale, "admin.partners.validation.paymentAmount", { n: i + 1 }),
+      };
     }
 
     records.push({
@@ -138,19 +145,26 @@ function draftPaymentsToRecords(
   return records;
 }
 
-function draftToPayload(draft: PartnerDraft):
+function draftToPayload(
+  draft: PartnerDraft,
+  locale: Locale,
+):
   | { ok: true; payload: Record<string, unknown> }
   | { ok: false; error: string } {
   const normalized = normalizeDraft(draft);
-  const payments = draftPaymentsToRecords(normalized.payments);
+  const payments = draftPaymentsToRecords(normalized.payments, locale);
   if ("error" in payments) return { ok: false, error: payments.error };
 
   const street = normalized.street.trim();
   const houseNumber = normalized.houseNumber.trim();
-  if (!street) return { ok: false, error: "Street is required." };
-  if (!houseNumber) return { ok: false, error: "House number is required." };
+  if (!street) {
+    return { ok: false, error: t(locale, "admin.partners.validation.streetRequired") };
+  }
+  if (!houseNumber) {
+    return { ok: false, error: t(locale, "admin.partners.validation.houseRequired") };
+  }
   if (!isTelAvivStreet(street)) {
-    return { ok: false, error: "Select a street from the Tel Aviv list." };
+    return { ok: false, error: t(locale, "admin.partners.validation.streetTelAviv") };
   }
 
   return {
@@ -231,6 +245,7 @@ function PartnerPaymentsEditor({
   payments: PaymentDraft[] | undefined;
   onChange: (payments: PaymentDraft[]) => void;
 }) {
+  const locale = useLocale();
   const rows = Array.isArray(payments) ? payments : [];
 
   function updateRow(index: number, partial: Partial<PaymentDraft>) {
@@ -244,17 +259,17 @@ function PartnerPaymentsEditor({
   return (
     <div className="sm:col-span-2">
       <div className="flex items-center justify-between gap-2">
-        <span className={labelClassName}>Payments</span>
+        <span className={labelClassName}>{t(locale, "admin.partners.payments")}</span>
         <button
           type="button"
           onClick={() => onChange([...rows, emptyPaymentDraft()])}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
         >
-          + Add payment
+          {t(locale, "admin.partners.addPayment")}
         </button>
       </div>
       {rows.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No payments recorded yet.</p>
+        <p className="mt-2 text-sm text-slate-500">{t(locale, "admin.partners.noPayments")}</p>
       ) : (
         <ul className="mt-2 space-y-3">
           {rows.map((row, index) => (
@@ -264,19 +279,19 @@ function PartnerPaymentsEditor({
             >
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold text-slate-600">
-                  Payment {index + 1}
+                  {t(locale, "admin.partners.paymentN", { n: index + 1 })}
                 </span>
                 <button
                   type="button"
                   onClick={() => removeRow(index)}
                   className="text-xs font-medium text-red-700 hover:underline"
                 >
-                  Remove
+                  {t(locale, "admin.common.remove")}
                 </button>
               </div>
               <div className="grid gap-3">
                 <label className="block">
-                  <span className={labelClassName}>When paid</span>
+                  <span className={labelClassName}>{t(locale, "admin.partners.whenPaid")}</span>
                   <input
                     className={inputClassName}
                     type="date"
@@ -285,7 +300,7 @@ function PartnerPaymentsEditor({
                   />
                 </label>
                 <label className="block">
-                  <span className={labelClassName}>Amount</span>
+                  <span className={labelClassName}>{t(locale, "admin.partners.amount")}</span>
                   <input
                     className={inputClassName}
                     type="number"
@@ -297,12 +312,12 @@ function PartnerPaymentsEditor({
                   />
                 </label>
                 <label className="block">
-                  <span className={labelClassName}>Who</span>
+                  <span className={labelClassName}>{t(locale, "admin.partners.who")}</span>
                   <input
                     className={inputClassName}
                     value={row.who}
                     onChange={(e) => updateRow(index, { who: e.target.value })}
-                    placeholder="Paid to / by"
+                    placeholder={t(locale, "admin.partners.whoPlaceholder")}
                   />
                 </label>
               </div>
@@ -321,6 +336,7 @@ function PartnerFieldsForm({
   draft: PartnerDraft;
   onChange: (next: PartnerDraft) => void;
 }) {
+  const locale = useLocale();
   const safeDraft = normalizeDraft(draft);
 
   function patch(partial: Partial<PartnerDraft>) {
@@ -331,7 +347,7 @@ function PartnerFieldsForm({
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Name</span>
+          <span className={labelClassName}>{t(locale, "admin.common.name")}</span>
           <input
             className={inputClassName}
             value={safeDraft.name}
@@ -340,17 +356,17 @@ function PartnerFieldsForm({
         </label>
         <div className="space-y-4 sm:col-span-2">
           <div>
-            <span className={labelClassName}>City</span>
+            <span className={labelClassName}>{t(locale, "checkout.address.city")}</span>
             <input
               className={`${inputClassName} cursor-default bg-slate-50 text-slate-700`}
-              value={TEL_AVIV_CITY}
+              value={t(locale, "checkout.city.telAviv")}
               readOnly
               aria-readonly="true"
             />
           </div>
           <div>
             <label className={labelClassName} htmlFor="partner-street">
-              Street
+              {t(locale, "checkout.address.street")}
             </label>
             <div className="mt-1">
               <StreetSearchSelect
@@ -361,7 +377,7 @@ function PartnerFieldsForm({
             </div>
           </div>
           <label className="block">
-            <span className={labelClassName}>House number</span>
+            <span className={labelClassName}>{t(locale, "checkout.address.houseNumber")}</span>
             <input
               className={inputClassName}
               value={safeDraft.houseNumber}
@@ -372,12 +388,12 @@ function PartnerFieldsForm({
           </label>
         </div>
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Type</span>
+          <span className={labelClassName}>{t(locale, "admin.partners.type")}</span>
           <input
             className={inputClassName}
             value={safeDraft.type}
             onChange={(e) => patch({ type: e.target.value })}
-            placeholder="Cafe"
+            placeholder={t(locale, "admin.partners.typePlaceholder")}
           />
         </label>
         <label className="flex items-start gap-3 sm:col-span-2">
@@ -388,9 +404,9 @@ function PartnerFieldsForm({
             onChange={(e) => patch({ pickupDisabled: e.target.checked })}
           />
           <span>
-            <span className={labelClassName}>Disable pickup at checkout</span>
+            <span className={labelClassName}>{t(locale, "admin.partners.disablePickup")}</span>
             <span className="mt-1 block text-sm text-slate-600">
-              When enabled, customers can only choose delivery for POS spots at this partner.
+              {t(locale, "admin.partners.disablePickupHint")}
             </span>
           </span>
         </label>
@@ -408,31 +424,38 @@ function PartnerDetailView({
 }: {
   partner: PartnerLocation;
 }) {
+  const locale = useLocale();
   const payments = Array.isArray(partner.payments) ? partner.payments : [];
 
   return (
     <div>
       <dl className="mt-4 grid gap-2 text-sm">
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Name</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.common.name")}</dt>
           <dd className="text-slate-900">{partner.name}</dd>
         </div>
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Address</dt>
-          <dd className="text-slate-900">{partner.address}</dd>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.common.address")}</dt>
+          <dd className="text-slate-900">
+            {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+          </dd>
         </div>
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Type</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.partners.type")}</dt>
           <dd className="text-slate-900">{partner.type}</dd>
         </div>
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Pickup at checkout</dt>
+          <dt className="font-medium text-slate-500">
+            {t(locale, "admin.partners.pickupAtCheckout")}
+          </dt>
           <dd className="text-slate-900">
-            {partner.pickupDisabled ? "Disabled (delivery only)" : "Enabled"}
+            {partner.pickupDisabled
+              ? t(locale, "admin.partners.pickupDisabled")
+              : t(locale, "admin.partners.pickupEnabled")}
           </dd>
         </div>
         <div>
-          <dt className="font-medium text-slate-500">Payments</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.partners.payments")}</dt>
           <dd className="mt-1">
             {payments.length > 0 ? (
               <ul className="space-y-2">
@@ -443,15 +466,21 @@ function PartnerDetailView({
                   >
                     <dl className="grid gap-1.5">
                       <div className="flex flex-wrap gap-x-2">
-                        <dt className="font-medium text-slate-500">When paid</dt>
+                        <dt className="font-medium text-slate-500">
+                          {t(locale, "admin.partners.whenPaid")}
+                        </dt>
                         <dd className="text-slate-900">{payment.when_paid}</dd>
                       </div>
                       <div className="flex flex-wrap gap-x-2">
-                        <dt className="font-medium text-slate-500">Amount</dt>
+                        <dt className="font-medium text-slate-500">
+                          {t(locale, "admin.partners.amount")}
+                        </dt>
                         <dd className="text-slate-900">{payment.how_much}</dd>
                       </div>
                       <div className="flex flex-wrap gap-x-2">
-                        <dt className="font-medium text-slate-500">Who</dt>
+                        <dt className="font-medium text-slate-500">
+                          {t(locale, "admin.partners.who")}
+                        </dt>
                         <dd className="text-slate-900">{payment.who}</dd>
                       </div>
                     </dl>
@@ -459,13 +488,13 @@ function PartnerDetailView({
                 ))}
               </ul>
             ) : (
-              <span className="text-slate-900">None</span>
+              <span className="text-slate-900">{t(locale, "admin.common.none")}</span>
             )}
           </dd>
         </div>
         {partner.createdAt ? (
           <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Created at</dt>
+            <dt className="font-medium text-slate-500">{t(locale, "admin.common.createdAt")}</dt>
             <dd className="font-mono text-xs text-slate-900">{partner.createdAt}</dd>
           </div>
         ) : null}
@@ -489,6 +518,7 @@ function AdminPartnerCard({
   onCancelEdit: () => void;
   onSaved: (partner: PartnerLocation) => void;
 }) {
+  const locale = useLocale();
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState(() => partnerToDraft(partner));
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -504,7 +534,7 @@ function AdminPartnerCard({
   }, [partner, isEditing]);
 
   async function handleSave() {
-    const result = draftToPayload(draft);
+    const result = draftToPayload(draft, locale);
     if (!result.ok) {
       setSaveError(result.error);
       return;
@@ -520,16 +550,23 @@ function AdminPartnerCard({
       });
       const data = (await res.json().catch(() => ({}))) as PartnersApiResponse;
       if (!res.ok) {
-        setSaveError(data.error ?? "Could not save partner");
+        setSaveError(displayApiError(locale, data.error, "admin.partners.saveFailed"));
         return;
       }
       if (data.partner) onSaved(data.partner);
     } catch {
-      setSaveError("Network error. Try again.");
+      setSaveError(t(locale, "common.networkError"));
     } finally {
       setIsSaving(false);
     }
   }
+
+  const spotCountLabel =
+    spots.length === 1
+      ? t(locale, "admin.partners.posSpotCountOne")
+      : spots.length > 1
+        ? t(locale, "admin.partners.posSpotCountMany", { count: spots.length })
+        : "";
 
   return (
     <article className="overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]" id="partner-card">
@@ -544,12 +581,12 @@ function AdminPartnerCard({
             <span className="block truncate text-base font-semibold text-emerald-950">
               {partner.name}
             </span>
-            <span className="mt-0.5 block truncate text-sm text-slate-600">{partner.address}</span>
+            <span className="mt-0.5 block truncate text-sm text-slate-600">
+              {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+            </span>
             <span className="mt-1 block truncate text-xs text-slate-500">
               {partner.type}
-              {spots.length > 0
-                ? ` · ${spots.length} POS spot${spots.length === 1 ? "" : "s"}`
-                : ""}
+              {spotCountLabel ? ` · ${spotCountLabel}` : ""}
             </span>
           </span>
           <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={isOpen} />
@@ -561,7 +598,7 @@ function AdminPartnerCard({
               className="flex items-center px-3 text-xs font-semibold text-emerald-700 transition hover:bg-slate-50"
               onClick={(e) => e.stopPropagation()}
             >
-              Manage
+              {t(locale, "admin.common.manage")}
             </Link>
             <button
               type="button"
@@ -570,7 +607,7 @@ function AdminPartnerCard({
                 onStartEdit();
               }}
               className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-              aria-label={`Edit ${partner.name}`}
+              aria-label={t(locale, "admin.partners.editAria", { name: partner.name })}
             >
               <IconPencil className="h-5 w-5" />
             </button>
@@ -591,7 +628,7 @@ function AdminPartnerCard({
                   disabled={isSaving}
                   className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
                 >
-                  {isSaving ? "Saving…" : "Save"}
+                  {isSaving ? t(locale, "admin.shared.saving") : t(locale, "admin.shared.save")}
                 </button>
                 <button
                   type="button"
@@ -599,7 +636,7 @@ function AdminPartnerCard({
                   disabled={isSaving}
                   className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
                 >
-                  Cancel
+                  {t(locale, "admin.shared.cancel")}
                 </button>
               </div>
             </>
@@ -632,6 +669,7 @@ function IconChevron({ className, open }: { className?: string; open: boolean })
 }
 
 export function AdminPartnersManager() {
+  const locale = useLocale();
   const [partners, setPartners] = useState<PartnerLocation[]>([]);
   const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -676,13 +714,13 @@ export function AdminPartnersManager() {
       const spotsData = (await spotsRes.json().catch(() => ({}))) as PosSpotsApiResponse;
       if (signal?.aborted) return;
       if (!partnersRes.ok) {
-        setLoadError(partnersData.error ?? "Could not load partners");
+        setLoadError(displayApiError(locale, partnersData.error, "admin.partners.loadFailed"));
         setPartners([]);
         setPosSpots([]);
         return;
       }
       if (!spotsRes.ok) {
-        setLoadError(spotsData.error ?? "Could not load POS spots");
+        setLoadError(displayApiError(locale, spotsData.error, "admin.partners.loadSpotsFailed"));
         setPartners([]);
         setPosSpots([]);
         return;
@@ -691,13 +729,13 @@ export function AdminPartnersManager() {
       setPosSpots(spotsData.posSpots ?? []);
     } catch {
       if (signal?.aborted) return;
-      setLoadError("Network error while loading partners");
+      setLoadError(t(locale, "admin.partners.networkLoad"));
       setPartners([]);
       setPosSpots([]);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -706,7 +744,7 @@ export function AdminPartnersManager() {
   }, [loadPageData]);
 
   async function handleCreate() {
-    const result = draftToPayload(createDraft);
+    const result = draftToPayload(createDraft, locale);
     if (!result.ok) {
       setCreateError(result.error);
       return;
@@ -722,14 +760,14 @@ export function AdminPartnersManager() {
       });
       const data = (await res.json().catch(() => ({}))) as PartnersApiResponse;
       if (!res.ok) {
-        setCreateError(data.error ?? "Could not create partner");
+        setCreateError(displayApiError(locale, data.error, "admin.partners.createFailed"));
         return;
       }
       setShowCreate(false);
       setCreateDraft(emptyDraft());
       await loadPageData();
     } catch {
-      setCreateError("Network error. Try again.");
+      setCreateError(t(locale, "common.networkError"));
     } finally {
       setIsCreating(false);
     }
@@ -740,16 +778,18 @@ export function AdminPartnersManager() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            Urban Plant · Admin
+            {t(locale, "admin.brand")}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">Partners</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
+            {t(locale, "admin.partners.title")}
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href={routes.admin.index()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
-            Admin
+            {t(locale, "admin.common.admin")}
           </Link>
           <button
             type="button"
@@ -760,7 +800,11 @@ export function AdminPartnersManager() {
             }}
             className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-sm transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
             aria-expanded={showCreate}
-            aria-label={showCreate ? "Close create partner form" : "Create partner"}
+            aria-label={
+              showCreate
+                ? t(locale, "admin.partners.createToggleClose")
+                : t(locale, "admin.partners.createToggleOpen")
+            }
           >
             <IconPlus className="h-6 w-6" />
           </button>
@@ -768,12 +812,14 @@ export function AdminPartnersManager() {
       </div>
 
       <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        Partner locations used for POS spots and checkout. Changes are saved to the database.
+        {t(locale, "admin.partners.intro")}
       </p>
 
       {showCreate ? (
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <h2 className="mb-4 text-base font-semibold text-emerald-950">New partner</h2>
+          <h2 className="mb-4 text-base font-semibold text-emerald-950">
+            {t(locale, "admin.partners.new")}
+          </h2>
           <PartnerFieldsForm draft={createDraft} onChange={setCreateDraft} />
           {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">
@@ -783,7 +829,9 @@ export function AdminPartnersManager() {
               disabled={isCreating}
               className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
             >
-              {isCreating ? "Creating…" : "Create partner"}
+              {isCreating
+                ? t(locale, "admin.common.creating")
+                : t(locale, "admin.partners.create")}
             </button>
             <button
               type="button"
@@ -795,7 +843,7 @@ export function AdminPartnersManager() {
               disabled={isCreating}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
             >
-              Cancel
+              {t(locale, "admin.shared.cancel")}
             </button>
           </div>
         </section>
@@ -803,26 +851,28 @@ export function AdminPartnersManager() {
 
       {!isLoading && !loadError && partners.length > 0 ? (
         <label className="mb-4 block">
-          <span className="sr-only">Search partners</span>
+          <span className="sr-only">{t(locale, "admin.partners.searchAria")}</span>
           <input
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, address, type…"
+            placeholder={t(locale, "admin.partners.searchPlaceholder")}
             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
           />
         </label>
       ) : null}
 
       {isLoading ? (
-        <p className="text-sm text-slate-600">Loading partners…</p>
+        <p className="text-sm text-slate-600">{t(locale, "admin.partners.loading")}</p>
       ) : loadError ? (
         <p className="text-sm text-red-700">{loadError}</p>
       ) : partners.length === 0 ? (
-        <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">No partners yet.</p>
+        <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
+          {t(locale, "admin.partners.empty")}
+        </p>
       ) : filteredPartners.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          No partners match &ldquo;{searchQuery.trim()}&rdquo;.
+          {t(locale, "admin.partners.noMatch", { query: searchQuery.trim() })}
         </p>
       ) : (
         <ul className="space-y-3">

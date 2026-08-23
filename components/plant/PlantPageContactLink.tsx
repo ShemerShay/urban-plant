@@ -1,5 +1,9 @@
+"use client";
+
 import Link from "next/link";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
 import { buildWhatsAppChatUrl } from "@/lib/whatsappContact";
 import { routes } from "@/lib/routes";
 
@@ -58,6 +62,7 @@ const accessibilityLinkClassName =
 
 /** In-page utility row: WhatsApp contact + subtle accessibility entry (not in the fixed CTA bar). */
 export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkProps) {
+  const locale = useLocale();
   const href = buildWhatsAppChatUrl(whatsAppMessage);
 
   return (
@@ -66,7 +71,7 @@ export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkPr
         href={URBAN_PLANT_INSTAGRAM_URL}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Urban Plant on Instagram (opens in a new tab)"
+        aria-label={t(locale, "plant.contact.instagram")}
         className={socialIconLinkClassName}
       >
         <IconInstagram className="size-5 shrink-0 text-[#E4405F]" />
@@ -74,15 +79,15 @@ export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkPr
       <a href={href} target="_blank" rel="noopener noreferrer" className={contactRowClassName}>
         <IconWhatsApp className="size-5 shrink-0 text-[#25D366]" />
         <span className="min-w-0 break-words">
-          Ask us anything
-          <span className="sr-only"> on WhatsApp (opens in a new tab)</span>
+          {t(locale, "plant.contact.ask")}
+          <span className="sr-only">{t(locale, "plant.contact.whatsappSr")}</span>
         </span>
       </a>
  
       <Link
         href={routes.customer.accessibility()}
-        aria-label="Accessibility statement"
-        title="Accessibility"
+        aria-label={t(locale, "plant.contact.a11yLabel")}
+        title={t(locale, "plant.contact.a11yTitle")}
         className={accessibilityLinkClassName}
       >
         <IconAccessibility className="size-4" />

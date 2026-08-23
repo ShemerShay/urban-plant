@@ -4,7 +4,10 @@ import { TrackPurchaseCompleted } from "@/components/analytics/TrackPurchaseComp
 import { CustomerRecoveryActions } from "@/components/customer/CustomerRecoveryActions";
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { isValidOrderIdUuid } from "@/lib/cardcomPaymentStatus";
+import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
 import { getPlantById } from "@/lib/plantCatalog";
+import { localizedPlantText } from "@/lib/plantDisplay";
 import { getOrderById } from "@/lib/ordersStorage";
 import { posSpotPath } from "@/lib/routes";
 import { isVerifiedPaidOrderStatus } from "@/lib/status";
@@ -51,6 +54,7 @@ function readSpotSlug(raw: string | string[] | undefined): string {
 }
 
 export default async function SuccessPage({ searchParams }: SuccessPageProps) {
+  const locale = await getLocale();
   const sp = await searchParams;
   const emailFailed = readEmailFailed(sp.emailFailed);
   const orderId = readOrderId(sp.orderId);
@@ -69,12 +73,15 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const plant = (plantFromOrderId || plantId)
     ? await getPlantById(plantFromOrderId || plantId)
     : undefined;
+  const livePlantName = plant
+    ? localizedPlantText(locale, plant.name, plant.nameHe)
+    : "";
   const plantName =
+    livePlantName ||
     order?.snapshot?.productName ||
     order?.plantName ||
-    plant?.name ||
     (!order ? readPlantName(sp.plantName) : "") ||
-    "your plant";
+    t(locale, "success.fallbackPlant");
   const spotSlug =
     order?.snapshot?.spotSlug?.trim() ||
     readSpotSlug(sp.spotSlug) ||
@@ -145,41 +152,38 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
           {isPendingPayment ? (
             <>
               <h1 id="success-page-heading" className="mt-3 text-3xl font-semibold text-emerald-950">
-                Payment still in progress
+                {t(locale, "success.pending.title")}
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                We have your order details, but payment has not been confirmed yet. This page does
-                not complete a purchase.
+                {t(locale, "success.pending.body")}
               </p>
             </>
           ) : showCompletedPurchase ? (
             <>
               <h1 id="success-page-heading" className="mt-3 text-3xl font-semibold text-emerald-950">
-                Thank you for your order
+                {t(locale, "success.thanks.title")}
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">
                 {isPickup
-                  ? "Order received. Your plant is ready to leave with you."
-                  : "Your order was received successfully. Your plant will be delivered within 1-3 days, team member will contact with you"}
+                  ? t(locale, "success.thanks.pickup")
+                  : t(locale, "success.thanks.delivery")}
               </p>
               {emailFailed ? (
                 <p
                   className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
                   role="alert"
                 >
-                  We couldn’t send the confirmation email just now. Your order is still
-                  confirmed — Urban Plant will contact you soon with pickup or delivery details.
+                  {t(locale, "success.emailFailed")}
                 </p>
               ) : null}
             </>
           ) : (
             <>
               <h1 id="success-page-heading" className="mt-3 text-3xl font-semibold text-emerald-950">
-                Order update
+                {t(locale, "success.update.title")}
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                This order is not a completed purchase. If you need help, message Urban Plant on
-                WhatsApp.
+                {t(locale, "success.update.body")}
               </p>
             </>
           )}
@@ -190,13 +194,13 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
           aria-labelledby="order-summary-heading"
         >
           <h2 id="order-summary-heading" className="text-sm font-medium text-slate-700">
-            Order summary
+            {t(locale, "success.summary")}
           </h2>
           {plantImage ? (
             <div className="relative mt-3 aspect-[4/3] w-full overflow-hidden rounded-2xl bg-white">
               <Image
                 src={plantImage}
-                alt={`Photo of ${plantName}`}
+                alt={t(locale, "success.photoAlt", { plantName })}
                 fill
                 className="object-cover"
                 sizes="(max-width: 448px) 100vw, 448px"
@@ -204,15 +208,17 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
             </div>
           ) : null}
           <p className="mt-3 text-base font-semibold text-emerald-900">
-            1x {plantName} {isPickup ? "pickup" : "delivery"}
+            {t(locale, isPickup ? "success.line.pickup" : "success.line.delivery", {
+              plantName,
+            })}
           </p>
         </section>
       </div>
 
       <CustomerRecoveryActions
         preferredReturnHref={returnToPlantHref}
-        returnLabel="Return to plant"
-        whatsAppMessage={`Hi Urban Plant — I have a question about my order for “${plantName}”.`}
+        returnLabel={t(locale, "success.returnPlant")}
+        whatsAppMessage={t(locale, "success.whatsapp", { plantName })}
       />
     </main>
   );

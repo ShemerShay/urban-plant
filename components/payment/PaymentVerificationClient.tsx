@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { CustomerRecoveryActions } from "@/components/customer/CustomerRecoveryActions";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
 import {
   PAYMENT_STATUS_POLL_MS,
   isPaymentStatusPollTimedOut,
@@ -45,6 +47,7 @@ export function PaymentVerificationClient({
   resumeTokenRaw,
 }: PaymentVerificationClientProps) {
   const router = useRouter();
+  const locale = useLocale();
   const orderId = parseOrderIdQueryParam(orderIdRaw);
   const resumeToken = isPaymentResumeTokenShape(resumeTokenRaw)
     ? resumeTokenRaw.trim()
@@ -123,21 +126,21 @@ export function PaymentVerificationClient({
 
   const title =
     mode === "invalid"
-      ? "We couldn’t verify this payment"
+      ? t(locale, "payment.verify.invalidTitle")
       : mode === "timeout"
-        ? "Payment verification is taking longer than expected"
+        ? t(locale, "payment.verify.timeoutTitle")
         : mode === "cancelled_unavailable"
-          ? "Payment wasn’t completed"
-          : "Verifying your payment";
+          ? t(locale, "payment.verify.cancelledTitle")
+          : t(locale, "payment.verify.verifyingTitle");
 
   const description =
     mode === "invalid"
-      ? "This page is only a temporary return from payment. If you completed a purchase, message Urban Plant on WhatsApp and we’ll help."
+      ? t(locale, "payment.verify.invalidBody")
       : mode === "timeout"
-        ? "Your payment may still be processing. You can check again or contact Urban Plant."
+        ? t(locale, "payment.verify.timeoutBody")
         : mode === "cancelled_unavailable"
-          ? "Payment failed. Please try again from the plant page, or contact Urban Plant."
-          : "We received your payment request and are waiting for final confirmation. This usually takes a few moments.";
+          ? t(locale, "payment.verify.cancelledBody")
+          : t(locale, "payment.verify.verifyingBody");
 
   return (
     <main
@@ -176,17 +179,17 @@ export function PaymentVerificationClient({
               onClick={checkAgain}
               className="mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
             >
-              Check again
+              {t(locale, "payment.verify.checkAgain")}
             </button>
           ) : null}
           <CustomerRecoveryActions
             className="mt-6"
             whatsAppMessage={
               orderId
-                ? `Hi Urban Plant — I’m waiting on payment verification for order ${orderId}.`
-                : "Hi Urban Plant — I returned from payment and need help verifying my order."
+                ? t(locale, "payment.verify.whatsapp.withOrder", { orderId })
+                : t(locale, "payment.verify.whatsapp.withoutOrder")
             }
-            returnLabel="Return to previous page"
+            returnLabel={t(locale, "recovery.returnPrevious")}
           />
         </section>
       </div>

@@ -1,4 +1,6 @@
 import { TEL_AVIV_CITY, TEL_AVIV_STREET_SET, TEL_AVIV_STREETS } from "@/constants/telAvivStreets";
+import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 
 export { TEL_AVIV_CITY, TEL_AVIV_STREETS };
 
@@ -60,16 +62,36 @@ export function parseStoredDeliveryAddress(address: string): {
   };
 }
 
+/** Show stored addresses with a locale-specific city label; storage keeps Tel Aviv. */
+export function formatStoredDeliveryAddressDisplay(
+  address: string,
+  locale: Locale = DEFAULT_LOCALE,
+): string {
+  const trimmed = address.trim();
+  if (!trimmed) return trimmed;
+  const cityDisplay = t(locale, "checkout.city.telAviv");
+  if (trimmed === TEL_AVIV_CITY) return cityDisplay;
+  const prefix = `${TEL_AVIV_CITY},`;
+  if (trimmed.startsWith(prefix)) {
+    return `${cityDisplay},${trimmed.slice(prefix.length)}`;
+  }
+  return trimmed;
+}
+
 /** Readable display for order summaries (legacy rows pass through unchanged). */
-export function formatOrderDeliveryAddressDisplay(order: {
-  address: string;
-  apartmentOrNotes?: string;
-}): string {
-  const base = order.address?.trim();
+export function formatOrderDeliveryAddressDisplay(
+  order: {
+    address: string;
+    apartmentOrNotes?: string;
+  },
+  locale: Locale = DEFAULT_LOCALE,
+): string {
+  const raw = order.address?.trim();
+  const base = raw ? formatStoredDeliveryAddressDisplay(raw, locale) : "";
   const note = order.apartmentOrNotes?.trim();
-  if (!base) return note ? `note: ${note}` : "—";
+  if (!base) return note ? t(locale, "address.noteOnly", { note }) : "—";
   if (!note) return base;
-  return `${base}, note: ${note}`;
+  return t(locale, "address.withNote", { address: base, note });
 }
 
 export function isTelAvivStreet(street: string): boolean {

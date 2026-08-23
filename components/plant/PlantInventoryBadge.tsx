@@ -1,4 +1,8 @@
-import { INVENTORY_STATUS_LABELS } from "@/lib/status";
+"use client";
+
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { inventoryStatusLabel } from "@/lib/displayLabels";
+import { t } from "@/lib/messages";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 
 interface PlantInventoryBadgeProps {
@@ -8,7 +12,8 @@ interface PlantInventoryBadgeProps {
 
 /** Availability at the POS Spot that owns the QR. */
 export function PlantInventoryBadge({ status }: PlantInventoryBadgeProps) {
-  const label = INVENTORY_STATUS_LABELS[status];
+  const locale = useLocale();
+  const label = inventoryStatusLabel(locale, status);
   const isAvailable = status === "available";
 
   return (
@@ -18,7 +23,7 @@ export function PlantInventoryBadge({ status }: PlantInventoryBadgeProps) {
           ? "bg-emerald-50 text-emerald-800"
           : "bg-neutral-200/90 text-neutral-900"
       }`}
-      aria-label={`Availability: ${label}`}
+      aria-label={t(locale, "status.inventory.availability", { label })}
     >
       {label}
     </p>

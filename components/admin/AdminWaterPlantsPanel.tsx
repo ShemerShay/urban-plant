@@ -2,11 +2,15 @@
 
 import { useMemo, useState } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
 import { AdminCheckboxList } from "@/components/admin/shared/AdminCheckboxList";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { AdminFormModal } from "@/components/admin/shared/AdminFormModal";
 import { AdminMultiSelect } from "@/components/admin/shared/AdminMultiSelect";
 import { AdminRadioGroup } from "@/components/admin/shared/AdminRadioGroup";
+import { displayApiError } from "@/lib/displayLabels";
+import type { Locale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 import type { Pocket } from "@/lib/pocketTypes";
 import type { PosSpot } from "@/lib/posSpotTypes";
 import { isPosSpotWaterable, isWateredRecently } from "@/lib/posSpotWatering";
@@ -33,23 +37,31 @@ type AdminWaterPlantsPanelProps = {
 
 const UNASSIGNED_POCKET_KEY = "__unassigned__";
 
-const SCOPE_OPTIONS = [
-  { value: "pocket", label: "Pocket" },
-  { value: "product", label: "Plant type" },
-  { value: "selected", label: "Selected POS" },
-  { value: "store", label: "Entire store" },
-] as const;
+function intlLocale(locale: Locale): string {
+  return locale === "he" ? "he-IL" : "en-US";
+}
 
-function formatWateredLabel(lastWateredAt: string | undefined): string {
-  if (!lastWateredAt) return "Not watered yet";
-  if (isWateredRecently(lastWateredAt, 7)) return "Watered this week";
+function scopeOptions(locale: Locale) {
+  return [
+    { value: "pocket", label: t(locale, "admin.water.scopePocket") },
+    { value: "product", label: t(locale, "admin.water.scopeProduct") },
+    { value: "selected", label: t(locale, "admin.water.scopeSelected") },
+    { value: "store", label: t(locale, "admin.water.scopeStore") },
+  ] as const;
+}
+
+function formatWateredLabel(locale: Locale, lastWateredAt: string | undefined): string {
+  if (!lastWateredAt) return t(locale, "admin.water.notWateredYet");
+  if (isWateredRecently(lastWateredAt, 7)) return t(locale, "admin.water.wateredThisWeek");
   const d = new Date(lastWateredAt);
-  if (Number.isNaN(d.getTime())) return "Not watered yet";
-  return `Last watered ${d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })}`;
+  if (Number.isNaN(d.getTime())) return t(locale, "admin.water.notWateredYet");
+  return t(locale, "admin.water.lastWatered", {
+    date: d.toLocaleDateString(intlLocale(locale), {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }),
+  });
 }
 
 export function AdminWaterPlantsPanel({
@@ -62,6 +74,7 @@ export function AdminWaterPlantsPanel({
   onClose,
   onWatered,
 }: AdminWaterPlantsPanelProps) {
+  const locale = useLocale();
   const [scope, setScope] = useState<WaterScope>("pocket");
   const [pocketKeys, setPocketKeys] = useState<string[]>([]);
   const [productIds, setProductIds] = useState<string[]>([]);
@@ -86,20 +99,20 @@ export function AdminWaterPlantsPanel({
     for (const spot of waterableSpots) {
       const offer = offerById.get(spot.currentOfferId);
       const pid = offer?.productId ?? spot.currentOfferId;
-      const name = offer?.productName ?? "Unknown plant";
+      const name = offer?.productName ?? t(locale, "admin.water.unknownPlant");
       const prev = byProduct.get(pid);
       if (prev) prev.count += 1;
       else byProduct.set(pid, { productId: pid, productName: name, count: 1 });
     }
     return [...byProduct.values()]
       .sort((a, b) =>
-        a.productName.localeCompare(b.productName, undefined, { sensitivity: "base" }),
+        a.productName.localeCompare(b.productName, intlLocale(locale), { sensitivity: "base" }),
       )
       .map((opt) => ({
         value: opt.productId,
         label: `${opt.productName} (${opt.count})`,
       }));
-  }, [waterableSpots, offerById]);
+  }, [waterableSpots, offerById, locale]);
 
   const pocketSelectOptions = useMemo(() => {
     const options = pockets.map((pocket) => {
@@ -113,11 +126,11 @@ export function AdminWaterPlantsPanel({
     if (unassignedCount > 0) {
       options.push({
         value: UNASSIGNED_POCKET_KEY,
-        label: `Unassigned (${unassignedCount})`,
+        label: t(locale, "admin.water.unassigned", { count: unassignedCount }),
       });
     }
     return options;
-  }, [pockets, waterableSpots]);
+  }, [pockets, waterableSpots, locale]);
 
   const posSelectOptions = useMemo(
     () =>
@@ -126,10 +139,10 @@ export function AdminWaterPlantsPanel({
         return {
           value: spot.id,
           label: spot.spotName,
-          description: `${offerName} · ${formatWateredLabel(spot.lastWateredAt)}`,
+          description: `${offerName} · ${formatWateredLabel(locale, spot.lastWateredAt)}`,
         };
       }),
-    [waterableSpots, offerById],
+    [waterableSpots, offerById, locale],
   );
 
   const pocketKeySet = useMemo(() => new Set(pocketKeys), [pocketKeys]);
@@ -196,23 +209,42 @@ export function AdminWaterPlantsPanel({
         updatedCount?: number;
       };
       if (!res.ok) {
-        setError(data.error ?? "Could not mark plants as watered");
+        setError(displayApiError(locale, data.error, "admin.water.failed"));
         return;
       }
       onWatered(data.posSpots ?? []);
       resetAndClose();
     } catch {
-      setError("Could not mark plants as watered");
+      setError(t(locale, "admin.water.failed"));
     } finally {
       setBusy(false);
     }
   }
 
+  const submitLabel =
+    targetCount > 0
+      ? targetCount === 1
+        ? t(locale, "admin.water.markSubmitOne")
+        : t(locale, "admin.water.markSubmitMany", { count: targetCount })
+      : t(locale, "admin.water.markSubmit");
+
+  const confirmLabel =
+    targetCount === 1
+      ? t(locale, "admin.water.confirmLabelOne")
+      : t(locale, "admin.water.confirmLabelMany", { count: targetCount });
+
+  const confirmMessage =
+    targetCount > 0
+      ? targetCount === 1
+        ? t(locale, "admin.water.confirmMessageOne", { name: partnerName })
+        : t(locale, "admin.water.confirmMessageMany", { count: targetCount, name: partnerName })
+      : "";
+
   return (
     <>
       <AdminFormModal
         open={open && !confirmOpen}
-        title="Water plants"
+        title={t(locale, "admin.water.title")}
         onCancel={resetAndClose}
         onSubmit={() => {
           setError(null);
@@ -221,23 +253,17 @@ export function AdminWaterPlantsPanel({
         busy={busy}
         error={error}
         canSubmit={canSubmit}
-        submitLabel={
-          targetCount > 0
-            ? `Mark ${targetCount} plant${targetCount === 1 ? "" : "s"} as watered`
-            : "Mark as watered"
-        }
+        submitLabel={submitLabel}
       >
         <p className="text-sm text-slate-600">
-          Mark live plants at{" "}
-          <span className="font-semibold text-emerald-950">{partnerName}</span> as watered.
-          Only available and held-for-payment POS spots are updated.
+          {t(locale, "admin.water.intro", { name: partnerName })}
         </p>
 
         <AdminRadioGroup
           name="water-scope"
-          legend="Scope"
+          legend={t(locale, "admin.water.scope")}
           value={scope}
-          options={[...SCOPE_OPTIONS]}
+          options={[...scopeOptions(locale)]}
           onChange={(next) => {
             setScope(next as WaterScope);
             setError(null);
@@ -246,26 +272,30 @@ export function AdminWaterPlantsPanel({
 
         {scope === "pocket" ? (
           <div className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Pockets</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.water.pockets")}
+            </span>
             <AdminMultiSelect
-              aria-label="Pockets"
+              aria-label={t(locale, "admin.water.pocketsAria")}
               options={pocketSelectOptions}
               values={pocketKeys}
               onChange={setPocketKeys}
-              emptyLabel="Select pockets…"
+              emptyLabel={t(locale, "admin.water.selectPockets")}
             />
           </div>
         ) : null}
 
         {scope === "product" ? (
           <div className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Plant types</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.water.plantTypes")}
+            </span>
             <AdminMultiSelect
-              aria-label="Plant types"
+              aria-label={t(locale, "admin.water.plantTypesAria")}
               options={plantTypeOptions}
               values={productIds}
               onChange={setProductIds}
-              emptyLabel="Select plant types…"
+              emptyLabel={t(locale, "admin.water.selectPlantTypes")}
             />
           </div>
         ) : null}
@@ -278,22 +308,22 @@ export function AdminWaterPlantsPanel({
                 onClick={() => setSelectedIds(waterableSpots.map((s) => s.id))}
                 className="text-xs font-medium text-emerald-700 underline underline-offset-2"
               >
-                Select all live
+                {t(locale, "admin.water.selectAllLive")}
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedIds([])}
                 className="text-xs font-medium text-slate-600 underline underline-offset-2"
               >
-                Clear
+                {t(locale, "admin.water.clear")}
               </button>
             </div>
             <AdminCheckboxList
-              aria-label="POS spots"
+              aria-label={t(locale, "admin.water.posSpotsAria")}
               options={posSelectOptions}
               values={selectedIds}
               onChange={setSelectedIds}
-              emptyMessage="No live plants at this store."
+              emptyMessage={t(locale, "admin.water.noLivePlants")}
             />
           </div>
         ) : null}
@@ -301,27 +331,27 @@ export function AdminWaterPlantsPanel({
         {scope === "store" ? (
           <p className="text-sm text-slate-600">
             {waterableSpots.length === 0
-              ? "No live plants at this store."
-              : `${waterableSpots.length} live plant${waterableSpots.length === 1 ? "" : "s"} will be marked.`}
+              ? t(locale, "admin.water.noLivePlants")
+              : waterableSpots.length === 1
+                ? t(locale, "admin.water.willMarkOne")
+                : t(locale, "admin.water.willMarkMany", { count: waterableSpots.length })}
           </p>
         ) : null}
 
         {targetCount > 0 && scope !== "store" ? (
           <p className="text-sm text-slate-600">
-            {targetCount} plant{targetCount === 1 ? "" : "s"} selected.
+            {targetCount === 1
+              ? t(locale, "admin.water.selectedOne")
+              : t(locale, "admin.water.selectedMany", { count: targetCount })}
           </p>
         ) : null}
       </AdminFormModal>
 
       <AdminConfirmDialog
         open={confirmOpen}
-        title="Confirm watering"
-        message={
-          targetCount > 0
-            ? `Mark ${targetCount} plant${targetCount === 1 ? "" : "s"} as watered now?\n\nThis updates last watered time for the selected live POS spots at ${partnerName}.`
-            : ""
-        }
-        confirmLabel={`Mark ${targetCount} plant${targetCount === 1 ? "" : "s"} as watered`}
+        title={t(locale, "admin.water.confirmTitle")}
+        message={confirmMessage}
+        confirmLabel={confirmLabel}
         busy={busy}
         error={error}
         onCancel={() => {
@@ -336,6 +366,9 @@ export function AdminWaterPlantsPanel({
   );
 }
 
-export function formatPosSpotWateredSummary(lastWateredAt: string | undefined): string {
-  return formatWateredLabel(lastWateredAt);
+export function formatPosSpotWateredSummary(
+  lastWateredAt: string | undefined,
+  locale: Locale,
+): string {
+  return formatWateredLabel(locale, lastWateredAt);
 }

@@ -1,15 +1,20 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import {
-  ANALYTICS_RANGE_OPTIONS,
-} from "@/lib/analytics/dateRange";
+import { ANALYTICS_RANGE_OPTIONS } from "@/lib/analytics/dateRange";
 import type { BusinessAnalyticsSnapshot } from "@/lib/analytics/businessAnalytics";
+import { analyticsRangeLabel } from "@/lib/displayLabels";
+import type { Locale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 
-function formatNumber(n: number | null): string {
+function intlLocale(locale: Locale): string {
+  return locale === "he" ? "he-IL" : "en-US";
+}
+
+function formatNumber(n: number | null, locale: Locale): string {
   if (n === null) return "—";
-  return new Intl.NumberFormat("en-US").format(n);
+  return new Intl.NumberFormat(intlLocale(locale)).format(n);
 }
 
 function formatPercent(n: number | null): string {
@@ -17,13 +22,18 @@ function formatPercent(n: number | null): string {
   return `${n}%`;
 }
 
-function formatPeriodLabel(period: string, granularity: "hour" | "day" | "week"): string {
+function formatPeriodLabel(
+  period: string,
+  granularity: "hour" | "day" | "week",
+  locale: Locale,
+): string {
   const raw = period.trim();
   if (!raw) return "—";
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
+  const loc = intlLocale(locale);
   if (granularity === "hour") {
-    return d.toLocaleString("en-GB", {
+    return d.toLocaleString(loc, {
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -31,9 +41,9 @@ function formatPeriodLabel(period: string, granularity: "hour" | "day" | "week")
     });
   }
   if (granularity === "day") {
-    return d.toLocaleDateString("en-GB", { month: "short", day: "numeric" });
+    return d.toLocaleDateString(loc, { month: "short", day: "numeric" });
   }
-  return d.toLocaleDateString("en-GB", { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString(loc, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function maxCount(items: { count?: number; scans?: number }[]): number {
@@ -69,15 +79,19 @@ function SectionCard({
   title,
   children,
   empty,
+  emptyMessage,
 }: {
   title: string;
   children: ReactNode;
   empty?: boolean;
+  emptyMessage: string;
 }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
       <h2 className="text-base font-semibold text-emerald-950">{title}</h2>
-      <div className="mt-4">{empty ? <p className="text-sm text-slate-500">No data in this range.</p> : children}</div>
+      <div className="mt-4">
+        {empty ? <p className="text-sm text-slate-500">{emptyMessage}</p> : children}
+      </div>
     </section>
   );
 }
@@ -85,9 +99,11 @@ function SectionCard({
 function NamedCountTable({
   rows,
   countLabel,
+  locale,
 }: {
   rows: { name: string; count: number }[];
   countLabel: string;
+  locale: Locale;
 }) {
   const peak = maxCount(rows) || 1;
   return (
@@ -97,7 +113,7 @@ function NamedCountTable({
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span className="min-w-0 truncate font-medium text-slate-800">{row.name}</span>
             <span className="shrink-0 tabular-nums text-slate-600">
-              {formatNumber(row.count)} {countLabel}
+              {formatNumber(row.count, locale)} {countLabel}
             </span>
           </div>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
@@ -115,9 +131,11 @@ function NamedCountTable({
 function ScansOverTimeChart({
   points,
   granularity,
+  locale,
 }: {
   points: { period: string; scans: number }[];
   granularity: "hour" | "day" | "week";
+  locale: Locale;
 }) {
   const peak = maxCount(points) || 1;
   return (
@@ -125,7 +143,7 @@ function ScansOverTimeChart({
       {points.map((p) => (
         <li key={p.period} className="flex items-center gap-3 text-sm">
           <span className="w-28 shrink-0 text-slate-600 sm:w-36">
-            {formatPeriodLabel(p.period, granularity)}
+            {formatPeriodLabel(p.period, granularity, locale)}
           </span>
           <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
             <div
@@ -134,7 +152,7 @@ function ScansOverTimeChart({
             />
           </div>
           <span className="w-10 shrink-0 text-right tabular-nums text-slate-700">
-            {formatNumber(p.scans)}
+            {formatNumber(p.scans, locale)}
           </span>
         </li>
       ))}
@@ -144,10 +162,15 @@ function ScansOverTimeChart({
 
 export function AdminAnalyticsDashboard({
   data,
+  locale,
 }: {
   data: BusinessAnalyticsSnapshot;
+  locale: Locale;
 }) {
   const activeRange = data.range;
+  const emptyMessage = t(locale, "admin.analytics.empty");
+  const scansLabel = t(locale, "admin.analytics.colScans");
+  const purchasesLabel = t(locale, "admin.analytics.colPurchases");
 
   return (
     <main
@@ -160,14 +183,16 @@ export function AdminAnalyticsDashboard({
             href={routes.admin.index()}
             className="text-sm font-medium text-emerald-800 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55"
           >
-            ← Admin
+            {t(locale, "admin.common.backAdmin")}
           </Link>
           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            Urban Plant · Admin
+            {t(locale, "admin.brand")}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">Analytics</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
+            {t(locale, "admin.analytics.title")}
+          </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-600">
-            Scans from PostHog. Purchases from verified successful orders.
+            {t(locale, "admin.analytics.subtitle")}
           </p>
         </div>
       </div>
@@ -175,7 +200,7 @@ export function AdminAnalyticsDashboard({
       <div
         className="mb-6 flex flex-wrap gap-2"
         role="navigation"
-        aria-label="Date range"
+        aria-label={t(locale, "admin.analytics.dateRange")}
       >
         {ANALYTICS_RANGE_OPTIONS.map((opt) => {
           const href = routes.admin.analyticsWithRange(opt.key);
@@ -191,7 +216,7 @@ export function AdminAnalyticsDashboard({
                   : "rounded-full bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-[0_8px_30px_rgba(15,23,42,0.04)] hover:bg-slate-50"
               }
             >
-              {opt.label}
+              {analyticsRangeLabel(locale, opt.key)}
             </Link>
           );
         })}
@@ -201,58 +226,96 @@ export function AdminAnalyticsDashboard({
           className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
           role="status"
         >
-          Purchase metrics unavailable: {data.neonError}
+          {t(locale, "admin.analytics.purchaseUnavailable", { error: data.neonError })}
         </div>
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Total scans" value={formatNumber(data.totalScans)} />
         <KpiCard
-          label="Unique scanners"
-          value={formatNumber(data.uniqueScanners)}
-          hint="Unique browsers/devices"
+          label={t(locale, "admin.analytics.totalScans")}
+          value={formatNumber(data.totalScans, locale)}
         />
-        <KpiCard label="Purchases" value={formatNumber(data.purchases)} />
         <KpiCard
-          label="Scan → Checkout"
+          label={t(locale, "admin.analytics.uniqueScanners")}
+          value={formatNumber(data.uniqueScanners, locale)}
+          hint={t(locale, "admin.analytics.uniqueDevices")}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.purchases")}
+          value={formatNumber(data.purchases, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.scanToCheckout")}
           value={formatPercent(data.scanToCheckoutPercent)}
         />
       </div>
 
       <div className="mt-6 space-y-4">
-        <SectionCard title="Scans over time" empty={data.scansOverTime.length === 0}>
+        <SectionCard
+          title={t(locale, "admin.analytics.scansOverTime")}
+          empty={data.scansOverTime.length === 0}
+          emptyMessage={emptyMessage}
+        >
           <ScansOverTimeChart
             points={data.scansOverTime}
             granularity={data.timeGranularity}
+            locale={locale}
           />
         </SectionCard>
 
         <div className="grid gap-4 md:grid-cols-2">
           <SectionCard
-            title="Top plants by scans"
+            title={t(locale, "admin.analytics.topPlantsScans")}
             empty={data.topPlantsByScans.length === 0}
+            emptyMessage={emptyMessage}
           >
-            <NamedCountTable rows={data.topPlantsByScans} countLabel="scans" />
+            <NamedCountTable
+              rows={data.topPlantsByScans}
+              countLabel={scansLabel}
+              locale={locale}
+            />
           </SectionCard>
           <SectionCard
-            title="Top plants by purchases"
+            title={t(locale, "admin.analytics.topPlantsPurchases")}
             empty={data.topPlantsByPurchases.length === 0}
+            emptyMessage={emptyMessage}
           >
-            <NamedCountTable rows={data.topPlantsByPurchases} countLabel="purchases" />
-          </SectionCard>
-          <SectionCard title="Scans by partner" empty={data.scansByPartner.length === 0}>
-            <NamedCountTable rows={data.scansByPartner} countLabel="scans" />
+            <NamedCountTable
+              rows={data.topPlantsByPurchases}
+              countLabel={purchasesLabel}
+              locale={locale}
+            />
           </SectionCard>
           <SectionCard
-            title="Purchases by partner"
-            empty={data.purchasesByPartner.length === 0}
+            title={t(locale, "admin.analytics.scansByPartner")}
+            empty={data.scansByPartner.length === 0}
+            emptyMessage={emptyMessage}
           >
-            <NamedCountTable rows={data.purchasesByPartner} countLabel="purchases" />
+            <NamedCountTable
+              rows={data.scansByPartner}
+              countLabel={scansLabel}
+              locale={locale}
+            />
+          </SectionCard>
+          <SectionCard
+            title={t(locale, "admin.analytics.purchasesByPartner")}
+            empty={data.purchasesByPartner.length === 0}
+            emptyMessage={emptyMessage}
+          >
+            <NamedCountTable
+              rows={data.purchasesByPartner}
+              countLabel={purchasesLabel}
+              locale={locale}
+            />
           </SectionCard>
         </div>
 
-        <SectionCard title="Scans by pocket" empty={data.scansByPocket.length === 0}>
-          <NamedCountTable rows={data.scansByPocket} countLabel="scans" />
+        <SectionCard
+          title={t(locale, "admin.analytics.scansByPocket")}
+          empty={data.scansByPocket.length === 0}
+          emptyMessage={emptyMessage}
+        >
+          <NamedCountTable rows={data.scansByPocket} countLabel={scansLabel} locale={locale} />
         </SectionCard>
       </div>
     </main>

@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Geist, Geist_Mono } from "next/font/google";
+import { Cormorant_Garamond, Geist, Geist_Mono, Noto_Sans_Hebrew } from "next/font/google";
 import "./globals.css";
 import { Suspense } from "react";
+import { LocaleProvider } from "@/components/locale/LocaleProvider";
 import { SkipToMainContent } from "@/components/customer/SkipToMainContent";
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { PostHogPageView } from "@/components/PostHogPageView";
+import { getLocale } from "@/lib/getLocale";
+import { localeHtmlDir, localeHtmlLang } from "@/lib/locale";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,31 +25,41 @@ const cormorant = Cormorant_Garamond({
   weight: ["400", "500", "600", "700"],
 });
 
+const notoSansHebrew = Noto_Sans_Hebrew({
+  variable: "--font-noto-sans-hebrew",
+  subsets: ["hebrew"],
+});
+
 export const metadata: Metadata = {
   title: "Urban Plant",
   description: "QR-based plant commerce experience",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await getLocale();
+
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} h-full antialiased`}
+      lang={localeHtmlLang(locale)}
+      dir={localeHtmlDir(locale)}
+      className={`${geistSans.variable} ${geistMono.variable} ${cormorant.variable} ${notoSansHebrew.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col main-layout">
-          <Suspense fallback={null}>
-            <SkipToMainContent />
-          </Suspense>
-          <PostHogProvider>
+          <LocaleProvider locale={locale}>
             <Suspense fallback={null}>
-              <PostHogPageView />
+              <SkipToMainContent />
             </Suspense>
-            {children}
-          </PostHogProvider>
+            <PostHogProvider>
+              <Suspense fallback={null}>
+                <PostHogPageView />
+              </Suspense>
+              {children}
+            </PostHogProvider>
+          </LocaleProvider>
         </body>
     </html>
   );

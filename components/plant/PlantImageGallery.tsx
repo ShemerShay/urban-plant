@@ -4,12 +4,16 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
+
 interface PlantImageGalleryProps {
   images: string[];
   name: string;
 }
 
 export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
+  const locale = useLocale();
   const [emblaRef, emblaApi] = useEmblaCarousel({
     align: "start",
     loop: false,
@@ -31,8 +35,12 @@ export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
   const showDots = images.length > 1;
   const statusText =
     images.length > 1
-      ? `${name}, image ${selectedIndex + 1} of ${images.length}`
-      : `${name} image`;
+      ? t(locale, "plant.gallery.statusMany", {
+          name,
+          current: selectedIndex + 1,
+          total: images.length,
+        })
+      : t(locale, "plant.gallery.statusOne", { name });
 
   function handleViewportKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (!emblaApi || images.length < 2) return;
@@ -55,7 +63,7 @@ export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
     <section
       id="plant-image-gallery"
       className="space-y-3"
-      aria-label={`${name} photos`}
+      aria-label={t(locale, "plant.gallery.photos", { name })}
     >
       <div
         className="overflow-hidden rounded-[28px] bg-neutral-100 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
@@ -77,7 +85,11 @@ export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
                 src={image}
                 alt={
                   index === selectedIndex
-                    ? `${name} — photo ${index + 1} of ${images.length}`
+                    ? t(locale, "plant.gallery.photoAlt", {
+                        name,
+                        current: index + 1,
+                        total: images.length,
+                      })
                     : ""
                 }
                 fill
@@ -95,13 +107,16 @@ export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
       </p>
 
       {showDots ? (
-        <div className="flex items-center justify-center gap-0.5 pt-1" role="group" aria-label="Choose photo">
+        <div className="flex items-center justify-center gap-0.5 pt-1" role="group" aria-label={t(locale, "plant.gallery.choose")}>
           {images.map((_, index) => (
             <button
               key={`dot-${index}`}
               type="button"
               aria-current={selectedIndex === index ? "true" : undefined}
-              aria-label={`Show photo ${index + 1} of ${images.length}`}
+              aria-label={t(locale, "plant.gallery.showPhoto", {
+                current: index + 1,
+                total: images.length,
+              })}
               onClick={() => emblaApi?.scrollTo(index)}
               className="flex h-11 min-w-11 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
             >

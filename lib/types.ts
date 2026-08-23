@@ -8,9 +8,12 @@ export type LightLevel =
 export interface PlantProduct {
   id: string;
   name: string;
+  nameHe?: string;
   family?: string;
   subtitle: string;
+  subtitleHe?: string;
   description: string;
+  descriptionHe?: string;
   /** Canonical catalog supplier price (DB: supplier_price). */
   supplierPrice: number;
   /** Same value as supplierPrice; kept for admin UI / API wire compatibility. */
@@ -20,6 +23,7 @@ export interface PlantProduct {
   labels: string[];
   light: LightLevel;
   water: string;
+  waterHe?: string;
   averageSize?: "small" | "medium" | "large" | "x-large";
   supplierName?: string;
   baseSupplierPrice?: number;
