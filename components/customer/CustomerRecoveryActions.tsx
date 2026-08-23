@@ -10,6 +10,8 @@ import {
   resolveSafeReturnPath,
 } from "@/lib/customerRecovery";
 import { isSafeCustomerReturnPath } from "@/lib/routes";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
 
 function IconWhatsApp({ className }: { className?: string }) {
   return (
@@ -60,9 +62,11 @@ interface CustomerRecoveryActionsProps {
 export function CustomerRecoveryActions({
   whatsAppMessage,
   preferredReturnHref = null,
-  returnLabel = "Return to previous page",
+  returnLabel,
   className = "mt-8",
 }: CustomerRecoveryActionsProps) {
+  const locale = useLocale();
+  const resolvedReturnLabel = returnLabel ?? t(locale, "recovery.returnPrevious");
   const pathname = usePathname() ?? "";
   const preferredHref = resolvePreferredReturnHref(pathname, preferredReturnHref);
   const storedReturnHref = useSyncExternalStore(
@@ -75,13 +79,13 @@ export function CustomerRecoveryActions({
   const whatsAppHref = customerRecoveryWhatsAppUrl(whatsAppMessage);
 
   return (
-    <div className={`${className} flex w-full flex-col gap-3`} role="group" aria-label="Next steps">
+    <div className={`${className} flex w-full flex-col gap-3`} role="group" aria-label={t(locale, "recovery.nextSteps")}>
       {returnHref ? (
         <Link
           href={returnHref}
           className={`flex min-h-12 items-center justify-center rounded-2xl bg-emerald-700 px-5 py-4 text-center text-sm font-semibold text-white transition hover:bg-emerald-600 ${actionFocusClass}`}
         >
-          {returnLabel}
+          {resolvedReturnLabel}
         </Link>
       ) : null}
       {whatsAppHref ? (
@@ -93,8 +97,8 @@ export function CustomerRecoveryActions({
         >
           <IconWhatsApp className="size-5 shrink-0 text-[#25D366]" />
           <span>
-            Contact Urban Plant on WhatsApp
-            <span className="sr-only"> (opens in a new tab)</span>
+            {t(locale, "recovery.whatsapp")}
+            <span className="sr-only">{t(locale, "common.opensNewTab")}</span>
           </span>
         </a>
       ) : null}

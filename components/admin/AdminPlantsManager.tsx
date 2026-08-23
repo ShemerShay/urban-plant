@@ -6,7 +6,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import {
+  careLabel,
+  displayApiError,
+  lightLabel,
+  sizeLabel,
+  yesNoLabel,
+} from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
+import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
 
@@ -20,15 +29,19 @@ type PlantsApiResponse = {
 type PlantDraft = {
   id: string;
   name: string;
+  nameHe: string;
   family: string;
   subtitle: string;
+  subtitleHe: string;
   description: string;
+  descriptionHe: string;
   price: string;
   currency: PlantProduct["currency"];
   imagesText: string;
   labelsText: string;
   light: PlantProduct["light"];
   water: string;
+  waterHe: string;
   averageSize: PlantProduct["averageSize"] | "";
   supplierName: string;
   baseSupplierPrice: string;
@@ -49,16 +62,12 @@ const DIFFICULTY_OPTIONS: PlantProduct["difficulty"][] = ["Easy", "Moderate", "A
 
 const CURRENCY_OPTIONS: PlantProduct["currency"][] = ["ILS", "USD", "EUR"];
 
-const SIZE_OPTIONS: { value: NonNullable<PlantProduct["averageSize"]>; label: string }[] = [
-  { value: "small", label: "Small" },
-  { value: "medium", label: "Medium" },
-  { value: "large", label: "Large" },
-  { value: "x-large", label: "X-Large" },
+const SIZE_VALUES: NonNullable<PlantProduct["averageSize"]>[] = [
+  "small",
+  "medium",
+  "large",
+  "x-large",
 ];
-
-function averageSizeLabel(size: NonNullable<PlantProduct["averageSize"]>): string {
-  return SIZE_OPTIONS.find((option) => option.value === size)?.label ?? size;
-}
 
 function linesFromArray(values: string[]): string {
   return values.join("\n");
@@ -75,15 +84,19 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
   return {
     id: plant.id,
     name: plant.name,
+    nameHe: plant.nameHe ?? "",
     family: plant.family ?? "",
     subtitle: plant.subtitle,
+    subtitleHe: plant.subtitleHe ?? "",
     description: plant.description,
+    descriptionHe: plant.descriptionHe ?? "",
     price: String(plant.price),
     currency: plant.currency,
     imagesText: linesFromArray(plant.images),
     labelsText: linesFromArray(plant.labels),
     light: plant.light,
     water: plant.water,
+    waterHe: plant.waterHe ?? "",
     averageSize: plant.averageSize ?? "",
     supplierName: plant.supplierName ?? "",
     baseSupplierPrice:
@@ -99,15 +112,19 @@ function emptyDraft(): PlantDraft {
   return {
     id: "",
     name: "",
+    nameHe: "",
     family: "",
     subtitle: "",
+    subtitleHe: "",
     description: "",
+    descriptionHe: "",
     price: "",
     currency: "ILS",
     imagesText: "",
     labelsText: "",
     light: "Bright indirect light",
     water: "",
+    waterHe: "",
     averageSize: "",
     supplierName: "",
     baseSupplierPrice: "",
@@ -126,15 +143,19 @@ function draftToPayload(draft: PlantDraft, options?: { omitId?: boolean }): Reco
   return {
     ...(options?.omitId ? {} : { id: draft.id.trim() }),
     name: draft.name.trim(),
+    nameHe: draft.nameHe.trim(),
     ...(draft.family.trim() ? { family: draft.family.trim() } : {}),
     subtitle: draft.subtitle.trim(),
+    subtitleHe: draft.subtitleHe.trim(),
     description: draft.description.trim(),
+    descriptionHe: draft.descriptionHe.trim(),
     price,
     currency: draft.currency,
     images: arrayFromLines(draft.imagesText),
     labels: arrayFromLines(draft.labelsText),
     light: draft.light,
     water: draft.water.trim(),
+    waterHe: draft.waterHe.trim(),
     ...(draft.averageSize ? { averageSize: draft.averageSize } : {}),
     ...(draft.supplierName.trim() ? { supplierName: draft.supplierName.trim() } : {}),
     ...(baseSupplierPrice !== undefined && Number.isFinite(baseSupplierPrice)
@@ -213,13 +234,17 @@ function plantMatchesSearch(plant: PlantProduct, query: string): boolean {
   const haystack = [
     plant.id,
     plant.name,
+    plant.nameHe,
     plant.family,
     plant.subtitle,
+    plant.subtitleHe,
     plant.description,
+    plant.descriptionHe,
     plant.currency,
     String(plant.price),
     plant.light,
     plant.water,
+    plant.waterHe,
     plant.difficulty,
     plant.location,
     plant.supplierName,
@@ -241,6 +266,8 @@ function PlantImagesRow({
   name: string;
   size?: "sm" | "md";
 }) {
+  const locale = useLocale();
+
   if (images.length === 0) {
     return (
       <div
@@ -248,7 +275,7 @@ function PlantImagesRow({
           size === "sm" ? "h-14 w-14" : "min-h-[5rem] w-full"
         }`}
       >
-        No image
+        {t(locale, "admin.plants.noImage")}
       </div>
     );
   }
@@ -280,6 +307,8 @@ function PlantFieldsForm({
   onChange: (next: PlantDraft) => void;
   idReadOnly?: boolean;
 }) {
+  const locale = useLocale();
+
   function patch(partial: Partial<PlantDraft>) {
     onChange({ ...draft, ...partial });
   }
@@ -290,18 +319,18 @@ function PlantFieldsForm({
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <span className={labelClassName}>Images</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.images")}</span>
           <div className="mt-1">
             <PlantImagePicker
               images={previewImages}
-              plantName={draft.name || "Plant"}
+              plantName={draft.name || t(locale, "admin.plants.defaultName")}
               onChange={(urls) => patch({ imagesText: linesFromArray(urls) })}
             />
           </div>
         </div>
         {idReadOnly ? (
           <label className="block sm:col-span-2">
-            <span className={labelClassName}>ID</span>
+            <span className={labelClassName}>{t(locale, "admin.plants.id")}</span>
             <input
               className={inputClassName}
               value={draft.id}
@@ -312,15 +341,24 @@ function PlantFieldsForm({
           </label>
         ) : null}
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Name</span>
+          <span className={labelClassName}>{t(locale, "admin.common.name")}</span>
           <input
             className={inputClassName}
             value={draft.name}
             onChange={(e) => patch({ name: e.target.value })}
           />
         </label>
+        <label className="block sm:col-span-2">
+          <span className={labelClassName}>{t(locale, "admin.plants.nameHe")}</span>
+          <input
+            className={inputClassName}
+            value={draft.nameHe}
+            onChange={(e) => patch({ nameHe: e.target.value })}
+            dir="rtl"
+          />
+        </label>
         <label className="block">
-          <span className={labelClassName}>Family (optional)</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.familyOptional")}</span>
           <input
             className={inputClassName}
             value={draft.family}
@@ -328,7 +366,7 @@ function PlantFieldsForm({
           />
         </label>
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Subtitle</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.subtitle")}</span>
           <input
             className={inputClassName}
             value={draft.subtitle}
@@ -336,15 +374,33 @@ function PlantFieldsForm({
           />
         </label>
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Description</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.subtitleHe")}</span>
+          <input
+            className={inputClassName}
+            value={draft.subtitleHe}
+            onChange={(e) => patch({ subtitleHe: e.target.value })}
+            dir="rtl"
+          />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className={labelClassName}>{t(locale, "admin.plants.description")}</span>
           <textarea
             className={`${inputClassName} min-h-[4.5rem]`}
             value={draft.description}
             onChange={(e) => patch({ description: e.target.value })}
           />
         </label>
+        <label className="block sm:col-span-2">
+          <span className={labelClassName}>{t(locale, "admin.plants.descriptionHe")}</span>
+          <textarea
+            className={`${inputClassName} min-h-[4.5rem]`}
+            value={draft.descriptionHe}
+            onChange={(e) => patch({ descriptionHe: e.target.value })}
+            dir="rtl"
+          />
+        </label>
         <label className="block">
-          <span className={labelClassName}>Price</span>
+          <span className={labelClassName}>{t(locale, "admin.common.price")}</span>
           <input
             className={inputClassName}
             type="number"
@@ -355,7 +411,7 @@ function PlantFieldsForm({
           />
         </label>
         <label className="block">
-          <span className={labelClassName}>Currency</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.currency")}</span>
           <select
             className={inputClassName}
             value={draft.currency}
@@ -369,7 +425,7 @@ function PlantFieldsForm({
           </select>
         </label>
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Labels (one per line)</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.labelsHint")}</span>
           <textarea
             className={`${inputClassName} min-h-[4rem]`}
             value={draft.labelsText}
@@ -377,7 +433,7 @@ function PlantFieldsForm({
           />
         </label>
         <label className="block">
-          <span className={labelClassName}>Light</span>
+          <span className={labelClassName}>{t(locale, "plant.info.light")}</span>
           <select
             className={inputClassName}
             value={draft.light}
@@ -385,13 +441,13 @@ function PlantFieldsForm({
           >
             {LIGHT_OPTIONS.map((light) => (
               <option key={light} value={light}>
-                {light}
+                {lightLabel(locale, light)}
               </option>
             ))}
           </select>
         </label>
         <label className="block">
-          <span className={labelClassName}>Water</span>
+          <span className={labelClassName}>{t(locale, "plant.info.water")}</span>
           <input
             className={inputClassName}
             value={draft.water}
@@ -399,7 +455,16 @@ function PlantFieldsForm({
           />
         </label>
         <label className="block">
-          <span className={labelClassName}>Difficulty</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.waterHe")}</span>
+          <input
+            className={inputClassName}
+            value={draft.waterHe}
+            onChange={(e) => patch({ waterHe: e.target.value })}
+            dir="rtl"
+          />
+        </label>
+        <label className="block">
+          <span className={labelClassName}>{t(locale, "admin.plants.difficulty")}</span>
           <select
             className={inputClassName}
             value={draft.difficulty}
@@ -407,13 +472,13 @@ function PlantFieldsForm({
           >
             {DIFFICULTY_OPTIONS.map((difficulty) => (
               <option key={difficulty} value={difficulty}>
-                {difficulty}
+                {careLabel(locale, difficulty)}
               </option>
             ))}
           </select>
         </label>
         <label className="block">
-          <span className={labelClassName}>Average size (optional)</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.averageSizeOptional")}</span>
           <select
             className={inputClassName}
             value={draft.averageSize}
@@ -422,15 +487,15 @@ function PlantFieldsForm({
             }
           >
             <option value="">—</option>
-            {SIZE_OPTIONS.map((size) => (
-              <option key={size.value} value={size.value}>
-                {size.label}
+            {SIZE_VALUES.map((size) => (
+              <option key={size} value={size}>
+                {sizeLabel(locale, size)}
               </option>
             ))}
           </select>
         </label>
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Location</span>
+          <span className={labelClassName}>{t(locale, "admin.common.location")}</span>
           <input
             className={inputClassName}
             value={draft.location}
@@ -444,10 +509,10 @@ function PlantFieldsForm({
             onChange={(e) => patch({ petFriendly: e.target.checked })}
             className={adminCheckboxClassName}
           />
-          <span className="text-sm text-slate-800">Pet friendly</span>
+          <span className="text-sm text-slate-800">{t(locale, "admin.plants.petFriendly")}</span>
         </label>
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Care instructions (one per line)</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.careInstructionsHint")}</span>
           <textarea
             className={`${inputClassName} min-h-[5rem]`}
             value={draft.careInstructionsText}
@@ -455,7 +520,7 @@ function PlantFieldsForm({
           />
         </label>
         <label className="block">
-          <span className={labelClassName}>Supplier name (optional)</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.supplierNameOptional")}</span>
           <input
             className={inputClassName}
             value={draft.supplierName}
@@ -463,7 +528,7 @@ function PlantFieldsForm({
           />
         </label>
         <label className="block">
-          <span className={labelClassName}>Base supplier price (optional)</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.baseSupplierPriceOptional")}</span>
           <input
             className={inputClassName}
             type="number"
@@ -479,64 +544,98 @@ function PlantFieldsForm({
 }
 
 function PlantDetailView({ plant }: { plant: PlantProduct }) {
+  const locale = useLocale();
+
   return (
     <div>
       <PlantImagesRow images={plant.images} name={plant.name} />
       <dl className="grid gap-2 text-sm">
       <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Name</dt>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.common.name")}</dt>
         <dd className="text-slate-900">{plant.name}</dd>
       </div>
+      {plant.nameHe ? (
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.nameHe")}</dt>
+          <dd className="text-slate-900" dir="rtl">
+            {plant.nameHe}
+          </dd>
+        </div>
+      ) : null}
       {plant.family ? (
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Family</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.family")}</dt>
           <dd className="text-slate-900">{plant.family}</dd>
         </div>
       ) : null}
       <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Subtitle</dt>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.subtitle")}</dt>
         <dd className="text-slate-900">{plant.subtitle}</dd>
       </div>
+      {plant.subtitleHe ? (
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.subtitleHe")}</dt>
+          <dd className="text-slate-900" dir="rtl">
+            {plant.subtitleHe}
+          </dd>
+        </div>
+      ) : null}
       <div>
-        <dt className="font-medium text-slate-500">Description</dt>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.description")}</dt>
         <dd className="mt-0.5 text-slate-900">{plant.description}</dd>
       </div>
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Price</dt>
-        <dd className="text-slate-900">{formatPrice(plant.price, plant.currency)}</dd>
-      </div>
-      <div>
-        <dt className="font-medium text-slate-500">Labels</dt>
-        <dd className="mt-0.5 text-slate-900">{plant.labels.join(" · ")}</dd>
-      </div>
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Light</dt>
-        <dd className="text-slate-900">{plant.light}</dd>
-      </div>
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Water</dt>
-        <dd className="text-slate-900">{plant.water}</dd>
-      </div>
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Difficulty</dt>
-        <dd className="text-slate-900">{plant.difficulty}</dd>
-      </div>
-      {plant.averageSize ? (
-        <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Average size</dt>
-          <dd className="text-slate-900">{averageSizeLabel(plant.averageSize)}</dd>
+      {plant.descriptionHe ? (
+        <div>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.descriptionHe")}</dt>
+          <dd className="mt-0.5 text-slate-900" dir="rtl">
+            {plant.descriptionHe}
+          </dd>
         </div>
       ) : null}
       <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Location</dt>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.common.price")}</dt>
+        <dd className="text-slate-900">{formatPrice(plant.price, plant.currency, locale)}</dd>
+      </div>
+      <div>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.labels")}</dt>
+        <dd className="mt-0.5 text-slate-900">{plant.labels.join(" · ")}</dd>
+      </div>
+      <div className="flex flex-wrap gap-x-2">
+        <dt className="font-medium text-slate-500">{t(locale, "plant.info.light")}</dt>
+        <dd className="text-slate-900">{lightLabel(locale, plant.light)}</dd>
+      </div>
+      <div className="flex flex-wrap gap-x-2">
+        <dt className="font-medium text-slate-500">{t(locale, "plant.info.water")}</dt>
+        <dd className="text-slate-900">{plant.water}</dd>
+      </div>
+      {plant.waterHe ? (
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.waterHe")}</dt>
+          <dd className="text-slate-900" dir="rtl">
+            {plant.waterHe}
+          </dd>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap gap-x-2">
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.difficulty")}</dt>
+        <dd className="text-slate-900">{careLabel(locale, plant.difficulty)}</dd>
+      </div>
+      {plant.averageSize ? (
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.averageSize")}</dt>
+          <dd className="text-slate-900">{sizeLabel(locale, plant.averageSize)}</dd>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap gap-x-2">
+        <dt className="font-medium text-slate-500">{t(locale, "admin.common.location")}</dt>
         <dd className="text-slate-900">{plant.location}</dd>
       </div>
       <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">Pet friendly</dt>
-        <dd className="text-slate-900">{plant.petFriendly ? "Yes" : "No"}</dd>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.petFriendly")}</dt>
+        <dd className="text-slate-900">{yesNoLabel(locale, plant.petFriendly)}</dd>
       </div>
       <div>
-        <dt className="font-medium text-slate-500">Care instructions</dt>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.careInstructions")}</dt>
         <dd className="mt-0.5">
           <ul className="list-inside list-disc text-slate-900">
             {plant.careInstructions.map((line) => (
@@ -547,19 +646,19 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
       </div>
       {plant.supplierName ? (
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Supplier</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.supplier")}</dt>
           <dd className="text-slate-900">{plant.supplierName}</dd>
         </div>
       ) : null}
       {typeof plant.baseSupplierPrice === "number" ? (
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Base supplier price</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.baseSupplierPrice")}</dt>
           <dd className="text-slate-900">{plant.baseSupplierPrice}</dd>
         </div>
       ) : null}
       {plant.createdAt ? (
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Created at</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.common.createdAt")}</dt>
           <dd className="font-mono text-xs text-slate-900">{plant.createdAt}</dd>
         </div>
       ) : null}
@@ -583,6 +682,7 @@ function AdminPlantCard({
   onSaved: (plant: PlantProduct) => void;
   onDeleted: (plantId: string) => void;
 }) {
+  const locale = useLocale();
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState(() => plantToDraft(plant));
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -610,12 +710,12 @@ function AdminPlantCard({
       });
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (!res.ok) {
-        setSaveError(data.error ?? "Could not save plant");
+        setSaveError(displayApiError(locale, data.error, "admin.plants.saveFailed"));
         return;
       }
       if (data.plant) onSaved(data.plant);
     } catch {
-      setSaveError("Network error. Try again.");
+      setSaveError(t(locale, "common.networkError"));
     } finally {
       setIsSaving(false);
     }
@@ -628,13 +728,13 @@ function AdminPlantCard({
       const res = await fetch(routes.api.plant(plant.id), { method: "DELETE" });
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (!res.ok) {
-        setDeleteError(data.error ?? "Could not delete plant");
+        setDeleteError(displayApiError(locale, data.error, "admin.plants.deleteFailed"));
         return;
       }
       setDeleteOpen(false);
       onDeleted(plant.id);
     } catch {
-      setDeleteError("Network error. Try again.");
+      setDeleteError(t(locale, "common.networkError"));
     } finally {
       setDeleteBusy(false);
     }
@@ -668,7 +768,7 @@ function AdminPlantCard({
             </span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">{plant.subtitle}</span>
             <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{formatPrice(plant.price, plant.currency)}</span>
+              <span>{formatPrice(plant.price, plant.currency, locale)}</span>
             </span>
           </span>
           <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={isOpen} />
@@ -683,7 +783,7 @@ function AdminPlantCard({
                 setDeleteOpen(true);
               }}
               className="flex w-12 shrink-0 items-center justify-center text-slate-500 transition hover:bg-slate-50 hover:text-red-700"
-              aria-label="Delete plant"
+              aria-label={t(locale, "admin.plants.deleteAria")}
             >
               <IconTrash className="h-5 w-5" />
             </button>
@@ -694,7 +794,7 @@ function AdminPlantCard({
                 onStartEdit();
               }}
               className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-              aria-label={`Edit ${plant.name}`}
+              aria-label={t(locale, "admin.plants.editAria", { name: plant.name })}
             >
               <IconPencil className="h-5 w-5" />
             </button>
@@ -715,7 +815,7 @@ function AdminPlantCard({
                   disabled={isSaving}
                   className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
                 >
-                  {isSaving ? "Saving…" : "Save"}
+                  {isSaving ? t(locale, "admin.shared.saving") : t(locale, "admin.shared.save")}
                 </button>
                 <button
                   type="button"
@@ -723,7 +823,7 @@ function AdminPlantCard({
                   disabled={isSaving}
                   className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
                 >
-                  Cancel
+                  {t(locale, "admin.shared.cancel")}
                 </button>
               </div>
             </>
@@ -735,9 +835,9 @@ function AdminPlantCard({
 
       <AdminConfirmDialog
         open={deleteOpen}
-        title="Delete plant?"
-        message={`Deleting “${plant.name}” permanently removes it. Offers that reference this plant may stop working. Are you sure you want to continue?`}
-        confirmLabel="Delete plant"
+        title={t(locale, "admin.plants.deleteTitle")}
+        message={t(locale, "admin.plants.deleteMessage", { name: plant.name })}
+        confirmLabel={t(locale, "admin.plants.deleteConfirm")}
         destructive
         busy={deleteBusy}
         error={deleteError}
@@ -751,6 +851,7 @@ function AdminPlantCard({
 }
 
 export function AdminPlantsManager() {
+  const locale = useLocale();
   const [plants, setPlants] = useState<PlantProduct[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -774,19 +875,19 @@ export function AdminPlantsManager() {
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (signal?.aborted) return;
       if (!res.ok) {
-        setLoadError(data.error ?? "Could not load plants");
+        setLoadError(displayApiError(locale, data.error, "admin.plants.loadFailed"));
         setPlants([]);
         return;
       }
       setPlants(data.plants ?? []);
     } catch {
       if (signal?.aborted) return;
-      setLoadError("Network error while loading plants");
+      setLoadError(t(locale, "admin.plants.loadNetworkError"));
       setPlants([]);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -805,14 +906,14 @@ export function AdminPlantsManager() {
       });
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (!res.ok) {
-        setCreateError(data.error ?? "Could not create plant");
+        setCreateError(displayApiError(locale, data.error, "admin.plants.createFailed"));
         return;
       }
       setShowCreate(false);
       setCreateDraft(emptyDraft());
       await loadPlants();
     } catch {
-      setCreateError("Network error. Try again.");
+      setCreateError(t(locale, "common.networkError"));
     } finally {
       setIsCreating(false);
     }
@@ -823,16 +924,18 @@ export function AdminPlantsManager() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            Urban Plant · Admin
+            {t(locale, "admin.brand")}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">Plants</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
+            {t(locale, "admin.plants.title")}
+          </h1>
         </div>
         <div className="flex items-center gap-2">
            <Link
             href={routes.admin.index()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
-            Admin
+            {t(locale, "admin.common.admin")}
           </Link>
           <button
             type="button"
@@ -843,7 +946,11 @@ export function AdminPlantsManager() {
             }}
             className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-sm transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
             aria-expanded={showCreate}
-            aria-label={showCreate ? "Close create plant form" : "Create plant"}
+            aria-label={
+              showCreate
+                ? t(locale, "admin.plants.closeCreateAria")
+                : t(locale, "admin.plants.createAria")
+            }
           >
             <IconPlus className="h-6 w-6" />
           </button>
@@ -851,14 +958,11 @@ export function AdminPlantsManager() {
         </div>
       </div>
 
-      <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        Catalog plants used across POS pages, offers, and orders. Changes are saved to{" "}
-        <span className="font-mono text-slate-800">data/plants.json</span>.
-      </p>
-
       {showCreate ? (
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <h2 className="mb-4 text-base font-semibold text-emerald-950">New plant</h2>
+          <h2 className="mb-4 text-base font-semibold text-emerald-950">
+            {t(locale, "admin.plants.new")}
+          </h2>
           <PlantFieldsForm draft={createDraft} onChange={setCreateDraft} />
           {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">
@@ -868,7 +972,7 @@ export function AdminPlantsManager() {
               disabled={isCreating}
               className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
             >
-              {isCreating ? "Creating…" : "Create plant"}
+              {isCreating ? t(locale, "admin.common.creating") : t(locale, "admin.plants.create")}
             </button>
             <button
               type="button"
@@ -880,7 +984,7 @@ export function AdminPlantsManager() {
               disabled={isCreating}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
             >
-              Cancel
+              {t(locale, "admin.shared.cancel")}
             </button>
           </div>
         </section>
@@ -888,26 +992,28 @@ export function AdminPlantsManager() {
 
       {!isLoading && !loadError && plants.length > 0 ? (
         <label className="mb-4 block">
-          <span className="sr-only">Search plants</span>
+          <span className="sr-only">{t(locale, "admin.plants.searchAria")}</span>
           <input
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, id, labels…"
+            placeholder={t(locale, "admin.plants.searchPlaceholder")}
             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
           />
         </label>
       ) : null}
 
       {isLoading ? (
-        <p className="text-sm text-slate-600">Loading plants…</p>
+        <p className="text-sm text-slate-600">{t(locale, "admin.plants.loading")}</p>
       ) : loadError ? (
         <p className="text-sm text-red-700">{loadError}</p>
       ) : plants.length === 0 ? (
-        <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">No plants in the catalog yet.</p>
+        <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
+          {t(locale, "admin.plants.empty")}
+        </p>
       ) : filteredPlants.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          No plants match &ldquo;{searchQuery.trim()}&rdquo;.
+          {t(locale, "admin.plants.noMatch", { query: searchQuery.trim() })}
         </p>
       ) : (
         <ul className="space-y-3">

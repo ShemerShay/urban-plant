@@ -4,8 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import {
+  adminHeldForPaymentLabel,
+  displayApiError,
+  offerStatusLabel,
+  posSpotAdminAvailabilityLabel,
+} from "@/lib/displayLabels";
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
+import type { Locale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 import {
   POS_SPOT_POCKETS,
   type PosSpotPocketValue,
@@ -44,6 +53,10 @@ function useClientOrigin(): string {
   return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
 }
 
+function intlLocale(locale: Locale): string {
+  return locale === "he" ? "he-IL" : "en-US";
+}
+
 function isoToDatetimeLocalValue(iso: string | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -54,18 +67,18 @@ function isoToDatetimeLocalValue(iso: string | undefined): string {
 
 function datetimeLocalToIso(value: string): string | null {
   if (!value.trim()) return null;
-  const t = new Date(value).getTime();
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toISOString();
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return null;
+  return new Date(time).toISOString();
 }
 
-function formatDateOnly(isoDate: string | undefined): string | null {
+function formatDateOnly(isoDate: string | undefined, locale: Locale): string | null {
   if (!isoDate) return null;
   const parts = isoDate.split("-").map(Number);
   if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return null;
   const [y, m, d] = parts;
   const date = new Date(Date.UTC(y, m - 1, d));
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(locale), {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -74,6 +87,7 @@ function formatDateOnly(isoDate: string | undefined): string | null {
 }
 
 export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
+  const locale = useLocale();
   const router = useRouter();
   const origin = useClientOrigin();
 
@@ -104,57 +118,60 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   const [pocketOtherError, setPocketOtherError] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const load = useCallback(async (signal: AbortSignal) => {
-    setIsLoading(true);
-    setLoadError(null);
-    try {
-      const res = await fetch(routes.api.posSpot(posSpotId), {
-        cache: "no-store",
-        signal,
-      });
-      const data = (await res.json().catch(() => ({}))) as EditLoadResponse;
-      if (signal.aborted) return;
-      if (!res.ok) {
-        setLoadError(data.error ?? "Could not load POS Spot");
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const res = await fetch(routes.api.posSpot(posSpotId), {
+          cache: "no-store",
+          signal,
+        });
+        const data = (await res.json().catch(() => ({}))) as EditLoadResponse;
+        if (signal.aborted) return;
+        if (!res.ok) {
+          setLoadError(displayApiError(locale, data.error, "admin.pos.loadFailed"));
+          setInitialSpot(null);
+          return;
+        }
+        const spot = data.posSpot;
+        if (!spot) {
+          setLoadError(t(locale, "admin.pos.edit.notFound"));
+          setInitialSpot(null);
+          return;
+        }
+        setInitialSpot(spot);
+        setOffers(data.offers ?? []);
+        setLocations(data.locations ?? []);
+        setPartnerLocationId(spot.partnerLocationId);
+        setCurrentOfferId(spot.currentOfferId);
+        setPosNumber(spot.posNumber ?? "");
+        setPocket((spot.pocket as PosSpotPocketValue) ?? "");
+        setPocketOther(spot.pocketOther ?? "");
+        setSpotDescription(spot.spotDescription ?? "");
+        setAvailability(
+          spot.status === "sold"
+            ? "sold"
+            : spot.status === "held_for_payment"
+              ? "held_for_payment"
+              : "available",
+        );
+        setCheckStatus(spot.checkStatus);
+        setCheckBy(spot.checkBy ?? "");
+        setPosWeeklyNote(spot.posWeeklyNote ?? "");
+        setOfferPlacedAtInput(isoToDatetimeLocalValue(spot.offerPlacedAt));
+        const loc = (data.locations ?? []).find((l) => l.id === spot.partnerLocationId);
+        setPartnerLocationAddress(loc?.address ?? "");
+      } catch {
+        if (signal.aborted) return;
+        setLoadError(t(locale, "admin.pos.edit.networkLoad"));
         setInitialSpot(null);
-        return;
+      } finally {
+        setIsLoading(false);
       }
-      const spot = data.posSpot;
-      if (!spot) {
-        setLoadError("POS Spot not found");
-        setInitialSpot(null);
-        return;
-      }
-      setInitialSpot(spot);
-      setOffers(data.offers ?? []);
-      setLocations(data.locations ?? []);
-      setPartnerLocationId(spot.partnerLocationId);
-      setCurrentOfferId(spot.currentOfferId);
-      setPosNumber(spot.posNumber ?? "");
-      setPocket((spot.pocket as PosSpotPocketValue) ?? "");
-      setPocketOther(spot.pocketOther ?? "");
-      setSpotDescription(spot.spotDescription ?? "");
-      setAvailability(
-        spot.status === "sold"
-          ? "sold"
-          : spot.status === "held_for_payment"
-            ? "held_for_payment"
-            : "available",
-      );
-      setCheckStatus(spot.checkStatus);
-      setCheckBy(spot.checkBy ?? "");
-      setPosWeeklyNote(spot.posWeeklyNote ?? "");
-      setOfferPlacedAtInput(isoToDatetimeLocalValue(spot.offerPlacedAt));
-      const loc = (data.locations ?? []).find((l) => l.id === spot.partnerLocationId);
-      setPartnerLocationAddress(loc?.address ?? "");
-    } catch {
-      if (signal.aborted) return;
-      setLoadError("Network error while loading POS Spot");
-      setInitialSpot(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [posSpotId]);
+    },
+    [posSpotId, locale],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -171,7 +188,6 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
     if (!partnerLocation?.name || !posNumber.trim()) {
       return null;
     }
-    // Preview only — edit saves preserve existing spot_slug via API.
     return buildPosSpotNameAndSlug(partnerLocation.name, posNumber);
   }, [partnerLocation?.name, posNumber]);
 
@@ -216,7 +232,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   async function handleSave() {
     if (pocket === "other" && !pocketOther.trim()) {
       setPocketOtherError(true);
-      setSaveError("Custom pocket is required when Other is selected.");
+      setSaveError(t(locale, "admin.pos.edit.customPocketRequired"));
       return;
     }
     if (!canSave || !initialSpot) return;
@@ -252,12 +268,12 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setSaveError(data.error ?? "Could not save changes");
+        setSaveError(displayApiError(locale, data.error, "admin.pos.edit.saveFailed"));
         return;
       }
       router.push(routes.admin.posSpots());
     } catch {
-      setSaveError("Network error. Try again.");
+      setSaveError(t(locale, "common.networkError"));
     } finally {
       setIsSaving(false);
     }
@@ -268,48 +284,55 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   }
 
   if (isLoading) {
-    return <p className="text-sm text-slate-600">Loading POS Spot…</p>;
+    return <p className="text-sm text-slate-600">{t(locale, "admin.pos.edit.loading")}</p>;
   }
 
   if (loadError || !initialSpot) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-red-700">{loadError ?? "POS Spot not found"}</p>
+        <p className="text-sm text-red-700">{loadError ?? t(locale, "admin.pos.edit.notFound")}</p>
         <Link
           href={routes.admin.posSpots()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          Back to POS Spots
+          {t(locale, "admin.pos.edit.back")}
         </Link>
       </div>
     );
   }
+
+  const urlDisplay =
+    fullUrlPreview || `${relativePath} ${t(locale, "admin.pos.urlPending")}`;
+
+  const nextCheckFormatted =
+    formatDateOnly(initialSpot.nextCheck, locale) ?? initialSpot.nextCheck ?? "";
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            Urban Plant · Admin
+            {t(locale, "admin.brand")}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">Edit POS Spot</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Changing partner, spot number, or pocket updates spot name and slug — and therefore the
-            POS URL. Printed QR codes with the old URL will not resolve until reprinted.
-          </p>
+          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
+            {t(locale, "admin.pos.edit.title")}
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">{t(locale, "admin.pos.edit.intro")}</p>
         </div>
         <Link
           href={routes.admin.posSpots()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          Back to POS Spots
+          {t(locale, "admin.pos.edit.back")}
         </Link>
       </div>
 
       <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
         <div className="grid gap-4">
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Location</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.common.location")}
+            </span>
             <select
               value={partnerLocationId}
               onChange={(e) => handlePartnerChange(e.target.value)}
@@ -324,21 +347,23 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Address (this partner location)</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.pos.edit.addressLabel")}
+            </span>
             <textarea
               value={partnerLocationAddress}
               onChange={(e) => setPartnerLocationAddress(e.target.value)}
               rows={3}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="Street, city"
+              placeholder={t(locale, "admin.pos.edit.addressPlaceholder")}
             />
-            <span className="text-xs text-slate-500">
-              Saved on the partner location record — affects every POS spot at this site.
-            </span>
+            <span className="text-xs text-slate-500">{t(locale, "admin.pos.edit.addressHint")}</span>
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">POS number</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.pos.posNumber")}
+            </span>
             <input
               value={posNumber}
               onChange={(e) => setPosNumber(e.target.value)}
@@ -349,7 +374,9 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Pocket</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.common.pocket")}
+            </span>
             <select
               value={pocket}
               onChange={(e) => {
@@ -359,7 +386,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
               <option value="" className="text-slate-900">
-                Select pocket…
+                {t(locale, "admin.pos.edit.selectPocket")}
               </option>
               {POS_SPOT_POCKETS.map((item) => (
                 <option key={item.value} value={item.value} className="text-slate-900">
@@ -368,15 +395,15 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               ))}
             </select>
             {!initialSpot.pocket && !pocket ? (
-              <span className="text-xs text-amber-700">
-                Legacy spot — select a pocket to enable spot name regeneration on save.
-              </span>
+              <span className="text-xs text-amber-700">{t(locale, "admin.pos.edit.legacySpot")}</span>
             ) : null}
           </label>
 
           {pocket === "other" ? (
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Custom pocket</span>
+              <span className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.pos.edit.customPocket")}
+              </span>
               <input
                 value={pocketOther}
                 onChange={(e) => {
@@ -384,46 +411,56 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
                   if (e.target.value.trim()) setPocketOtherError(false);
                 }}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-                placeholder="Describe the placement"
+                placeholder={t(locale, "admin.pos.edit.customPocketPlaceholder")}
                 aria-invalid={pocketOtherError && !pocketOther.trim()}
               />
               {pocketOtherError && !pocketOther.trim() ? (
-                <span className="text-sm text-red-700">Custom pocket is required.</span>
+                <span className="text-sm text-red-700">
+                  {t(locale, "admin.pos.edit.customPocketRequiredShort")}
+                </span>
               ) : null}
             </label>
           ) : null}
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">POS Description (optional)</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.pos.edit.descriptionOptional")}
+            </span>
             <input
               value={spotDescription}
               onChange={(e) => setSpotDescription(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="Extra notes for staff — not used in the slug"
+              placeholder={t(locale, "admin.pos.edit.descriptionPlaceholder")}
               autoComplete="off"
             />
           </label>
 
           <div className="rounded-2xl bg-slate-50/80 px-3 py-3 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Spot identifiers
+              {t(locale, "admin.pos.edit.spotIdentifiers")}
             </p>
             <div className="space-y-1 text-sm">
               {spotName ? (
                 <p>
-                  <span className="font-medium text-slate-500">Spot name </span>
+                  <span className="font-medium text-slate-500">
+                    {t(locale, "admin.pos.edit.spotName")}{" "}
+                  </span>
                   <span className="font-mono text-slate-900">{spotName}</span>
                 </p>
               ) : null}
               {spotSlug ? (
                 <p>
-                  <span className="font-medium text-slate-500">Spot slug </span>
+                  <span className="font-medium text-slate-500">
+                    {t(locale, "admin.pos.edit.spotSlugLabel")}{" "}
+                  </span>
                   <span className="font-mono text-slate-900">{spotSlug}</span>
                 </p>
               ) : null}
               {pocketLabel ? (
                 <p>
-                  <span className="font-medium text-slate-500">Pocket </span>
+                  <span className="font-medium text-slate-500">
+                    {t(locale, "admin.common.pocket")}{" "}
+                  </span>
                   <span className="text-slate-900">{pocketLabel}</span>
                 </p>
               ) : null}
@@ -431,7 +468,9 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
           </div>
 
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium text-slate-700">Availability</legend>
+            <legend className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.pos.edit.availability")}
+            </legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <button
                 type="button"
@@ -443,7 +482,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
                     : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}
               >
-                Available
+                {posSpotAdminAvailabilityLabel(locale, "available")}
               </button>
               <button
                 type="button"
@@ -455,7 +494,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
                     : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}
               >
-                Unavailable
+                {posSpotAdminAvailabilityLabel(locale, "sold")}
               </button>
               <button
                 type="button"
@@ -467,27 +506,22 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
                     : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                 }`}
               >
-                Held for payment
+                {adminHeldForPaymentLabel(locale)}
               </button>
             </div>
             {initialSpot.status === "inactive" ? (
-              <p className="text-xs text-amber-700">
-                This spot is inactive. Saving will set it to the availability you choose above.
-              </p>
+              <p className="text-xs text-amber-700">{t(locale, "admin.pos.edit.inactiveHint")}</p>
             ) : availability === "held_for_payment" ? (
-              <p className="text-xs text-amber-800">
-                Held for payment — a customer started checkout payment. Mark Available to release
-                the hold, or Unavailable if the plant should not be sold.
-              </p>
+              <p className="text-xs text-amber-800">{t(locale, "admin.pos.edit.heldHint")}</p>
             ) : (
-              <p className="text-xs text-slate-500">
-                Unavailable spots cannot be purchased until marked available again.
-              </p>
+              <p className="text-xs text-slate-500">{t(locale, "admin.pos.edit.unavailableHint")}</p>
             )}
           </fieldset>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Offer</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.common.offer")}
+            </span>
             <select
               value={currentOfferId}
               onChange={(e) => setCurrentOfferId(e.target.value)}
@@ -495,18 +529,22 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
             >
               {offerOptions.map((item) => (
                 <option key={item.id} value={item.id} className="text-slate-900">
-                  {item.productName} ({formatPrice(item.consumerPrice, item.currency)})
-                  {item.status !== "active" ? " — inactive" : ""}
+                  {item.productName} ({formatPrice(item.consumerPrice, item.currency, locale)})
+                  {item.status !== "active"
+                    ? ` — ${offerStatusLabel(locale, item.status)}`
+                    : ""}
                 </option>
               ))}
             </select>
           </label>
 
           <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 px-3 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Maintenance</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t(locale, "admin.pos.edit.maintenance")}
+            </p>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium text-slate-700" id="pos-checked-label">
-                POS checked
+                {t(locale, "admin.pos.edit.posChecked")}
               </span>
               <button
                 type="button"
@@ -525,52 +563,54 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               </button>
             </div>
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Checked by (optional)</span>
+              <span className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.pos.edit.checkedBy")}
+              </span>
               <input
                 value={checkBy}
                 onChange={(e) => setCheckBy(e.target.value)}
                 disabled={!checkStatus}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60 disabled:opacity-50"
-                placeholder="Staff name"
+                placeholder={t(locale, "admin.pos.edit.checkedByPlaceholder")}
                 autoComplete="off"
               />
             </label>
             {initialSpot.nextCheck ? (
               <p className="text-xs text-slate-600">
-                Current next check date:{" "}
-                <span className="font-medium text-slate-800">
-                  {formatDateOnly(initialSpot.nextCheck) ?? initialSpot.nextCheck}
-                </span>
-                . Saving as checked renews the due date when the previous window has passed.
+                {t(locale, "admin.pos.edit.nextCheck", { date: nextCheckFormatted })}
               </p>
             ) : null}
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Weekly note (optional)</span>
+              <span className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.pos.edit.weeklyNoteOptional")}
+              </span>
               <textarea
                 value={posWeeklyNote}
                 onChange={(e) => setPosWeeklyNote(e.target.value)}
                 rows={2}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-                placeholder="Short note for this week"
+                placeholder={t(locale, "admin.pos.edit.weeklyNotePlaceholder")}
               />
             </label>
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Offer placed at (optional)</span>
+              <span className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.pos.edit.offerPlacedOptional")}
+              </span>
               <input
                 type="datetime-local"
                 value={offerPlacedAtInput}
                 onChange={(e) => setOfferPlacedAtInput(e.target.value)}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
               />
-              <span className="text-xs text-slate-500">Clear the field and save to remove the date.</span>
+              <span className="text-xs text-slate-500">
+                {t(locale, "admin.pos.edit.offerPlacedClear")}
+              </span>
             </label>
           </div>
 
           <div className="rounded-2xl bg-emerald-50/60 px-3 py-2">
-            <p className="text-xs font-medium text-slate-600">POS URL preview</p>
-            <p className="mt-1 break-all font-mono text-xs text-slate-800">
-              {fullUrlPreview || `${relativePath} (full URL loads after page mounts)`}
-            </p>
+            <p className="text-xs font-medium text-slate-600">{t(locale, "admin.pos.edit.urlPreview")}</p>
+            <p className="mt-1 break-all font-mono text-xs text-slate-800">{urlDisplay}</p>
           </div>
 
           {saveError ? <p className="text-sm text-red-700">{saveError}</p> : null}
@@ -582,7 +622,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               disabled={!canSave}
               className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSaving ? "Saving…" : "Save"}
+              {isSaving ? t(locale, "admin.shared.saving") : t(locale, "admin.shared.save")}
             </button>
             <button
               type="button"
@@ -590,7 +630,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               disabled={isSaving}
               className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Cancel
+              {t(locale, "admin.shared.cancel")}
             </button>
           </div>
         </div>

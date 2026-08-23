@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import QRCode from "react-qr-code";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { displayApiError, inventoryStatusLabel } from "@/lib/displayLabels";
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
+import { t } from "@/lib/messages";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
 import { absoluteAppUrl, getClientOrigin, posSpotPath, routes } from "@/lib/routes";
 
@@ -33,6 +36,7 @@ function useClientOrigin(): string {
  * Slug identity is partner + spot number only (Pocket is not part of QR).
  */
 export function AdminQrGenerator() {
+  const locale = useLocale();
   const qrHostRef = useRef<HTMLDivElement>(null);
   const origin = useClientOrigin();
   const [offers, setOffers] = useState<OfferOption[]>([]);
@@ -105,10 +109,10 @@ export function AdminQrGenerator() {
     if (!fullUrl) return;
     try {
       await navigator.clipboard.writeText(fullUrl);
-      setCopyHint("Copied");
+      setCopyHint(t(locale, "admin.common.copied"));
       window.setTimeout(() => setCopyHint(null), 2000);
     } catch {
-      setCopyHint("Could not copy");
+      setCopyHint(t(locale, "admin.common.copyFailed"));
       window.setTimeout(() => setCopyHint(null), 2000);
     }
   }
@@ -153,29 +157,32 @@ export function AdminQrGenerator() {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setSaveHint(data.error ?? "Could not save POS Spot");
+        setSaveHint(displayApiError(locale, data.error, "admin.qr.saveFailed"));
         return;
       }
-      setSaveHint("POS Spot saved");
+      setSaveHint(t(locale, "admin.qr.saved"));
       resetForm();
     } catch {
-      setSaveHint("Network error. Try again.");
+      setSaveHint(t(locale, "common.networkError"));
     } finally {
       setIsSaving(false);
     }
   }
 
+  const urlDisplay =
+    fullUrl || `${relativePath} ${t(locale, "admin.pos.urlPending")}`;
+
   return (
     <div className="space-y-6">
       <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-        <h2 className="text-lg font-semibold text-emerald-950">Create POS Spot QR</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Prefer creating from Partners → Partner → POS Spots. Slug = partner + spot number only.
-        </p>
+        <h2 className="text-lg font-semibold text-emerald-950">{t(locale, "admin.qr.title")}</h2>
+        <p className="mt-1 text-sm text-slate-600">{t(locale, "admin.qr.intro")}</p>
 
         <div className="mt-5 grid gap-4">
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Partner Location</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.qr.partnerLocation")}
+            </span>
             <select
               value={partnerLocationId}
               onChange={(e) => setPartnerLocationId(e.target.value)}
@@ -190,7 +197,9 @@ export function AdminQrGenerator() {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Existing Offer</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.qr.existingOffer")}
+            </span>
             <select
               value={currentOfferId}
               onChange={(e) => setCurrentOfferId(e.target.value)}
@@ -198,14 +207,16 @@ export function AdminQrGenerator() {
             >
               {offers.map((item) => (
                 <option key={item.id} value={item.id} className="text-slate-900">
-                  {item.productName} ({formatPrice(item.consumerPrice, item.currency)})
+                  {item.productName} ({formatPrice(item.consumerPrice, item.currency, locale)})
                 </option>
               ))}
             </select>
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">POS Spot number</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.qr.spotNumber")}
+            </span>
             <input
               value={posNumber}
               onChange={(e) => setPosNumber(e.target.value)}
@@ -215,63 +226,73 @@ export function AdminQrGenerator() {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">POS Description (optional)</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.qr.descriptionOptional")}
+            </span>
             <input
               value={spotDescription}
               onChange={(e) => setSpotDescription(e.target.value)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="Extra notes for staff — not used in the slug"
+              placeholder={t(locale, "admin.qr.descriptionPlaceholder")}
             />
           </label>
 
           <div className="space-y-2 rounded-2xl bg-slate-50/80 px-3 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Auto-generated identifiers
+              {t(locale, "admin.qr.autoIdentifiers")}
             </p>
             <div className="space-y-1 text-sm">
               {spotName ? (
                 <p>
-                  <span className="font-medium text-slate-500">Spot name </span>
+                  <span className="font-medium text-slate-500">
+                    {t(locale, "admin.qr.spotName")}{" "}
+                  </span>
                   <span className="font-mono text-slate-900">{spotName}</span>
                 </p>
               ) : null}
               {spotSlug ? (
                 <p>
-                  <span className="font-medium text-slate-500">Spot slug </span>
+                  <span className="font-medium text-slate-500">
+                    {t(locale, "admin.qr.spotSlug")}{" "}
+                  </span>
                   <span className="font-mono text-slate-900">{spotSlug}</span>
                 </p>
               ) : null}
             </div>
-            <span className="text-xs text-slate-500">Built from partner name and spot number only.</span>
+            <span className="text-xs text-slate-500">{t(locale, "admin.qr.builtFrom")}</span>
           </div>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Initial POS Spot status</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.qr.initialStatus")}
+            </span>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as PosSpotStatus)}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
               <option value="available" className="text-slate-900">
-                Available
+                {inventoryStatusLabel(locale, "available")}
               </option>
               <option value="sold" className="text-slate-900">
-                Sold
+                {inventoryStatusLabel(locale, "sold")}
               </option>
               <option value="inactive" className="text-slate-900">
-                Inactive
+                {inventoryStatusLabel(locale, "inactive")}
               </option>
             </select>
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Placement notes</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.qr.placementNotes")}
+            </span>
             <textarea
               value={placementNotes}
               onChange={(e) => setPlacementNotes(e.target.value)}
               rows={3}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
-              placeholder="Optional notes"
+              placeholder={t(locale, "admin.qr.placementPlaceholder")}
             />
           </label>
 
@@ -281,37 +302,37 @@ export function AdminQrGenerator() {
             disabled={!canSave}
             className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSaving ? "Saving…" : "Save POS Spot"}
+            {isSaving ? t(locale, "admin.shared.saving") : t(locale, "admin.qr.save")}
           </button>
           {saveHint ? <span className="text-sm text-emerald-800">{saveHint}</span> : null}
         </div>
       </div>
 
       <div className="rounded-3xl bg-emerald-50/40 p-5">
-        <h2 className="text-lg font-semibold text-emerald-950">Preview</h2>
+        <h2 className="text-lg font-semibold text-emerald-950">{t(locale, "admin.qr.preview")}</h2>
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Offer</dt>
+            <dt className="font-medium text-slate-500">{t(locale, "admin.common.offer")}</dt>
             <dd className="text-slate-900">{offer?.productName ?? currentOfferId}</dd>
           </div>
           <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Location</dt>
+            <dt className="font-medium text-slate-500">{t(locale, "admin.common.location")}</dt>
             <dd className="text-slate-900">{location?.name ?? partnerLocationId}</dd>
           </div>
           <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Spot number</dt>
+            <dt className="font-medium text-slate-500">{t(locale, "admin.qr.spotNumberLabel")}</dt>
             <dd className="text-slate-900">{posNumber || "—"}</dd>
           </div>
           {spotName ? (
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Spot name</dt>
+              <dt className="font-medium text-slate-500">{t(locale, "admin.qr.spotName")}</dt>
               <dd className="font-mono text-slate-900">{spotName}</dd>
             </div>
           ) : null}
           <div className="pt-2">
-            <dt className="font-medium text-slate-500">Generated URL</dt>
+            <dt className="font-medium text-slate-500">{t(locale, "admin.qr.generatedUrl")}</dt>
             <dd className="mt-1 break-all rounded-xl bg-white px-3 py-2 font-mono text-xs text-slate-800 ring-1 ring-emerald-100">
-              {fullUrl || `${relativePath} (full URL loads after page mounts)`}
+              {urlDisplay}
             </dd>
           </div>
         </dl>
@@ -323,7 +344,7 @@ export function AdminQrGenerator() {
             disabled={!fullUrl}
             className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Copy URL
+            {t(locale, "admin.qr.copyUrl")}
           </button>
           <button
             type="button"
@@ -331,7 +352,7 @@ export function AdminQrGenerator() {
             disabled={!fullUrl}
             className="rounded-xl border border-emerald-300 bg-white px-4 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Download QR (SVG)
+            {t(locale, "admin.qr.downloadQrSvg")}
           </button>
           {copyHint ? <span className="self-center text-sm text-emerald-800">{copyHint}</span> : null}
         </div>
@@ -348,7 +369,7 @@ export function AdminQrGenerator() {
               />
             ) : (
               <div className="flex aspect-square items-center justify-center rounded-xl bg-emerald-50 text-center text-sm text-slate-600">
-                Preparing QR…
+                {t(locale, "admin.pos.preparingQr")}
               </div>
             )}
           </div>
@@ -360,7 +381,7 @@ export function AdminQrGenerator() {
           href={routes.admin.partners()}
           className="font-medium text-emerald-700 underline underline-offset-2"
         >
-          Back to partners
+          {t(locale, "admin.qr.backPartners")}
         </Link>
       </p>
     </div>

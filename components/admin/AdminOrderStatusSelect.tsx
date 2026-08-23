@@ -2,8 +2,10 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { orderStatusLabel } from "@/lib/displayLabels";
+import { t } from "@/lib/messages";
 import type { OrderStatus } from "@/lib/status";
-import { ORDER_STATUS_LABELS } from "@/lib/status";
 
 /** Operational statuses; cancellation is handled by the cancel action because it requires a reason. */
 const OPTIONS: OrderStatus[] = ["sold", "picked_up", "delivered"];
@@ -31,6 +33,7 @@ export function AdminOrderStatusSelect(props: {
   disabled?: boolean;
   onChange: (next: OrderStatus) => void;
 }) {
+  const locale = useLocale();
   const { id, value, disabled, onChange } = props;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -77,7 +80,7 @@ export function AdminOrderStatusSelect(props: {
         aria-controls={listId}
         onClick={() => !disabled && setOpen((o) => !o)}
       >
-        <span className="min-w-0 truncate">{ORDER_STATUS_LABELS[value]}</span>
+        <span className="min-w-0 truncate">{orderStatusLabel(locale, value)}</span>
         <Chevron open={open} />
       </button>
 
@@ -85,7 +88,7 @@ export function AdminOrderStatusSelect(props: {
         <ul
           id={listId}
           role="listbox"
-          aria-label="Order status options"
+          aria-label={t(locale, "admin.orders.statusOptions")}
           className="absolute left-0 right-0 top-full z-50 max-h-60 overflow-auto rounded-b-xl border border-slate-200 border-t bg-white py-1 shadow-lg"
         >
           {OPTIONS.map((opt) => {
@@ -113,7 +116,7 @@ export function AdminOrderStatusSelect(props: {
                       <span className="size-2 rounded-full bg-emerald-700" />
                     ) : null}
                   </span>
-                  {ORDER_STATUS_LABELS[opt]}
+                  {orderStatusLabel(locale, opt)}
                 </button>
               </li>
             );

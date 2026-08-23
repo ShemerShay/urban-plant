@@ -2,6 +2,9 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
+
 import {
   adminCheckboxClassName,
   adminOptionRowClassName,
@@ -45,10 +48,12 @@ export function AdminMultiSelect({
   values,
   onChange,
   summary,
-  emptyLabel = "Select…",
+  emptyLabel: emptyLabelProp,
   disabled = false,
   "aria-label": ariaLabel,
 }: AdminMultiSelectProps) {
+  const locale = useLocale();
+  const emptyLabel = emptyLabelProp ?? t(locale, "admin.shared.select");
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
@@ -105,7 +110,7 @@ export function AdminMultiSelect({
           aria-label={ariaLabel}
         >
           {options.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-slate-500">No options</p>
+            <p className="px-3 py-2 text-sm text-slate-500">{t(locale, "admin.shared.noOptions")}</p>
           ) : (
             options.map((opt) => {
               const checked = selected.has(opt.value);

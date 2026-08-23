@@ -4,6 +4,8 @@ import {
   adminCheckboxClassName,
 } from "@/components/admin/shared/adminSelectionStyles";
 import type { AdminSelectOption } from "@/components/admin/shared/AdminMultiSelect";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
 
 type AdminCheckboxListProps = {
   options: AdminSelectOption[];
@@ -21,10 +23,12 @@ export function AdminCheckboxList({
   options,
   values,
   onChange,
-  emptyMessage = "No options",
+  emptyMessage: emptyMessageProp,
   className = "max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-100 p-2",
   "aria-label": ariaLabel,
 }: AdminCheckboxListProps) {
+  const locale = useLocale();
+  const emptyMessage = emptyMessageProp ?? t(locale, "admin.shared.noOptions");
   const selected = new Set(values);
 
   function toggle(value: string) {

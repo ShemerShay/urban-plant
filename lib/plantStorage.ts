@@ -10,15 +10,19 @@ import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
 export type PlantRow = {
   id: string;
   name: string;
+  name_he: string | null;
   family: string | null;
   subtitle: string;
+  subtitle_he: string | null;
   description: string;
+  description_he: string | null;
   supplier_price: string | number;
   currency: string;
   images: unknown;
   labels: unknown;
   light: string;
   water: string;
+  water_he: string | null;
   average_size: string | null;
   supplier_name: string | null;
   difficulty: string;
@@ -36,15 +40,21 @@ function parseJsonStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function optionalTrimmed(value: string | null | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
 export function mapPlantRow(row: PlantRow): PlantProduct {
   const supplierPrice = parseNumeric(row.supplier_price);
   const createdAt = toIsoString(row.created_at);
-  const family =
-    typeof row.family === "string" && row.family.trim() ? row.family.trim() : undefined;
-  const supplierName =
-    typeof row.supplier_name === "string" && row.supplier_name.trim()
-      ? row.supplier_name.trim()
-      : undefined;
+  const family = optionalTrimmed(row.family);
+  const supplierName = optionalTrimmed(row.supplier_name);
+  const nameHe = optionalTrimmed(row.name_he);
+  const subtitleHe = optionalTrimmed(row.subtitle_he);
+  const descriptionHe = optionalTrimmed(row.description_he);
+  const waterHe = optionalTrimmed(row.water_he);
   const averageSizeRaw = row.average_size?.trim();
   const averageSize =
     averageSizeRaw === "small" ||
@@ -70,7 +80,11 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     location: row.location,
     petFriendly: row.pet_friendly,
     careInstructions: parseJsonStringArray(row.care_instructions),
+    ...(nameHe ? { nameHe } : {}),
     ...(family ? { family } : {}),
+    ...(subtitleHe ? { subtitleHe } : {}),
+    ...(descriptionHe ? { descriptionHe } : {}),
+    ...(waterHe ? { waterHe } : {}),
     ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(createdAt ? { createdAt } : {}),
@@ -93,8 +107,8 @@ function seedPlantsWithSupplierPrice(): PlantProduct[] {
 export async function readPlants(): Promise<PlantProduct[]> {
   const rows = await sql`
     SELECT
-      id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size,
+      id, name, name_he, family, subtitle, subtitle_he, description, description_he,
+      supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
       care_instructions, created_at
     FROM plants
@@ -109,8 +123,8 @@ export async function getPlantByIdAsync(id: string): Promise<PlantProduct | unde
   if (!trimmed) return undefined;
   const rows = await sql`
     SELECT
-      id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size,
+      id, name, name_he, family, subtitle, subtitle_he, description, description_he,
+      supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
       care_instructions, created_at
     FROM plants
@@ -134,23 +148,27 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
 
   const rows = await sql`
     INSERT INTO plants (
-      id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size,
+      id, name, name_he, family, subtitle, subtitle_he, description, description_he,
+      supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
       care_instructions, created_at
     )
     VALUES (
       ${plant.id},
       ${plant.name},
+      ${plant.nameHe ?? null},
       ${plant.family ?? null},
       ${plant.subtitle},
+      ${plant.subtitleHe ?? null},
       ${plant.description},
+      ${plant.descriptionHe ?? null},
       ${plant.supplierPrice},
       ${plant.currency},
       ${imagesJson}::jsonb,
       ${labelsJson}::jsonb,
       ${plant.light},
       ${plant.water},
+      ${plant.waterHe ?? null},
       ${plant.averageSize ?? null},
       ${plant.supplierName ?? null},
       ${plant.difficulty},
@@ -160,8 +178,8 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.createdAt ?? new Date().toISOString()}::timestamptz
     )
     RETURNING
-      id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size,
+      id, name, name_he, family, subtitle, subtitle_he, description, description_he,
+      supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
       care_instructions, created_at
   `;
@@ -188,15 +206,19 @@ export async function updatePlant(
     UPDATE plants
     SET
       name = ${plant.name},
+      name_he = ${plant.nameHe ?? null},
       family = ${plant.family ?? null},
       subtitle = ${plant.subtitle},
+      subtitle_he = ${plant.subtitleHe ?? null},
       description = ${plant.description},
+      description_he = ${plant.descriptionHe ?? null},
       supplier_price = ${plant.supplierPrice},
       currency = ${plant.currency},
       images = ${imagesJson}::jsonb,
       labels = ${labelsJson}::jsonb,
       light = ${plant.light},
       water = ${plant.water},
+      water_he = ${plant.waterHe ?? null},
       average_size = ${plant.averageSize ?? null},
       supplier_name = ${plant.supplierName ?? null},
       difficulty = ${plant.difficulty},
@@ -205,8 +227,8 @@ export async function updatePlant(
       care_instructions = ${careJson}::jsonb
     WHERE id = ${trimmed}
     RETURNING
-      id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size,
+      id, name, name_he, family, subtitle, subtitle_he, description, description_he,
+      supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
       care_instructions, created_at
   `;

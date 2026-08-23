@@ -5,11 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import QRCode from "react-qr-code";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { formatStoredDeliveryAddressDisplay } from "@/lib/deliveryAddress";
+import { posSpotAdminAvailabilityLabel } from "@/lib/displayLabels";
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
+import type { Locale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
 import { comparePosSpotsByPosNumberAsc } from "@/lib/posSpotSort";
-import { POS_HELD_FOR_PAYMENT_ADMIN_LABEL } from "@/lib/status";
 import { posSpotPocketLabel } from "@/lib/posSpotPocket";
 import {
   absoluteAppUrl,
@@ -45,37 +49,33 @@ function useClientOrigin(): string {
   return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
 }
 
-function formatCreatedAt(value: string | undefined): string | null {
+function intlLocale(locale: Locale): string {
+  return locale === "he" ? "he-IL" : "en-US";
+}
+
+function formatCreatedAt(value: string | undefined, locale: Locale): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(intlLocale(locale), {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
 }
 
-function formatDateOnly(isoDate: string | undefined): string | null {
+function formatDateOnly(isoDate: string | undefined, locale: Locale): string | null {
   if (!isoDate) return null;
   const parts = isoDate.split("-").map(Number);
   if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return null;
   const [y, m, d] = parts;
   const date = new Date(Date.UTC(y, m - 1, d));
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(intlLocale(locale), {
     year: "numeric",
     month: "short",
     day: "numeric",
     timeZone: "UTC",
   });
-}
-
-/** Admin list copy only; customer plant page still shows labels via `INVENTORY_STATUS_LABELS`. */
-function statusLabel(status: PosSpotStatus): string {
-  if (status === "available") return "Available";
-  if (status === "sold") return "Unavailable";
-  if (status === "held_for_payment") return POS_HELD_FOR_PAYMENT_ADMIN_LABEL;
-  return "Inactive";
 }
 
 function statusClassName(status: PosSpotStatus): string {
@@ -85,40 +85,37 @@ function statusClassName(status: PosSpotStatus): string {
   return "bg-amber-100 text-amber-800";
 }
 
-/**
- * POS list cards stay read-only with compact actions only: the admin column is `max-w-md`
- * and each card already carries QR + URL + several buttons, so multi-field editing lives on
- * `/admin/pos-spots/[id]/edit` instead of crowding this layout.
- */
 function PosSpotCard({
   spot,
   location,
   offer,
   origin,
+  locale,
 }: {
   spot: PosSpot;
   location: PartnerLocation | undefined;
   offer: OfferRow | undefined;
   origin: string;
+  locale: Locale;
 }) {
   const qrHostRef = useRef<HTMLDivElement>(null);
   const [copyHint, setCopyHint] = useState<string | null>(null);
   const relativePath = posSpotPath(spot.spotSlug);
   const fullUrl = origin ? absoluteAppUrl(origin, relativePath) : "";
-  const createdLabel = formatCreatedAt(spot.createdAt);
+  const createdLabel = formatCreatedAt(spot.createdAt, locale);
   const nextVisitIso = spot.nextCheck ?? addCalendarDaysUtc(utcCalendarDateString(), 7);
-  const nextVisitLabel = formatDateOnly(nextVisitIso) ?? nextVisitIso;
-  const offerPlacedLabel = formatCreatedAt(spot.offerPlacedAt);
+  const nextVisitLabel = formatDateOnly(nextVisitIso, locale) ?? nextVisitIso;
+  const offerPlacedLabel = formatCreatedAt(spot.offerPlacedAt, locale);
   const pocketLabel = posSpotPocketLabel(spot);
 
   async function handleCopyUrl() {
     if (!fullUrl) return;
     try {
       await navigator.clipboard.writeText(fullUrl);
-      setCopyHint("Copied");
+      setCopyHint(t(locale, "admin.common.copied"));
       window.setTimeout(() => setCopyHint(null), 2000);
     } catch {
-      setCopyHint("Could not copy");
+      setCopyHint(t(locale, "admin.common.copyFailed"));
       window.setTimeout(() => setCopyHint(null), 2000);
     }
   }
@@ -144,6 +141,9 @@ function PosSpotCard({
     URL.revokeObjectURL(blobUrl);
   }
 
+  const urlDisplay =
+    fullUrl || `${relativePath} ${t(locale, "admin.pos.urlPending")}`;
+
   return (
     <article
       className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
@@ -157,7 +157,7 @@ function PosSpotCard({
               <span
                 className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClassName(spot.status)}`}
               >
-                {statusLabel(spot.status)}
+                {posSpotAdminAvailabilityLabel(locale, spot.status)}
               </span>
             </div>
             {spot.spotDescription ? (
@@ -167,79 +167,81 @@ function PosSpotCard({
 
           <dl className="space-y-2 text-sm">
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Offer</dt>
+              <dt className="font-medium text-slate-500">{t(locale, "admin.common.offer")}</dt>
               <dd className="text-slate-900">
                 {offer
-                  ? `${offer.productName} (${formatPrice(offer.consumerPrice, offer.currency)})`
+                  ? `${offer.productName} (${formatPrice(offer.consumerPrice, offer.currency, locale)})`
                   : "—"}
               </dd>
             </div>
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Spot slug</dt>
+              <dt className="font-medium text-slate-500">{t(locale, "admin.pos.spotSlug")}</dt>
               <dd className="font-mono text-slate-900">{spot.spotSlug}</dd>
             </div>
             {pocketLabel ? (
               <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Pocket</dt>
+                <dt className="font-medium text-slate-500">{t(locale, "admin.common.pocket")}</dt>
                 <dd className="text-slate-900">{pocketLabel}</dd>
               </div>
             ) : null}
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Location</dt>
+              <dt className="font-medium text-slate-500">{t(locale, "admin.common.location")}</dt>
               <dd className="text-slate-900">{location?.name ?? spot.partnerLocationId}</dd>
             </div>
             {location?.address ? (
               <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Address</dt>
-                <dd className="text-slate-900">{location.address}</dd>
+                <dt className="font-medium text-slate-500">{t(locale, "admin.common.address")}</dt>
+                <dd className="text-slate-900">
+                  {formatStoredDeliveryAddressDisplay(location.address, locale)}
+                </dd>
               </div>
             ) : null}
             {spot.posNumber ? (
               <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">POS number</dt>
+                <dt className="font-medium text-slate-500">{t(locale, "admin.pos.posNumber")}</dt>
                 <dd className="text-slate-900">{spot.posNumber}</dd>
               </div>
             ) : null}
             {spot.placementNotes ? (
               <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Placement</dt>
+                <dt className="font-medium text-slate-500">{t(locale, "admin.pos.placement")}</dt>
                 <dd className="text-slate-900">{spot.placementNotes}</dd>
               </div>
             ) : null}
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Check status</dt>
+              <dt className="font-medium text-slate-500">{t(locale, "admin.pos.checkStatus")}</dt>
               <dd className="text-slate-900">
-                {spot.checkStatus ? "Checked" : "Unchecked"}
+                {spot.checkStatus
+                  ? t(locale, "admin.pos.checked")
+                  : t(locale, "admin.pos.unchecked")}
                 {spot.checkStatus && spot.checkBy ? ` · ${spot.checkBy}` : ""}
               </dd>
             </div>
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Next visit</dt>
+              <dt className="font-medium text-slate-500">{t(locale, "admin.pos.nextVisit")}</dt>
               <dd className="text-slate-900">{nextVisitLabel}</dd>
             </div>
             {spot.posWeeklyNote ? (
               <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Weekly note</dt>
+                <dt className="font-medium text-slate-500">{t(locale, "admin.pos.weeklyNote")}</dt>
                 <dd className="text-slate-900">{spot.posWeeklyNote}</dd>
               </div>
             ) : null}
             {offerPlacedLabel ? (
               <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Offer placed</dt>
+                <dt className="font-medium text-slate-500">{t(locale, "admin.pos.offerPlaced")}</dt>
                 <dd className="text-slate-900">{offerPlacedLabel}</dd>
               </div>
             ) : null}
             {createdLabel ? (
               <div className="flex flex-wrap gap-x-2">
-                <dt className="font-medium text-slate-500">Created</dt>
+                <dt className="font-medium text-slate-500">{t(locale, "admin.pos.created")}</dt>
                 <dd className="text-slate-900">{createdLabel}</dd>
               </div>
             ) : null}
           </dl>
 
-          <p className="break-all font-mono text-xs text-slate-500">
-            {fullUrl || `${relativePath} (full URL loads after page mounts)`}
-          </p>
+          <p className="break-all font-mono text-xs text-slate-500">{urlDisplay}</p>
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -248,7 +250,7 @@ function PosSpotCard({
               disabled={!fullUrl}
               className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Copy QR URL
+              {t(locale, "admin.pos.copyQrUrl")}
             </button>
             <Link
               href={relativePath}
@@ -256,13 +258,13 @@ function PosSpotCard({
               rel="noopener noreferrer"
               className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-50"
             >
-              Open POS page
+              {t(locale, "admin.pos.openPage")}
             </Link>
             <Link
               href={routes.admin.posSpotEdit(spot.id)}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-50"
             >
-              Edit details
+              {t(locale, "admin.pos.editDetails")}
             </Link>
             <button
               type="button"
@@ -270,7 +272,7 @@ function PosSpotCard({
               disabled={!fullUrl}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Download QR (SVG)
+              {t(locale, "admin.pos.downloadQrSvg")}
             </button>
             {copyHint ? <span className="self-center text-xs text-emerald-800">{copyHint}</span> : null}
           </div>
@@ -278,7 +280,7 @@ function PosSpotCard({
 
         <div
           className="mx-auto flex w-full max-w-[140px] shrink-0 flex-col items-center sm:mx-0"
-          aria-label={`QR code for ${spot.spotSlug}`}
+          aria-label={t(locale, "admin.pos.qrAria", { slug: spot.spotSlug })}
         >
           <div className="w-full rounded-2xl bg-white p-3 ring-1 ring-emerald-100" ref={qrHostRef}>
             {fullUrl ? (
@@ -291,7 +293,7 @@ function PosSpotCard({
               />
             ) : (
               <div className="flex aspect-square items-center justify-center rounded-xl bg-emerald-50 text-center text-xs text-slate-600">
-                Preparing QR…
+                {t(locale, "admin.pos.preparingQr")}
               </div>
             )}
           </div>
@@ -302,6 +304,7 @@ function PosSpotCard({
 }
 
 export function AdminPosSpotList() {
+  const locale = useLocale();
   const origin = useClientOrigin();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -320,7 +323,7 @@ export function AdminPosSpotList() {
       try {
         const res = await fetch(routes.api.posSpots(), { cache: "no-store" });
         if (!res.ok) {
-          if (!cancelled) setLoadError("Could not load POS Spots");
+          if (!cancelled) setLoadError(t(locale, "admin.pos.loadFailed"));
           return;
         }
         const data = (await res.json()) as PosSpotsApiResponse;
@@ -330,7 +333,7 @@ export function AdminPosSpotList() {
         setOffers(data.offers ?? []);
         setLocations(data.locations ?? []);
       } catch {
-        if (!cancelled) setLoadError("Network error while loading POS Spots");
+        if (!cancelled) setLoadError(t(locale, "admin.pos.networkLoad"));
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -339,7 +342,7 @@ export function AdminPosSpotList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locale]);
 
   const locationById = new Map(locations.map((loc) => [loc.id, loc]));
   const offerById = new Map(offers.map((offer) => [offer.id, offer]));
@@ -351,8 +354,8 @@ export function AdminPosSpotList() {
         value: id,
         label: locationById.get(id)?.name ?? id,
       }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [posSpots, locations]);
+      .sort((a, b) => a.label.localeCompare(b.label, intlLocale(locale)));
+  }, [posSpots, locations, locale]);
 
   const filteredSpots =
     partnerFilter === "all"
@@ -368,7 +371,7 @@ export function AdminPosSpotList() {
   }
 
   if (isLoading) {
-    return <p className="text-sm text-slate-600">Loading POS Spots…</p>;
+    return <p className="text-sm text-slate-600">{t(locale, "admin.pos.loading")}</p>;
   }
 
   if (loadError) {
@@ -378,10 +381,10 @@ export function AdminPosSpotList() {
   if (posSpots.length === 0) {
     return (
       <div className="rounded-3xl bg-white p-5 text-sm text-slate-600 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-        <p>No POS Spots yet.</p>
+        <p>{t(locale, "admin.pos.empty")}</p>
         <p className="mt-2">
           <Link href={routes.admin.qr()} className="font-medium text-emerald-700 underline underline-offset-2">
-            Create a POS Spot
+            {t(locale, "admin.pos.createLink")}
           </Link>
         </p>
       </div>
@@ -390,10 +393,10 @@ export function AdminPosSpotList() {
 
   return (
     <>
-      <section aria-label="Filter POS spots" className="mb-6">
+      <section aria-label={t(locale, "admin.pos.filterAria")} className="mb-6">
         <label className="flex min-w-0 flex-col gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Partner
+            {t(locale, "admin.common.partner")}
           </span>
           <select
             className={partnerSelectClass}
@@ -401,7 +404,7 @@ export function AdminPosSpotList() {
             onChange={(e) => setPartnerFilter(e.target.value)}
           >
             <option value="all" className="text-slate-900">
-              All
+              {t(locale, "admin.common.all")}
             </option>
             {partnerOptions.map((opt) => (
               <option key={opt.value} value={opt.value} className="text-slate-900">
@@ -414,21 +417,22 @@ export function AdminPosSpotList() {
 
       {filteredSpots.length === 0 ? (
         <div className="rounded-3xl bg-white p-5 text-sm text-slate-600 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <p>No POS Spots match the selected partner.</p>
+          <p>{t(locale, "admin.pos.noMatch")}</p>
         </div>
       ) : (
-    <ul className="space-y-4">
-      {filteredSpots.map((spot) => (
-        <li key={spot.id}>
-          <PosSpotCard
-            spot={spot}
-            location={locationById.get(spot.partnerLocationId)}
-            offer={offerById.get(spot.currentOfferId)}
-            origin={origin}
-          />
-        </li>
-      ))}
-    </ul>
+        <ul className="space-y-4">
+          {filteredSpots.map((spot) => (
+            <li key={spot.id}>
+              <PosSpotCard
+                spot={spot}
+                location={locationById.get(spot.partnerLocationId)}
+                offer={offerById.get(spot.currentOfferId)}
+                origin={origin}
+                locale={locale}
+              />
+            </li>
+          ))}
+        </ul>
       )}
     </>
   );

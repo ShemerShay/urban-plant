@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { displayApiError, offerStatusLabel } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
+import { t } from "@/lib/messages";
 import type { OfferStatus, OfferWithProduct } from "@/lib/offerTypes";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
@@ -129,6 +132,7 @@ function OfferPlantImage({
   name: string;
   size?: "sm" | "md";
 }) {
+  const locale = useLocale();
   const src = images[0];
   if (!src) {
     return (
@@ -137,7 +141,7 @@ function OfferPlantImage({
           size === "sm" ? "h-14 w-14" : "min-h-[5rem] w-full max-w-[8rem]"
         }`}
       >
-        No image
+        {t(locale, "admin.plants.noImage")}
       </div>
     );
   }
@@ -161,6 +165,7 @@ function PlantSelect({
   onChange: (productId: string) => void;
   required?: boolean;
 }) {
+  const locale = useLocale();
   return (
     <select
       className={inputClassName}
@@ -168,7 +173,7 @@ function PlantSelect({
       required={required}
       onChange={(e) => onChange(e.target.value)}
     >
-      <option value="">Select a plant…</option>
+      <option value="">{t(locale, "admin.offers.selectPlant")}</option>
       {plants.map((plant) => (
         <option key={plant.id} value={plant.id}>
           {plant.name} ({plant.id})
@@ -187,6 +192,8 @@ function OfferFieldsForm({
   plants: PlantProduct[];
   onChange: (next: OfferDraft) => void;
 }) {
+  const locale = useLocale();
+
   function patch(partial: Partial<OfferDraft>) {
     onChange({ ...draft, ...partial });
   }
@@ -198,7 +205,7 @@ function OfferFieldsForm({
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Plant</span>
+          <span className={labelClassName}>{t(locale, "admin.common.plant")}</span>
           <PlantSelect
             plants={plants}
             value={draft.productId}
@@ -216,14 +223,17 @@ function OfferFieldsForm({
         </label>
         {previewImages.length > 0 ? (
           <div className="sm:col-span-2">
-            <span className={labelClassName}>Plant image (from catalog)</span>
+            <span className={labelClassName}>{t(locale, "admin.offers.plantImageFromCatalog")}</span>
             <div className="mt-1">
-              <OfferPlantImage images={previewImages} name={selectedPlant?.name ?? "Plant"} />
+              <OfferPlantImage
+                images={previewImages}
+                name={selectedPlant?.name ?? t(locale, "admin.plants.defaultName")}
+              />
             </div>
           </div>
         ) : null}
         <label className="block">
-          <span className={labelClassName}>Consumer price</span>
+          <span className={labelClassName}>{t(locale, "admin.offers.consumerPrice")}</span>
           <input
             className={inputClassName}
             type="number"
@@ -235,7 +245,7 @@ function OfferFieldsForm({
           />
         </label>
         <label className="block sm:col-span-2">
-          <span className={labelClassName}>Status</span>
+          <span className={labelClassName}>{t(locale, "admin.common.status")}</span>
           <select
             className={inputClassName}
             value={draft.status}
@@ -243,7 +253,7 @@ function OfferFieldsForm({
           >
             {STATUS_OPTIONS.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {offerStatusLabel(locale, status)}
               </option>
             ))}
           </select>
@@ -254,6 +264,7 @@ function OfferFieldsForm({
 }
 
 function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
+  const locale = useLocale();
   const missingPlant = offer.productName === offer.productId && offer.plantImages.length === 0;
 
   return (
@@ -261,12 +272,12 @@ function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
       <OfferPlantImage images={offer.plantImages} name={offer.productName} />
       {missingPlant ? (
         <p className="mb-4 text-sm text-amber-800">
-          No catalog plant found for product id &ldquo;{offer.productId}&rdquo;.
+          {t(locale, "admin.offers.missingPlant", { productId: offer.productId })}
         </p>
       ) : null}
       <dl className="grid gap-2 text-sm">
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Plant</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.common.plant")}</dt>
           <dd className="text-slate-900">
             {offer.productName}{" "}
             <span className="font-mono text-xs text-slate-500">({offer.productId})</span>
@@ -274,20 +285,20 @@ function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
         </div>
         {offer.plantSubtitle ? (
           <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">Plant subtitle</dt>
+            <dt className="font-medium text-slate-500">{t(locale, "admin.offers.plantSubtitle")}</dt>
             <dd className="text-slate-900">{offer.plantSubtitle}</dd>
           </div>
         ) : null}
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Consumer price</dt>
-          <dd className="text-slate-900">{formatPrice(offer.consumerPrice, offer.currency)}</dd>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.offers.consumerPrice")}</dt>
+          <dd className="text-slate-900">{formatPrice(offer.consumerPrice, offer.currency, locale)}</dd>
         </div>
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Status</dt>
-          <dd className="capitalize text-slate-900">{offer.status}</dd>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.common.status")}</dt>
+          <dd className="text-slate-900">{offerStatusLabel(locale, offer.status)}</dd>
         </div>
         <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">Created at</dt>
+          <dt className="font-medium text-slate-500">{t(locale, "admin.common.createdAt")}</dt>
           <dd className="font-mono text-xs text-slate-900">{offer.createdAt}</dd>
         </div>
       </dl>
@@ -310,6 +321,7 @@ function AdminOfferCard({
   onCancelEdit: () => void;
   onSaved: (offer: OfferWithProduct) => void;
 }) {
+  const locale = useLocale();
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState(() => offerToDraft(offer));
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -325,12 +337,12 @@ function AdminOfferCard({
 
   async function handleSave() {
     if (!draft.productId.trim()) {
-      setSaveError("Select a plant for this offer.");
+      setSaveError(t(locale, "admin.offers.selectPlantRequired"));
       return;
     }
     const consumerPrice = Number(draft.consumerPrice);
     if (!Number.isFinite(consumerPrice) || consumerPrice < 0) {
-      setSaveError("Consumer price must be a non-negative number.");
+      setSaveError(t(locale, "admin.offers.consumerPriceInvalid"));
       return;
     }
 
@@ -344,12 +356,12 @@ function AdminOfferCard({
       });
       const data = (await res.json().catch(() => ({}))) as OffersApiResponse;
       if (!res.ok) {
-        setSaveError(data.error ?? "Could not save offer");
+        setSaveError(displayApiError(locale, data.error, "admin.offers.saveFailed"));
         return;
       }
       if (data.offer) onSaved(data.offer);
     } catch {
-      setSaveError("Network error. Try again.");
+      setSaveError(t(locale, "common.networkError"));
     } finally {
       setIsSaving(false);
     }
@@ -382,9 +394,9 @@ function AdminOfferCard({
               {offer.productName}
             </span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">
-              {formatPrice(offer.consumerPrice, offer.currency)}
+              {formatPrice(offer.consumerPrice, offer.currency, locale)}
               <span className="text-slate-400"> · </span>
-              <span className="capitalize">{offer.status}</span>
+              <span>{offerStatusLabel(locale, offer.status)}</span>
             </span>
           </span>
           <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={isOpen} />
@@ -397,7 +409,7 @@ function AdminOfferCard({
               onStartEdit();
             }}
             className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-            aria-label={`Edit offer for ${offer.productName}`}
+            aria-label={t(locale, "admin.offers.editAria", { name: offer.productName })}
           >
             <IconPencil className="h-5 w-5" />
           </button>
@@ -421,7 +433,7 @@ function AdminOfferCard({
                   disabled={isSaving}
                   className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
                 >
-                  {isSaving ? "Saving…" : "Save"}
+                  {isSaving ? t(locale, "admin.shared.saving") : t(locale, "admin.shared.save")}
                 </button>
                 <button
                   type="button"
@@ -429,7 +441,7 @@ function AdminOfferCard({
                   disabled={isSaving}
                   className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
                 >
-                  Cancel
+                  {t(locale, "admin.shared.cancel")}
                 </button>
               </div>
             </>
@@ -443,6 +455,7 @@ function AdminOfferCard({
 }
 
 export function AdminOffersManager() {
+  const locale = useLocale();
   const [offers, setOffers] = useState<OfferWithProduct[]>([]);
   const [plants, setPlants] = useState<PlantProduct[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -471,7 +484,7 @@ export function AdminOffersManager() {
       const plantsData = (await plantsRes.json().catch(() => ({}))) as PlantsApiResponse;
       if (signal?.aborted) return;
       if (!offersRes.ok) {
-        setLoadError(offersData.error ?? "Could not load offers");
+        setLoadError(displayApiError(locale, offersData.error, "admin.offers.loadFailed"));
         setOffers([]);
         return;
       }
@@ -481,12 +494,12 @@ export function AdminOffersManager() {
       }
     } catch {
       if (signal?.aborted) return;
-      setLoadError("Network error while loading offers");
+      setLoadError(t(locale, "admin.offers.loadNetworkError"));
       setOffers([]);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -496,12 +509,12 @@ export function AdminOffersManager() {
 
   async function handleCreate() {
     if (!createDraft.productId.trim()) {
-      setCreateError("Select a plant for this offer.");
+      setCreateError(t(locale, "admin.offers.selectPlantRequired"));
       return;
     }
     const consumerPrice = Number(createDraft.consumerPrice);
     if (!Number.isFinite(consumerPrice) || consumerPrice < 0) {
-      setCreateError("Consumer price must be a non-negative number.");
+      setCreateError(t(locale, "admin.offers.consumerPriceInvalid"));
       return;
     }
 
@@ -517,14 +530,14 @@ export function AdminOffersManager() {
       });
       const data = (await res.json().catch(() => ({}))) as OffersApiResponse;
       if (!res.ok) {
-        setCreateError(data.error ?? "Could not create offer");
+        setCreateError(displayApiError(locale, data.error, "admin.offers.createFailed"));
         return;
       }
       setShowCreate(false);
       setCreateDraft(emptyDraft());
       await loadData();
     } catch {
-      setCreateError("Network error. Try again.");
+      setCreateError(t(locale, "common.networkError"));
     } finally {
       setIsCreating(false);
     }
@@ -535,16 +548,18 @@ export function AdminOffersManager() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            Urban Plant · Admin
+            {t(locale, "admin.brand")}
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">Offers</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
+            {t(locale, "admin.offers.title")}
+          </h1>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href={routes.admin.index()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
-            Admin
+            {t(locale, "admin.common.admin")}
           </Link>
           <button
             type="button"
@@ -555,7 +570,11 @@ export function AdminOffersManager() {
             }}
             className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-sm transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
             aria-expanded={showCreate}
-            aria-label={showCreate ? "Close create offer form" : "Create offer"}
+            aria-label={
+              showCreate
+                ? t(locale, "admin.offers.closeCreateAria")
+                : t(locale, "admin.offers.createAria")
+            }
           >
             <IconPlus className="h-6 w-6" />
           </button>
@@ -563,17 +582,16 @@ export function AdminOffersManager() {
       </div>
 
       <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        Sale offers linked to catalog plants. Images and currency come from the selected plant;
-        each offer sets its own consumer price.
+        {t(locale, "admin.offers.intro")}
       </p>
 
       {showCreate ? (
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <h2 className="mb-4 text-base font-semibold text-emerald-950">New offer</h2>
+          <h2 className="mb-4 text-base font-semibold text-emerald-950">
+            {t(locale, "admin.offers.new")}
+          </h2>
           {plants.length === 0 ? (
-            <p className="text-sm text-amber-800">
-              Add plants to the catalog before creating offers.
-            </p>
+            <p className="text-sm text-amber-800">{t(locale, "admin.offers.addPlantsFirst")}</p>
           ) : (
             <>
               <OfferFieldsForm
@@ -589,7 +607,7 @@ export function AdminOffersManager() {
                   disabled={isCreating || plants.length === 0}
                   className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
                 >
-                  {isCreating ? "Creating…" : "Create offer"}
+                  {isCreating ? t(locale, "admin.common.creating") : t(locale, "admin.offers.create")}
                 </button>
                 <button
                   type="button"
@@ -601,7 +619,7 @@ export function AdminOffersManager() {
                   disabled={isCreating}
                   className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
                 >
-                  Cancel
+                  {t(locale, "admin.shared.cancel")}
                 </button>
               </div>
             </>
@@ -611,26 +629,28 @@ export function AdminOffersManager() {
 
       {!isLoading && !loadError && offers.length > 0 ? (
         <label className="mb-4 block">
-          <span className="sr-only">Search offers</span>
+          <span className="sr-only">{t(locale, "admin.offers.searchAria")}</span>
           <input
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by plant, status…"
+            placeholder={t(locale, "admin.offers.searchPlaceholder")}
             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
           />
         </label>
       ) : null}
 
       {isLoading ? (
-        <p className="text-sm text-slate-600">Loading offers…</p>
+        <p className="text-sm text-slate-600">{t(locale, "admin.offers.loading")}</p>
       ) : loadError ? (
         <p className="text-sm text-red-700">{loadError}</p>
       ) : offers.length === 0 ? (
-        <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">No offers yet.</p>
+        <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
+          {t(locale, "admin.offers.empty")}
+        </p>
       ) : filteredOffers.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          No offers match &ldquo;{searchQuery.trim()}&rdquo;.
+          {t(locale, "admin.offers.noMatch", { query: searchQuery.trim() })}
         </p>
       ) : (
         <ul className="space-y-3">

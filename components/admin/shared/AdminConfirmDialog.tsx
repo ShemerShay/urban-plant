@@ -1,5 +1,8 @@
 "use client";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
+
 type AdminConfirmDialogProps = {
   open: boolean;
   title: string;
@@ -17,14 +20,17 @@ export function AdminConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel: confirmLabelProp,
+  cancelLabel: cancelLabelProp,
   destructive = false,
   busy = false,
   error,
   onConfirm,
   onCancel,
 }: AdminConfirmDialogProps) {
+  const locale = useLocale();
+  const confirmLabel = confirmLabelProp ?? t(locale, "admin.shared.confirm");
+  const cancelLabel = cancelLabelProp ?? t(locale, "admin.shared.cancel");
   if (!open) return null;
 
   return (
@@ -59,7 +65,7 @@ export function AdminConfirmDialog({
                 : "bg-emerald-800 hover:bg-emerald-900"
             }`}
           >
-            {busy ? "Working…" : confirmLabel}
+            {busy ? t(locale, "admin.shared.working") : confirmLabel}
           </button>
         </div>
       </div>

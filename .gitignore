@@ -55,3 +55,6 @@ lerna-debug.log*
 
 # typescript
 *.tsbuildinfo
+
+# local chat summaries (do not commit)
+CHAT_SUMMARY_*.md

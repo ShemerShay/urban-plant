@@ -1,4 +1,5 @@
 import { isValidEmail, isValidIsraeliMobilePhone } from "@/lib/formValidation";
+import type { MessageKey } from "@/lib/messages";
 
 export type CheckoutFulfillmentMethod = "delivery" | "pickup";
 
@@ -18,7 +19,12 @@ export interface CheckoutFormValues {
   apartmentOrNotes: string;
 }
 
-export type CheckoutFieldErrors = Partial<Record<CheckoutFieldKey, string>>;
+export type CheckoutFieldErrorKey = Extract<
+  MessageKey,
+  "validation.required" | "validation.email" | "validation.phone"
+>;
+
+export type CheckoutFieldErrors = Partial<Record<CheckoutFieldKey, CheckoutFieldErrorKey>>;
 
 export function getCheckoutFieldErrors(
   fields: CheckoutFormValues,
@@ -27,26 +33,26 @@ export function getCheckoutFieldErrors(
   const errors: CheckoutFieldErrors = {};
 
   if (!fields.fullName.trim()) {
-    errors.fullName = "This field is required.";
+    errors.fullName = "validation.required";
   }
 
   const emailTrim = fields.email.trim();
   if (!emailTrim) {
-    errors.email = "This field is required.";
+    errors.email = "validation.required";
   } else if (!isValidEmail(emailTrim)) {
-    errors.email = "Please enter a valid email address.";
+    errors.email = "validation.email";
   }
 
   if (!isValidIsraeliMobilePhone(fields.phone)) {
-    errors.phone = "Please enter a valid 10-digit Israeli phone number.";
+    errors.phone = "validation.phone";
   }
 
   if (fulfillmentMethod === "delivery") {
     if (!fields.deliveryStreet.trim()) {
-      errors.deliveryStreet = "This field is required.";
+      errors.deliveryStreet = "validation.required";
     }
     if (!fields.deliveryHouseNumber.trim()) {
-      errors.deliveryHouseNumber = "This field is required.";
+      errors.deliveryHouseNumber = "validation.required";
     }
   }
 
@@ -77,7 +83,14 @@ export function getVisibleCheckoutFieldErrors(
 
 export type AdminNewOrderFieldKey = "plantId" | "price";
 
-export type AdminNewOrderFieldErrors = Partial<Record<AdminNewOrderFieldKey, string>>;
+export type AdminNewOrderFieldErrorKey = Extract<
+  MessageKey,
+  "validation.required" | "validation.price"
+>;
+
+export type AdminNewOrderFieldErrors = Partial<
+  Record<AdminNewOrderFieldKey, AdminNewOrderFieldErrorKey>
+>;
 
 export function getAdminNewOrderFieldErrors(
   plantId: string,
@@ -85,12 +98,12 @@ export function getAdminNewOrderFieldErrors(
 ): AdminNewOrderFieldErrors {
   const errors: AdminNewOrderFieldErrors = {};
   if (!plantId.trim()) {
-    errors.plantId = "This field is required.";
+    errors.plantId = "validation.required";
   }
   if (!price.trim()) {
-    errors.price = "This field is required.";
+    errors.price = "validation.required";
   } else if (Number(price) < 0 || Number.isNaN(Number(price))) {
-    errors.price = "Enter a valid price.";
+    errors.price = "validation.price";
   }
   return errors;
 }

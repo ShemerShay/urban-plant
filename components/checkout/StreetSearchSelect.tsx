@@ -3,6 +3,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { filterTelAvivStreetSuggestions } from "@/lib/telAvivStreetSearch";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
 
 const baseInputClass =
   "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
@@ -18,6 +20,7 @@ interface StreetSearchSelectProps {
 }
 
 export function StreetSearchSelect({ id, value, error, onChange, onBlur }: StreetSearchSelectProps) {
+  const locale = useLocale();
   const listboxId = useId();
   const optionIdPrefix = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -106,7 +109,7 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
         autoComplete="off"
         className={`${baseInputClass} ${error ? invalidInputClass : ""}`}
         value={query}
-        placeholder="Search street..."
+        placeholder={t(locale, "checkout.placeholder.street")}
         onChange={(event) => {
           const next = event.target.value;
           setDraftQuery(next);
@@ -160,7 +163,7 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
           className="absolute z-20 mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-lg"
           role="status"
         >
-          No matching streets
+          {t(locale, "checkout.street.none")}
         </p>
       ) : null}
 

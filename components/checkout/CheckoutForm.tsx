@@ -9,6 +9,7 @@ import {
   type DeliveryAddressFieldErrors,
   type DeliveryAddressFieldValues,
 } from "@/components/checkout/DeliveryAddressFields";
+import { useLocale } from "@/components/locale/LocaleProvider";
 import {
   ANALYTICS_EVENTS,
   captureAnalyticsEvent,
@@ -21,12 +22,9 @@ import {
   type CheckoutFieldKey,
   type CheckoutFulfillmentMethod,
 } from "@/lib/checkoutValidation";
-import {
-  POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
-  isPosSpotPurchasable,
-  shouldShowHeldForPaymentCheckoutMessage,
-} from "@/lib/posSpotHold";
-import { PAYMENT_FAILED_CHECKOUT_MESSAGE } from "@/lib/paymentResumeToken";
+import { displayApiError, translateCheckoutFieldErrors } from "@/lib/displayLabels";
+import { t } from "@/lib/messages";
+import { isPosSpotPurchasable, shouldShowHeldForPaymentCheckoutMessage } from "@/lib/posSpotHold";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import { routes } from "@/lib/routes";
 
@@ -103,6 +101,7 @@ export function CheckoutForm({
   analyticsContext,
 }: CheckoutFormProps) {
   const posthog = usePostHog();
+  const locale = useLocale();
   const resumeHolder = Boolean(paymentResume);
   const formHeadingId = useId();
   const statusRegionId = useId();
@@ -125,7 +124,7 @@ export function CheckoutForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [prepMessage, setPrepMessage] = useState<string | null>(null);
   const [paymentFailedMessage] = useState(
-    paymentResume?.showPaymentFailedMessage ? PAYMENT_FAILED_CHECKOUT_MESSAGE : null,
+    paymentResume?.showPaymentFailedMessage ? t(locale, "checkout.paymentFailed") : null,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationSummary, setValidationSummary] = useState<string | null>(null);
@@ -184,14 +183,19 @@ export function CheckoutForm({
     const count = Object.keys(nextErrors).length;
     setValidationSummary(
       count > 0
-        ? `Please fix ${count} field${count === 1 ? "" : "s"} before completing your order.`
+        ? count === 1
+          ? t(locale, "checkout.validation.summaryOne")
+          : t(locale, "checkout.validation.summaryMany", { count })
         : null,
     );
     window.setTimeout(() => focusFirstInvalidField(nextErrors), 0);
   }
 
   const fieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
-  const errors = getVisibleCheckoutFieldErrors(fieldErrors, touched, showAllErrors);
+  const errors = translateCheckoutFieldErrors(
+    locale,
+    getVisibleCheckoutFieldErrors(fieldErrors, touched, showAllErrors),
+  );
   const canSubmit = canSubmitCheckout(fields, fulfillmentMethod);
   const purchaseAllowed = isPosSpotPurchasable(posSpotStatus, { resumeHolder });
   const showHeldCheckoutMessage = shouldShowHeldForPaymentCheckoutMessage(posSpotStatus, {
@@ -239,13 +243,15 @@ export function CheckoutForm({
           orderId?: string;
         };
         if (!response.ok || !data.paymentUrl) {
-          setSubmitError(data.error ?? "Could not restart payment. Try again.");
+          setSubmitError(
+            displayApiError(locale, data.error, "checkout.error.restartPayment"),
+          );
           return;
         }
         captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
           ...analyticsContext,
           plant_id: plantId,
-          plant_name: plantName,
+          plant_name: analyticsContext?.plant_name,
           spot_slug: spotSlug,
           fulfillment_method: fulfillmentMethod,
           attempt_id: data.attemptId || data.orderId || paymentResume.orderId,
@@ -284,29 +290,28 @@ export function CheckoutForm({
       };
 
       if (!response.ok || !data.paymentUrl) {
-        setSubmitError(data.error ?? "Could not start payment. Try again.");
+        setSubmitError(displayApiError(locale, data.error, "checkout.error.startPayment"));
         return;
       }
 
       captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
         ...analyticsContext,
         plant_id: plantId,
-        plant_name: plantName,
+        plant_name: analyticsContext?.plant_name,
         spot_slug: spotSlug,
         fulfillment_method: fulfillmentMethod,
         attempt_id: data.attemptId || data.orderId,
       });
       window.location.assign(data.paymentUrl);
     } catch {
-      setSubmitError("Network error. Try again.");
+      setSubmitError(t(locale, "common.networkError"));
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  // Only disable for submitting / unavailable — keep enabled so keyboard users can
-  // activate submit and receive validation feedback (WCAG 3.3.1 / 3.3.3).
-  const isSubmitDisabled = isSubmitting || !purchaseAllowed;
+  const isSubmitDisabled =
+    isSubmitting || !purchaseAllowed || (!isResumeRetry && !canSubmit);
 
   const deliveryErrors: DeliveryAddressFieldErrors = {
     deliveryStreet: errors.deliveryStreet,
@@ -324,11 +329,13 @@ export function CheckoutForm({
       noValidate
     >
       <h2 id={formHeadingId} className="text-xl font-semibold text-emerald-950">
-        {fulfillmentMethod === "delivery" ? "Delivery details" : "Pickup details"}
+        {fulfillmentMethod === "delivery"
+          ? t(locale, "checkout.details.delivery")
+          : t(locale, "checkout.details.pickup")}
       </h2>
 
       <fieldset className="space-y-2">
-        <legend className="sr-only">Fulfillment method</legend>
+        <legend className="sr-only">{t(locale, "checkout.fulfillment.legend")}</legend>
         <div className={pickupDisabled ? "" : "grid grid-cols-2 gap-2"} role="group">
           <button
             type="button"
@@ -340,7 +347,7 @@ export function CheckoutForm({
                 : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
             }`}
           >
-            Delivery
+            {t(locale, "checkout.fulfillment.delivery")}
           </button>
           {!pickupDisabled ? (
             <button
@@ -353,7 +360,7 @@ export function CheckoutForm({
                   : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
               }`}
             >
-              Pickup
+              {t(locale, "checkout.fulfillment.pickup")}
             </button>
           ) : null}
         </div>
@@ -389,11 +396,11 @@ export function CheckoutForm({
 
       <div className="rounded-2xl bg-emerald-50/80 p-4">
         <p className="text-sm text-emerald-900">
-          Completing this order confirms purchase for{" "}
-          <span className="font-semibold">{plantName}</span>{" "}
+          {t(locale, "checkout.confirm.prefix")}
+          <span className="font-semibold">{plantName}</span>
           {fulfillmentMethod === "delivery"
-            ? ". Delivery takes 1–3 business days."
-            : "immediate pickup."}
+            ? t(locale, "checkout.confirm.deliverySuffix")
+            : t(locale, "checkout.confirm.pickupSuffix")}
         </p>
       </div>
 
@@ -417,20 +424,20 @@ export function CheckoutForm({
       <div>
         {showHeldCheckoutMessage ? (
           <p className="mb-3 text-sm leading-5 text-amber-950" role="status">
-            {POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE}
+            {t(locale, "plant.held.checkout")}
           </p>
         ) : null}
         <button
           type="submit"
           disabled={isSubmitDisabled}
           aria-disabled={isSubmitDisabled || undefined}
-          className={`min-h-12 w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600 disabled:hover:bg-neutral-300 ${buttonFocusClass}`}
+          className={`min-h-12 w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition enabled:hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:opacity-60 ${buttonFocusClass}`}
         >
-          {isSubmitting ? "Processing…" : "Complete Order"}
+          {isSubmitting ? t(locale, "checkout.processing") : t(locale, "checkout.submit")}
         </button>
         {isSubmitting ? (
           <p className="sr-only" role="status" aria-live="polite">
-            Processing your order. Please wait.
+            {t(locale, "checkout.processingSr")}
           </p>
         ) : null}
       </div>

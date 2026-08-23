@@ -1,23 +1,26 @@
 "use client";
 
-/**
- * Local JSON order management is only for prototype/testing and should be replaced
- * with a real database before production.
- */
-
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { AdminOrderStatusSelect } from "@/components/admin/AdminOrderStatusSelect";
-import { formatPrice, getPlantById } from "@/lib/mockPlants";
+import { useLocale } from "@/components/locale/LocaleProvider";
 import { formatOrderDeliveryAddressDisplay } from "@/lib/deliveryAddress";
+import { displayApiError, orderStatusLabel } from "@/lib/displayLabels";
+import type { Locale } from "@/lib/locale";
+import { formatPrice, getPlantById } from "@/lib/mockPlants";
+import { t } from "@/lib/messages";
 import type { SavedOrder } from "@/lib/orderTypes";
 import { routes } from "@/lib/routes";
 import type { OrderStatus } from "@/lib/status";
-import { canAdminCancelOrder, ORDER_STATUS_LABELS } from "@/lib/status";
+import { canAdminCancelOrder } from "@/lib/status";
 
 interface AdminOrderCardProps {
   order: SavedOrder;
+}
+
+function intlLocale(locale: Locale): string {
+  return locale === "he" ? "he-IL" : "en-US";
 }
 
 function statusBadgeClass(status: OrderStatus): string {
@@ -160,6 +163,7 @@ function SectionDivider() {
 }
 
 export function AdminOrderCard({ order }: AdminOrderCardProps) {
+  const locale = useLocale();
   const router = useRouter();
   const [busy, setBusy] = useState<"cancel" | "patch" | null>(null);
 
@@ -174,11 +178,11 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
   const partnerAddress = order.locationAddress;
 
   async function handleCancel() {
-    const cancellationReason = window.prompt("Cancellation reason");
+    const cancellationReason = window.prompt(t(locale, "admin.orders.cancelReasonPrompt"));
     if (cancellationReason === null) return;
     const trimmedReason = cancellationReason.trim();
     if (!trimmedReason) {
-      window.alert("Cancellation reason is required.");
+      window.alert(t(locale, "admin.orders.cancelReasonRequired"));
       return;
     }
     setBusy("cancel");
@@ -190,7 +194,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        window.alert(data.error ?? "Could not cancel order.");
+        window.alert(displayApiError(locale, data.error, "admin.orders.cancelFailed"));
         return;
       }
       router.refresh();
@@ -210,7 +214,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        window.alert(data.error ?? "Could not update order.");
+        window.alert(displayApiError(locale, data.error, "admin.orders.updateFailed"));
         return;
       }
       router.refresh();
@@ -220,7 +224,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
   }
 
   const status = order.orderStatus;
-  const createdLabel = new Date(order.createdAt).toLocaleString();
+  const createdLabel = new Date(order.createdAt).toLocaleString(intlLocale(locale));
   const isCancelled = status === "cancelled";
   const showCancelButton = canAdminCancelOrder(status);
 
@@ -238,7 +242,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(status)}`}
         >
           {isCancelled ? <IconCancel className="size-3" /> : null}
-          {ORDER_STATUS_LABELS[status]}
+          {orderStatusLabel(locale, status)}
         </span>
       </div>
 
@@ -247,7 +251,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
       {/* 2. Order status */}
       <section className="py-4">
         <label htmlFor={`order-status-${order.orderId}`} className="text-xs font-medium text-slate-500">
-          Order status
+          {t(locale, "admin.orders.orderStatus")}
         </label>
         <AdminOrderStatusSelect
           id={`order-status-${order.orderId}`}
@@ -256,9 +260,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           onChange={(next) => void handleStatusChange(next)}
         />
         {status === "pending_payment" ? (
-          <p className="mt-2 text-xs text-amber-800">
-            Awaiting payment verification. Status cannot be marked paid from admin.
-          </p>
+          <p className="mt-2 text-xs text-amber-800">{t(locale, "admin.orders.pendingHint")}</p>
         ) : null}
       </section>
 
@@ -274,7 +276,7 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           {order.fulfillmentMethod === "delivery" &&
           (order.address.trim() || order.apartmentOrNotes.trim()) ? (
             <DetailRow icon={<IconMapPin className="size-4" />}>
-              {formatOrderDeliveryAddressDisplay(order)}
+              {formatOrderDeliveryAddressDisplay(order, locale)}
             </DetailRow>
           ) : null}
         </div>
@@ -287,34 +289,40 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
         <div className="flex items-center gap-2">
           <IconMapPin className="size-4 shrink-0 text-emerald-600" />
           <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700">
-            PARTNER LOCATION
+            {t(locale, "admin.orders.partnerLocation")}
           </h3>
         </div>
         <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-800">
           {locationId === null || locationId === undefined ? (
-            <p className="text-slate-600">Not specified</p>
+            <p className="text-slate-600">{t(locale, "admin.common.notSpecified")}</p>
           ) : (
             <>
-              <p className="font-medium text-emerald-950">{locationName ?? "Unknown location"}</p>
+              <p className="font-medium text-emerald-950">
+                {locationName ?? t(locale, "admin.orders.unknownLocation")}
+              </p>
               {posSpotDescription ? (
                 <p className="break-words [overflow-wrap:anywhere]">
-                  <span className="text-slate-500">POS Spot: </span>
+                  <span className="text-slate-500">{t(locale, "admin.orders.posSpot")} </span>
                   {posSpotDescription}
                 </p>
               ) : null}
               <p className="break-words font-mono text-xs text-slate-600 [overflow-wrap:anywhere]">
-                <span className="font-sans text-slate-500">Location ID: </span>
+                <span className="font-sans text-slate-500">
+                  {t(locale, "admin.orders.locationId")}{" "}
+                </span>
                 {locationId}
               </p>
               {spotSlug ? (
                 <p className="break-words font-mono text-xs text-slate-600 [overflow-wrap:anywhere]">
-                  <span className="font-sans text-slate-500">Spot slug: </span>
+                  <span className="font-sans text-slate-500">
+                    {t(locale, "admin.orders.spotSlug")}{" "}
+                  </span>
                   {spotSlug}
                 </p>
               ) : null}
               <div>
                 <p className="break-words [overflow-wrap:anywhere]">
-                  <span className="text-slate-500">Address: </span>
+                  <span className="text-slate-500">{t(locale, "admin.orders.address")} </span>
                   {partnerAddress ?? "—"}
                 </p>
               </div>
@@ -328,24 +336,32 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
       {/* 5. Plant and price */}
       <section className="space-y-2.5 py-4">
         <DetailRow icon={<IconLeaf className="size-4" />}>{plantName}</DetailRow>
-        <DetailRow icon={<IconTag className="size-4" />}>{formatPrice(price, currency)}</DetailRow>
+        <DetailRow icon={<IconTag className="size-4" />}>
+          {formatPrice(price, currency, locale)}
+        </DetailRow>
       </section>
 
       {/* 6. Footer */}
       <footer className="border-t border-slate-100 pt-4">
         {status === "delivered" && order.deliveredAt ? (
           <p className="text-xs leading-relaxed text-slate-500">
-            Delivered: {new Date(order.deliveredAt).toLocaleString()}
+            {t(locale, "admin.orders.deliveredAt", {
+              datetime: new Date(order.deliveredAt).toLocaleString(intlLocale(locale)),
+            })}
           </p>
         ) : null}
         {status === "picked_up" && order.pickedUpAt ? (
           <p className="text-xs leading-relaxed text-slate-500">
-            Sold &amp; Taken: {new Date(order.pickedUpAt).toLocaleString()}
+            {t(locale, "admin.orders.pickedUpAt", {
+              datetime: new Date(order.pickedUpAt).toLocaleString(intlLocale(locale)),
+            })}
           </p>
         ) : null}
         {isCancelled && order.cancelledAt ? (
           <p className="text-xs leading-relaxed text-slate-500">
-            Cancelled: {new Date(order.cancelledAt).toLocaleString()}
+            {t(locale, "admin.orders.cancelledAt", {
+              datetime: new Date(order.cancelledAt).toLocaleString(intlLocale(locale)),
+            })}
             {order.cancellationReason ? ` — ${order.cancellationReason}` : ""}
           </p>
         ) : null}
@@ -358,7 +374,9 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
               onClick={() => void handleCancel()}
               className="w-full rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60 sm:w-auto"
             >
-              {busy === "cancel" ? "Cancelling…" : "Cancel order"}
+              {busy === "cancel"
+                ? t(locale, "admin.orders.cancelling")
+                : t(locale, "admin.orders.cancelOrder")}
             </button>
           </div>
         ) : null}

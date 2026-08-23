@@ -21,12 +21,20 @@ import {
   AdminWaterPlantsPanel,
   formatPosSpotWateredSummary,
 } from "@/components/admin/AdminWaterPlantsPanel";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { formatStoredDeliveryAddressDisplay } from "@/lib/deliveryAddress";
+import {
+  adminHeldForPaymentLabel,
+  displayApiError,
+  posSpotAdminAvailabilityLabel,
+} from "@/lib/displayLabels";
+import type { Locale } from "@/lib/locale";
+import { t } from "@/lib/messages";
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { Pocket } from "@/lib/pocketTypes";
 import { resolvePosSpotPocketLabel } from "@/lib/posSpotPocket";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
 import { isWateredRecently } from "@/lib/posSpotWatering";
-import { POS_HELD_FOR_PAYMENT_ADMIN_LABEL } from "@/lib/status";
 import {
   buildPosSpotNameAndSlug,
   formatPosSpotDisplayName,
@@ -53,13 +61,6 @@ function subscribeToNothing(): () => void {
 
 function useClientOrigin(): string {
   return useSyncExternalStore(subscribeToNothing, getClientOrigin, () => "");
-}
-
-function posSpotStatusLabel(status: PosSpotStatus): string {
-  if (status === "available") return "Available";
-  if (status === "sold") return "Unavailable";
-  if (status === "held_for_payment") return POS_HELD_FOR_PAYMENT_ADMIN_LABEL;
-  return "Inactive";
 }
 
 function posSpotStatusClassName(status: PosSpotStatus): string {
@@ -89,17 +90,19 @@ function IconChevron({ className, open }: { className?: string; open: boolean })
 }
 
 function PocketSpotRow({
+  locale,
   spot,
   offerName,
   onEdit,
   onArchive,
 }: {
+  locale: Locale;
   spot: PosSpot;
   offerName: string;
   onEdit: () => void;
   onArchive: () => void;
 }) {
-  const wateredLabel = formatPosSpotWateredSummary(spot.lastWateredAt);
+  const wateredLabel = formatPosSpotWateredSummary(spot.lastWateredAt, locale);
   const wateredRecent = isWateredRecently(spot.lastWateredAt, 7);
   return (
     <li className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-sm">
@@ -110,22 +113,26 @@ function PocketSpotRow({
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-semibold ${posSpotStatusClassName(spot.status)}`}
             >
-              {posSpotStatusLabel(spot.status)}
+              {posSpotAdminAvailabilityLabel(locale, spot.status)}
             </span>
           </div>
           <dl className="mt-2 grid gap-1">
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Offer</dt>
+              <dt className="font-medium text-slate-500">{t(locale, "admin.common.offer")}</dt>
               <dd className="text-slate-900">{offerName}</dd>
             </div>
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Watered</dt>
+              <dt className="font-medium text-slate-500">
+                {t(locale, "admin.partners.detail.watered")}
+              </dt>
               <dd className={wateredRecent ? "text-emerald-800" : "text-slate-900"}>
                 {wateredLabel}
               </dd>
             </div>
             <div className="flex flex-wrap gap-x-2">
-              <dt className="font-medium text-slate-500">Slug</dt>
+              <dt className="font-medium text-slate-500">
+                {t(locale, "admin.partners.detail.slug")}
+              </dt>
               <dd className="font-mono text-xs text-slate-900">{spot.spotSlug}</dd>
             </div>
           </dl>
@@ -137,14 +144,14 @@ function PocketSpotRow({
             rel="noopener noreferrer"
             className="text-xs font-medium text-emerald-700 underline underline-offset-2"
           >
-            Open
+            {t(locale, "admin.common.open")}
           </Link>
           <button
             type="button"
             onClick={onEdit}
             className="text-xs font-medium text-emerald-700 underline underline-offset-2"
           >
-            Edit
+            {t(locale, "admin.common.edit")}
           </button>
           {spot.status !== "inactive" ? (
             <button
@@ -152,7 +159,7 @@ function PocketSpotRow({
               onClick={onArchive}
               className="text-xs font-medium text-red-700 underline underline-offset-2"
             >
-              Delete
+              {t(locale, "admin.common.delete")}
             </button>
           ) : null}
         </div>
@@ -162,6 +169,7 @@ function PocketSpotRow({
 }
 
 function ExpandablePocketCard({
+  locale,
   title,
   subtitle,
   spots,
@@ -170,6 +178,7 @@ function ExpandablePocketCard({
   onEditSpot,
   onArchiveSpot,
 }: {
+  locale: Locale;
   title: string;
   subtitle: string;
   spots: PosSpot[];
@@ -203,12 +212,15 @@ function ExpandablePocketCard({
       {isOpen ? (
         <div className="border-t border-slate-100 px-3 pb-3 pt-3">
           {spots.length === 0 ? (
-            <p className="text-sm text-slate-500">No POS spots in this pocket.</p>
+            <p className="text-sm text-slate-500">
+              {t(locale, "admin.partners.detail.noPocketsInPocket")}
+            </p>
           ) : (
             <ul className="space-y-2">
               {spots.map((spot) => (
                 <PocketSpotRow
                   key={spot.id}
+                  locale={locale}
                   spot={spot}
                   offerName={offerNameById.get(spot.currentOfferId) ?? "—"}
                   onEdit={() => onEditSpot(spot)}
@@ -224,6 +236,7 @@ function ExpandablePocketCard({
 }
 
 export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
+  const locale = useLocale();
   const origin = useClientOrigin();
   const qrHostRef = useRef<HTMLDivElement>(null);
 
@@ -287,9 +300,25 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         }),
       ]);
 
-      if (!partnersRes.ok) throw new Error("Could not load partners");
-      if (!pocketsRes.ok) throw new Error("Could not load pockets");
-      if (!spotsRes.ok) throw new Error("Could not load POS spots");
+      if (!partnersRes.ok) {
+        const data = (await partnersRes.json().catch(() => ({}))) as { error?: string };
+        setLoadError(
+          displayApiError(locale, data.error, "admin.partners.detail.loadPartnersFailed"),
+        );
+        return;
+      }
+      if (!pocketsRes.ok) {
+        const data = (await pocketsRes.json().catch(() => ({}))) as { error?: string };
+        setLoadError(
+          displayApiError(locale, data.error, "admin.partners.detail.loadPocketsFailed"),
+        );
+        return;
+      }
+      if (!spotsRes.ok) {
+        const data = (await spotsRes.json().catch(() => ({}))) as { error?: string };
+        setLoadError(displayApiError(locale, data.error, "admin.partners.detail.loadSpotsFailed"));
+        return;
+      }
 
       const partnersData = (await partnersRes.json()) as {
         partners?: PartnerLocation[];
@@ -303,7 +332,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       const found = (partnersData.partners ?? []).find((p) => p.id === partnerId) ?? null;
       if (!found) {
         setPartner(null);
-        setLoadError("Partner not found");
+        setLoadError(t(locale, "admin.partners.detail.notFound"));
         return;
       }
 
@@ -311,12 +340,12 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       setPockets(pocketsData.pockets ?? []);
       setPosSpots(spotsData.posSpots ?? []);
       setOffers(spotsData.offers ?? []);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Failed to load partner");
+    } catch {
+      setLoadError(displayApiError(locale, undefined, "admin.partners.detail.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [partnerId]);
+  }, [partnerId, locale]);
 
   useEffect(() => {
     void loadAll();
@@ -347,6 +376,12 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     [posSpots],
   );
 
+  function spotCountSubtitle(count: number): string {
+    return count === 1
+      ? t(locale, "admin.partners.detail.spotCountOne")
+      : t(locale, "admin.partners.detail.spotCountMany", { count });
+  }
+
   function openCreatePocket() {
     setEditingPocket(null);
     setPocketNameDraft("");
@@ -364,7 +399,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   async function savePocket() {
     const name = pocketNameDraft.trim();
     if (!name) {
-      setPocketError("Name is required");
+      setPocketError(t(locale, "validation.required"));
       return;
     }
     setPocketBusy(true);
@@ -382,13 +417,13 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setPocketError(data.error ?? "Could not save pocket");
+        setPocketError(displayApiError(locale, data.error, "admin.partners.detail.pocketSaveFailed"));
         return;
       }
       setPocketModal(null);
       await loadAll();
     } catch {
-      setPocketError("Could not save pocket");
+      setPocketError(displayApiError(locale, undefined, "admin.partners.detail.pocketSaveFailed"));
     } finally {
       setPocketBusy(false);
     }
@@ -404,13 +439,17 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setDeletePocketError(data.error ?? "Could not delete pocket");
+        setDeletePocketError(
+          displayApiError(locale, data.error, "admin.partners.detail.pocketDeleteFailed"),
+        );
         return;
       }
       setDeletePocketTarget(null);
       await loadAll();
     } catch {
-      setDeletePocketError("Could not delete pocket");
+      setDeletePocketError(
+        displayApiError(locale, undefined, "admin.partners.detail.pocketDeleteFailed"),
+      );
     } finally {
       setDeletePocketBusy(false);
     }
@@ -456,7 +495,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         error?: string;
       };
       if (!res.ok || !data.posSpot) {
-        setLoadError(data.error ?? "Could not load latest POS Spot");
+        setLoadError(displayApiError(locale, data.error, "admin.partners.detail.posLoadFailed"));
         return;
       }
       const fresh = data.posSpot;
@@ -464,7 +503,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       applySpotToEditForm(fresh);
       setCreateSpotOpen(true);
     } catch {
-      setLoadError("Could not load latest POS Spot");
+      setLoadError(displayApiError(locale, undefined, "admin.partners.detail.posLoadFailed"));
     } finally {
       setSpotBusy(false);
     }
@@ -495,11 +534,11 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   async function saveSpot() {
     if (!partner) return;
     if (!posNumber.trim()) {
-      setSpotError("POS number is required");
+      setSpotError(t(locale, "admin.partners.detail.posNumberRequired"));
       return;
     }
     if (!currentOfferId.trim()) {
-      setSpotError("Offer is required");
+      setSpotError(t(locale, "admin.partners.detail.offerRequired"));
       return;
     }
     setSpotBusy(true);
@@ -522,7 +561,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         });
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) {
-          setSpotError(data.error ?? "Could not update POS Spot");
+          setSpotError(displayApiError(locale, data.error, "admin.partners.detail.posUpdateFailed"));
           return;
         }
       } else {
@@ -541,7 +580,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         });
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) {
-          setSpotError(data.error ?? "Could not create POS Spot");
+          setSpotError(displayApiError(locale, data.error, "admin.partners.detail.posCreateFailed"));
           return;
         }
       }
@@ -549,7 +588,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       setEditSpot(null);
       await loadAll();
     } catch {
-      setSpotError("Could not save POS Spot");
+      setSpotError(displayApiError(locale, undefined, "admin.partners.detail.posSaveFailed"));
     } finally {
       setSpotBusy(false);
     }
@@ -574,13 +613,17 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setArchiveError(data.error ?? "Could not deactivate POS Spot");
+        setArchiveError(
+          displayApiError(locale, data.error, "admin.partners.detail.posDeactivateFailed"),
+        );
         return;
       }
       setArchiveTarget(null);
       await loadAll();
     } catch {
-      setArchiveError("Could not deactivate POS Spot");
+      setArchiveError(
+        displayApiError(locale, undefined, "admin.partners.detail.posDeactivateFailed"),
+      );
     } finally {
       setArchiveBusy(false);
     }
@@ -590,10 +633,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     if (!fullUrl) return;
     try {
       await navigator.clipboard.writeText(fullUrl);
-      setCopyHint("Copied");
+      setCopyHint(t(locale, "admin.common.copied"));
       window.setTimeout(() => setCopyHint(null), 2000);
     } catch {
-      setCopyHint("Could not copy");
+      setCopyHint(t(locale, "admin.common.copyFailed"));
       window.setTimeout(() => setCopyHint(null), 2000);
     }
   }
@@ -618,18 +661,20 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-600">Loading partner…</p>;
+    return <p className="text-sm text-slate-600">{t(locale, "admin.partners.detail.loading")}</p>;
   }
 
   if (!partner) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-red-700">{loadError ?? "Partner not found"}</p>
+        <p className="text-sm text-red-700">
+          {loadError ?? t(locale, "admin.partners.detail.notFound")}
+        </p>
         <Link
           href={routes.admin.partners()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          Back to partners
+          {t(locale, "admin.partners.detail.back")}
         </Link>
       </div>
     );
@@ -640,17 +685,19 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            Partner
+            {t(locale, "admin.common.partner")}
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">{partner.name}</h1>
-          <p className="mt-1 text-sm text-slate-600">{partner.address}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+          </p>
           <p className="mt-0.5 text-sm text-slate-500">{partner.type}</p>
         </div>
         <Link
           href={routes.admin.partners()}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          All partners
+          {t(locale, "admin.partners.detail.allPartners")}
         </Link>
       </div>
 
@@ -658,22 +705,22 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
 
       <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
         <p className="text-sm text-slate-600">
-          Partner details (payments, address, pickup) are still edited from the{" "}
+          {t(locale, "admin.partners.detail.editHintBefore")}
           <Link
             href={routes.admin.partners()}
             className="font-medium text-emerald-700 underline underline-offset-2"
           >
-            Partners list
+            {t(locale, "admin.partners.detail.editHintLink")}
           </Link>
-          . This page manages physical structure for{" "}
+          {t(locale, "admin.partners.detail.editHintAfter")}
           <span className="font-semibold text-emerald-950">{partner.name}</span>.
         </p>
       </div>
 
       <AdminManagementSection
         id="pockets"
-        title="Pockets"
-        description={`Physical areas inside ${partner.name}. Open a pocket to see its POS spots.`}
+        title={t(locale, "admin.partners.detail.pockets")}
+        description={t(locale, "admin.partners.detail.pocketsDesc", { name: partner.name })}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -681,28 +728,28 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
               onClick={() => setWaterOpen(true)}
               className="rounded-full border border-emerald-800 px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-50"
             >
-              Water plants
+              {t(locale, "admin.partners.detail.waterPlants")}
             </button>
             <button
               type="button"
               onClick={openCreatePocket}
               className="rounded-full bg-emerald-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-900"
             >
-              Add pocket
+              {t(locale, "admin.partners.detail.addPocket")}
             </button>
           </div>
         }
       >
         {pockets.length === 0 && unassignedSpots.length === 0 ? (
           <AdminEmptyState
-            message="No pockets yet for this partner."
+            message={t(locale, "admin.partners.detail.noPockets")}
             action={
               <button
                 type="button"
                 onClick={openCreatePocket}
                 className="text-sm font-medium text-emerald-700 underline underline-offset-2"
               >
-                Add pocket
+                {t(locale, "admin.partners.detail.addPocket")}
               </button>
             }
           />
@@ -713,8 +760,9 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
               return (
                 <li key={pocket.id}>
                   <ExpandablePocketCard
+                    locale={locale}
                     title={pocket.name}
-                    subtitle={`${spots.length} POS spot${spots.length === 1 ? "" : "s"}`}
+                    subtitle={spotCountSubtitle(spots.length)}
                     spots={spots}
                     offerNameById={offerNameById}
                     onEditSpot={openEditSpot}
@@ -729,7 +777,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                           onClick={() => openEditPocket(pocket)}
                           className="text-xs font-medium text-emerald-700 underline underline-offset-2"
                         >
-                          Edit
+                          {t(locale, "admin.common.edit")}
                         </button>
                         <button
                           type="button"
@@ -739,7 +787,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                           }}
                           className="text-xs font-medium text-red-700 underline underline-offset-2"
                         >
-                          Delete
+                          {t(locale, "admin.common.delete")}
                         </button>
                       </>
                     }
@@ -750,8 +798,9 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
             {unassignedSpots.length > 0 ? (
               <li>
                 <ExpandablePocketCard
-                  title="Unassigned"
-                  subtitle={`${unassignedSpots.length} POS spot${unassignedSpots.length === 1 ? "" : "s"}`}
+                  locale={locale}
+                  title={t(locale, "admin.partners.detail.unassigned")}
+                  subtitle={spotCountSubtitle(unassignedSpots.length)}
                   spots={unassignedSpots}
                   offerNameById={offerNameById}
                   onEditSpot={openEditSpot}
@@ -768,27 +817,27 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
 
       <AdminManagementSection
         id="pos-spots"
-        title="POS Spots"
-        description={`All POS spots for ${partner.name}. Change pocket assignment without affecting QR URLs.`}
+        title={t(locale, "admin.partners.detail.posSpots")}
+        description={t(locale, "admin.partners.detail.posSpotsDesc", { name: partner.name })}
         actions={
           <button
             type="button"
             onClick={openCreateSpot}
             className="rounded-full bg-emerald-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-900"
           >
-            Add POS Spot
+            {t(locale, "admin.partners.detail.addPosSpot")}
           </button>
         }
       >
         <AdminEntityList
-          emptyMessage="No POS spots yet for this partner."
+          emptyMessage={t(locale, "admin.partners.detail.noPosSpots")}
           emptyAction={
             <button
               type="button"
               onClick={openCreateSpot}
               className="text-sm font-medium text-emerald-700 underline underline-offset-2"
             >
-              Add POS Spot
+              {t(locale, "admin.partners.detail.addPosSpot")}
             </button>
           }
           items={posSpots.map((spot) => {
@@ -804,23 +853,25 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-semibold ${posSpotStatusClassName(spot.status)}`}
                 >
-                  {posSpotStatusLabel(spot.status)}
+                  {posSpotAdminAvailabilityLabel(locale, spot.status)}
                 </span>
               ),
               details: (
                 <dl className="grid gap-1 text-sm">
                   <div className="flex flex-wrap gap-x-2">
-                    <dt className="font-medium text-slate-500">Offer</dt>
+                    <dt className="font-medium text-slate-500">{t(locale, "admin.common.offer")}</dt>
                     <dd className="text-slate-900">
                       {offerNameById.get(spot.currentOfferId) ?? "—"}
                     </dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
-                    <dt className="font-medium text-slate-500">Pocket</dt>
+                    <dt className="font-medium text-slate-500">{t(locale, "admin.common.pocket")}</dt>
                     <dd className="text-slate-900">{pocketLabel}</dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
-                    <dt className="font-medium text-slate-500">Watered</dt>
+                    <dt className="font-medium text-slate-500">
+                      {t(locale, "admin.partners.detail.watered")}
+                    </dt>
                     <dd
                       className={
                         isWateredRecently(spot.lastWateredAt, 7)
@@ -828,11 +879,13 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                           : "text-slate-900"
                       }
                     >
-                      {formatPosSpotWateredSummary(spot.lastWateredAt)}
+                      {formatPosSpotWateredSummary(spot.lastWateredAt, locale)}
                     </dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
-                    <dt className="font-medium text-slate-500">Slug</dt>
+                    <dt className="font-medium text-slate-500">
+                      {t(locale, "admin.partners.detail.slug")}
+                    </dt>
                     <dd className="font-mono text-xs text-slate-900">{spot.spotSlug}</dd>
                   </div>
                 </dl>
@@ -845,14 +898,14 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                     rel="noopener noreferrer"
                     className="text-xs font-medium text-emerald-700 underline underline-offset-2"
                   >
-                    Open
+                    {t(locale, "admin.common.open")}
                   </Link>
                   <button
                     type="button"
                     onClick={() => openEditSpot(spot)}
                     className="text-xs font-medium text-emerald-700 underline underline-offset-2"
                   >
-                    Edit
+                    {t(locale, "admin.common.edit")}
                   </button>
                   {spot.status !== "inactive" ? (
                     <button
@@ -863,7 +916,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                       }}
                       className="text-xs font-medium text-red-700 underline underline-offset-2"
                     >
-                      Delete
+                      {t(locale, "admin.common.delete")}
                     </button>
                   ) : null}
                 </>
@@ -875,7 +928,11 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
 
       <AdminFormModal
         open={pocketModal !== null}
-        title={pocketModal === "edit" ? "Edit pocket" : "Add pocket"}
+        title={
+          pocketModal === "edit"
+            ? t(locale, "admin.partners.detail.editPocket")
+            : t(locale, "admin.partners.detail.addPocket")
+        }
         onCancel={() => setPocketModal(null)}
         onSubmit={() => void savePocket()}
         busy={pocketBusy}
@@ -883,32 +940,31 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         canSubmit={Boolean(pocketNameDraft.trim())}
       >
         <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">Name</span>
+          <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.name")}</span>
           <input
             value={pocketNameDraft}
             onChange={(e) => setPocketNameDraft(e.target.value)}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
-            placeholder="e.g. Entrance, Main Counter"
+            placeholder={t(locale, "admin.partners.detail.pocketPlaceholder")}
           />
         </label>
       </AdminFormModal>
 
       <AdminConfirmDialog
         open={Boolean(deletePocketTarget)}
-        title="Delete this Pocket?"
+        title={t(locale, "admin.partners.detail.deletePocketTitle")}
         message={
           deletePocketTarget
             ? (assignedCounts.get(deletePocketTarget.id) ?? 0) > 0
-              ? `This Pocket contains ${assignedCounts.get(deletePocketTarget.id)} POS Spot${
-                  (assignedCounts.get(deletePocketTarget.id) ?? 0) === 1 ? "" : "s"
-                }.
-Deleting it will also remove the POS Spots currently assigned to it from active use (they become inactive and Unassigned). Their QR codes and historical order data are preserved.
-
-This action cannot be undone.`
-              : `Delete “${deletePocketTarget.name}”? This Pocket has no assigned POS Spots.`
+              ? t(locale, "admin.partners.detail.deletePocketWithSpots", {
+                  count: assignedCounts.get(deletePocketTarget.id) ?? 0,
+                })
+              : t(locale, "admin.partners.detail.deletePocketEmpty", {
+                  name: deletePocketTarget.name,
+                })
             : ""
         }
-        confirmLabel="Delete Pocket"
+        confirmLabel={t(locale, "admin.partners.detail.deletePocketConfirm")}
         destructive
         busy={deletePocketBusy}
         error={deletePocketError}
@@ -918,7 +974,11 @@ This action cannot be undone.`
 
       <AdminFormModal
         open={createSpotOpen}
-        title={editSpot ? "Edit POS Spot" : "Add POS Spot"}
+        title={
+          editSpot
+            ? t(locale, "admin.partners.detail.editPosSpot")
+            : t(locale, "admin.partners.detail.addPosSpotModal")
+        }
         onCancel={() => {
           setCreateSpotOpen(false);
           setEditSpot(null);
@@ -927,13 +987,18 @@ This action cannot be undone.`
         busy={spotBusy}
         error={spotError}
         canSubmit={Boolean(posNumber.trim() && currentOfferId.trim())}
-        submitLabel={editSpot ? "Save" : "Create"}
+        submitLabel={
+          editSpot ? t(locale, "admin.shared.save") : t(locale, "admin.shared.create")
+        }
       >
         <p className="text-sm text-slate-600">
-          Partner: <span className="font-semibold text-emerald-950">{partner.name}</span>
+          {t(locale, "admin.partners.detail.partnerLabel")}{" "}
+          <span className="font-semibold text-emerald-950">{partner.name}</span>
         </p>
         <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">POS number</span>
+          <span className="text-sm font-medium text-slate-700">
+            {t(locale, "admin.partners.detail.posNumber")}
+          </span>
           <input
             value={posNumber}
             onChange={(e) => setPosNumber(e.target.value)}
@@ -941,13 +1006,13 @@ This action cannot be undone.`
           />
         </label>
         <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">Pocket</span>
+          <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.pocket")}</span>
           <select
             value={pocketId}
             onChange={(e) => setPocketId(e.target.value)}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
-            <option value="">Unassigned</option>
+            <option value="">{t(locale, "admin.partners.detail.unassignedOption")}</option>
             {pockets.map((pocket) => (
               <option key={pocket.id} value={pocket.id}>
                 {pocket.name}
@@ -956,13 +1021,13 @@ This action cannot be undone.`
           </select>
         </label>
         <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">Offer</span>
+          <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.offer")}</span>
           <select
             value={currentOfferId}
             onChange={(e) => setCurrentOfferId(e.target.value)}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
-            <option value="">Select offer…</option>
+            <option value="">{t(locale, "admin.partners.detail.selectOffer")}</option>
             {activeOffers.map((offer) => (
               <option key={offer.id} value={offer.id}>
                 {offer.productName}
@@ -971,20 +1036,22 @@ This action cannot be undone.`
           </select>
         </label>
         <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">Status</span>
+          <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.status")}</span>
           <select
             value={spotStatus}
             onChange={(e) => setSpotStatus(e.target.value as PosSpotStatus)}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
-            <option value="available">Available</option>
-            <option value="sold">Unavailable</option>
-            <option value="held_for_payment">Held for payment</option>
-            <option value="inactive">Inactive</option>
+            <option value="available">{posSpotAdminAvailabilityLabel(locale, "available")}</option>
+            <option value="sold">{posSpotAdminAvailabilityLabel(locale, "sold")}</option>
+            <option value="held_for_payment">{adminHeldForPaymentLabel(locale)}</option>
+            <option value="inactive">{posSpotAdminAvailabilityLabel(locale, "inactive")}</option>
           </select>
         </label>
         <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">Description (optional)</span>
+          <span className="text-sm font-medium text-slate-700">
+            {t(locale, "admin.partners.detail.descriptionOptional")}
+          </span>
           <input
             value={spotDescription}
             onChange={(e) => setSpotDescription(e.target.value)}
@@ -993,7 +1060,9 @@ This action cannot be undone.`
         </label>
         {!editSpot ? (
           <label className="block space-y-1">
-            <span className="text-sm font-medium text-slate-700">Placement notes (optional)</span>
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.partners.detail.placementNotesOptional")}
+            </span>
             <input
               value={placementNotes}
               onChange={(e) => setPlacementNotes(e.target.value)}
@@ -1006,8 +1075,8 @@ This action cannot be undone.`
           <div className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
             <p className="text-xs font-medium text-slate-500">
               {editSpot
-                ? "QR / slug stay fixed when pocket changes"
-                : "QR preview — partner + spot number only (pocket is not in the URL)"}
+                ? t(locale, "admin.partners.detail.qrSlugFixed")
+                : t(locale, "admin.partners.detail.qrPreview")}
             </p>
             <p className="mt-1 font-mono text-xs text-slate-900">{previewIdentity.spotSlug}</p>
             <p className="mt-1 text-sm text-slate-700">{previewIdentity.posName}</p>
@@ -1022,14 +1091,14 @@ This action cannot be undone.`
                     onClick={() => void handleCopyUrl()}
                     className="text-xs font-medium text-emerald-700 underline underline-offset-2"
                   >
-                    Copy URL
+                    {t(locale, "admin.partners.detail.copyUrl")}
                   </button>
                   <button
                     type="button"
                     onClick={handleDownloadQr}
                     className="text-xs font-medium text-emerald-700 underline underline-offset-2"
                   >
-                    Download QR
+                    {t(locale, "admin.partners.detail.downloadQr")}
                   </button>
                   {copyHint ? <span className="text-xs text-slate-500">{copyHint}</span> : null}
                 </div>
@@ -1041,13 +1110,13 @@ This action cannot be undone.`
 
       <AdminConfirmDialog
         open={Boolean(archiveTarget)}
-        title="Deactivate POS Spot?"
+        title={t(locale, "admin.partners.detail.deactivateTitle")}
         message={
           archiveTarget
-            ? `“${archiveTarget.spotName}” will be set to inactive. Historical orders and the QR slug are preserved.`
+            ? t(locale, "admin.partners.detail.deactivateMessage", { name: archiveTarget.spotName })
             : ""
         }
-        confirmLabel="Deactivate"
+        confirmLabel={t(locale, "admin.shared.deactivate")}
         destructive
         busy={archiveBusy}
         error={archiveError}

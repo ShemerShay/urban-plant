@@ -1,12 +1,14 @@
 import { CustomerDeadEnd } from "@/components/customer/CustomerDeadEnd";
-import { CUSTOMER_RECOVERY_WHATSAPP_MESSAGE } from "@/lib/customerRecovery";
+import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
 
-export default function NotFound() {
+export default async function NotFound() {
+  const locale = await getLocale();
   return (
     <CustomerDeadEnd
-      title="This page isn’t available"
-      description="The link or QR code you used couldn’t be opened. The plant or offer may have been moved or removed."
-      whatsAppMessage={CUSTOMER_RECOVERY_WHATSAPP_MESSAGE}
+      title={t(locale, "notFound.title")}
+      description={t(locale, "notFound.body")}
+      whatsAppMessage={t(locale, "recovery.whatsapp.default")}
     />
   );
 }

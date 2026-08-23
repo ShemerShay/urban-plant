@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { displayApiError } from "@/lib/displayLabels";
+import { t } from "@/lib/messages";
 import {
   MAX_PLANT_IMAGE_SOURCE_BYTES,
   MAX_PLANT_IMAGE_SOURCE_MB,
@@ -36,6 +39,7 @@ function mergeUnique(existing: string[], added: string[]): string[] {
 }
 
 export function PlantImagePicker({ images, onChange, plantName = "Plant" }: PlantImagePickerProps) {
+  const locale = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -50,7 +54,9 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
     async (files: FileList | File[]) => {
       const list = Array.from(files);
       if (list.length === 0) {
-        setUploadError(PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE);
+        setUploadError(
+          displayApiError(locale, PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE, "admin.image.uploadFailed"),
+        );
         return;
       }
 
@@ -94,7 +100,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
           error instanceof Error && error.message.trim()
             ? error.message
             : PLANT_IMAGE_UPLOAD_FAILED_MESSAGE;
-        setUploadError(message);
+        setUploadError(displayApiError(locale, message, "admin.image.uploadFailed"));
         if (uploaded.length > 0) {
           onChange(mergeUnique(images, uploaded));
         }
@@ -102,7 +108,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
         setIsUploading(false);
       }
     },
-    [images, onChange],
+    [images, locale, onChange],
   );
 
   const loadLibrary = useCallback(async () => {
@@ -115,18 +121,18 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
         error?: string;
       };
       if (!res.ok) {
-        setLibraryError(data.error ?? "Could not load library");
+        setLibraryError(displayApiError(locale, data.error, "admin.image.loadLibraryFailed"));
         setLibraryImages([]);
         return;
       }
       setLibraryImages(data.images ?? []);
     } catch {
-      setLibraryError("Network error while loading library");
+      setLibraryError(t(locale, "admin.image.loadLibraryNetwork"));
       setLibraryImages([]);
     } finally {
       setLibraryLoading(false);
     }
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     if (!libraryOpen) return;
@@ -174,7 +180,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
                 type="button"
                 onClick={() => removeImage(src)}
                 className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white shadow"
-                aria-label="Remove image"
+                aria-label={t(locale, "admin.image.removeAria")}
               >
                 ×
               </button>
@@ -204,11 +210,10 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
         } ${isUploading ? "pointer-events-none opacity-60" : ""}`}
       >
         <p className="text-sm font-medium text-slate-800">
-          {isUploading ? "Uploading…" : "Drag images here"}
+          {isUploading ? t(locale, "admin.image.uploading") : t(locale, "admin.image.dragHere")}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          JPEG, PNG, WebP, or GIF · photos up to {MAX_PLANT_IMAGE_SOURCE_MB} MB are resized
-          automatically
+          {t(locale, "admin.image.hint", { maxMb: MAX_PLANT_IMAGE_SOURCE_MB })}
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <button
@@ -217,7 +222,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
             onClick={() => inputRef.current?.click()}
             className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
           >
-            Choose files
+            {t(locale, "admin.image.chooseFiles")}
           </button>
           <button
             type="button"
@@ -225,7 +230,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
             onClick={() => setLibraryOpen(true)}
             className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
           >
-            Choose from library
+            {t(locale, "admin.image.chooseFromLibrary")}
           </button>
         </div>
         <input
@@ -257,26 +262,24 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
           >
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
               <h3 id="plant-library-title" className="text-base font-semibold text-emerald-950">
-                Image library
+                {t(locale, "admin.image.libraryTitle")}
               </h3>
               <button
                 type="button"
                 onClick={() => setLibraryOpen(false)}
                 className="rounded-lg px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
               >
-                Close
+                {t(locale, "admin.common.close")}
               </button>
             </div>
 
             <div className="max-h-[50vh] overflow-y-auto p-4">
               {libraryLoading ? (
-                <p className="text-sm text-slate-600">Loading library…</p>
+                <p className="text-sm text-slate-600">{t(locale, "admin.image.libraryLoading")}</p>
               ) : libraryError ? (
                 <p className="text-sm text-red-700">{libraryError}</p>
               ) : libraryImages.length === 0 ? (
-                <p className="text-sm text-slate-600">
-                  No images yet. Upload files with drag and drop to build your library.
-                </p>
+                <p className="text-sm text-slate-600">{t(locale, "admin.image.libraryEmpty")}</p>
               ) : (
                 <ul className="grid grid-cols-3 gap-2">
                   {libraryImages.map((item) => {
@@ -315,7 +318,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
                 disabled={librarySelection.size === 0}
                 className="flex-1 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
               >
-                Add selected ({librarySelection.size})
+                {t(locale, "admin.image.addSelected", { count: librarySelection.size })}
               </button>
             </div>
           </div>

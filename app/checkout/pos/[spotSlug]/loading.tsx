@@ -1,4 +1,8 @@
-export default function CheckoutLoading() {
+import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
+
+export default async function CheckoutLoading() {
+  const locale = await getLocale();
   return (
     <main
       id="main-content"
@@ -7,7 +11,7 @@ export default function CheckoutLoading() {
       className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center px-6"
       aria-busy="true"
     >
-      <span className="sr-only">Loading</span>
+      <span className="sr-only">{t(locale, "common.loading")}</span>
       <div className="pos-scan-spinner" aria-hidden />
       <style>{`
         .pos-scan-spinner {

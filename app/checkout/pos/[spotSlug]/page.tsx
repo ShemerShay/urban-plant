@@ -4,7 +4,10 @@ import { notFound } from "next/navigation";
 import { TrackCheckoutStarted } from "@/components/analytics/TrackCheckoutStarted";
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
+import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
 import { formatPrice } from "@/lib/mockPlants";
+import { localizedPlantText } from "@/lib/plantDisplay";
 import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
 import { getAwaitingPaymentAttemptForResume } from "@/lib/paymentAttemptStorage";
 import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
@@ -32,6 +35,7 @@ export default async function PosCheckoutPage({
   searchParams,
 }: PosCheckoutPageProps) {
   const { spotSlug } = await params;
+  const locale = await getLocale();
   const sp = await searchParams;
   const resolved = await getPosSpotForCustomerPurchase(spotSlug);
   if (!resolved) notFound();
@@ -43,6 +47,7 @@ export default async function PosCheckoutPage({
 
   const pickupDisabled = Boolean(partner?.pickupDisabled);
   const partnerName = partner?.name?.trim() || undefined;
+  const displayName = localizedPlantText(locale, plant.name, plant.nameHe);
   const analyticsContext = {
     pos_spot_id: posSpot.id,
     spot_slug: posSpot.spotSlug,
@@ -142,27 +147,27 @@ export default async function PosCheckoutPage({
           href={posSpotPath(posSpot.spotSlug)}
           className="inline-flex min-h-11 items-center text-sm font-medium text-emerald-800 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
         >
-          Back to plant
+          {t(locale, "checkout.back")}
         </Link>
 
         <section
           className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
           aria-labelledby="checkout-order-heading"
         >
-          <p className="text-sm text-slate-600">You are ordering</p>
+          <p className="text-sm text-slate-600">{t(locale, "checkout.ordering")}</p>
           <h1 id="checkout-order-heading" className="mt-1 text-2xl font-semibold text-emerald-950">
-            {plant.name}
+            {displayName}
           </h1>
           <p className="mt-2 text-lg font-semibold text-emerald-950">
-            {formatPrice(offer.consumerPrice, plant.currency)}
+            {formatPrice(offer.consumerPrice, plant.currency, locale)}
           </p>
         </section>
 
         <section className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
           <CheckoutForm
             plantId={plant.id}
-            plantName={plant.name}
-            priceDisplay={formatPrice(offer.consumerPrice, plant.currency)}
+            plantName={displayName}
+            priceDisplay={formatPrice(offer.consumerPrice, plant.currency, locale)}
             spotSlug={posSpot.spotSlug}
             pickupDisabled={pickupDisabled}
             posSpotStatus={posSpot.status}

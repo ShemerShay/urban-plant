@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { AdminOrdersExportButton } from "@/components/admin/AdminOrdersExportButton";
+import { useLocale } from "@/components/locale/LocaleProvider";
+import { t } from "@/lib/messages";
 import type { SavedOrder } from "@/lib/orderTypes";
 import { routes } from "@/lib/routes";
 
@@ -29,6 +31,7 @@ interface AdminOrdersHeaderMenuProps {
 }
 
 export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuProps) {
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +60,7 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
         className="flex h-11 w-11 shrink-0 items-center justify-center cursor-pointer rounded-xl bg-white text-emerald-800 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/45"
         aria-expanded={open}
         aria-haspopup="menu"
-        aria-label="Page actions"
+        aria-label={t(locale, "admin.orders.pageActions")}
         onClick={() => setOpen((o) => !o)}
       >
         <IconMoreVertical />
@@ -75,7 +78,7 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
             className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}
           >
-            Admin routes
+            {t(locale, "admin.orders.adminRoutes")}
           </Link>
           <Link
             href={routes.admin.ordersNew()}
@@ -83,7 +86,7 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
             className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
             onClick={() => setOpen(false)}
           >
-            Add New Order
+            {t(locale, "admin.orders.addNew")}
           </Link>
           <AdminOrdersExportButton
             orders={filteredOrders}
