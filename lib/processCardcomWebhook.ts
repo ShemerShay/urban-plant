@@ -473,7 +473,7 @@ async function processAttemptWebhook(
       lowProfileId: verified.lowProfileId,
       orderStatus: finalized.order.orderStatus,
       posSpotId: attemptAfterExpiry.posSpotId,
-      posStatus: "sold",
+      posStatus: finalized.posStatus,
       cardcomEnvironment,
       cardcomTransactionId: cardcomTransactionId ?? null,
     });
@@ -722,7 +722,7 @@ async function processLegacyOrderWebhook(
       lowProfileId: verified.lowProfileId,
       orderStatus: finalized.order.orderStatus,
       posSpotId: order.posSpotId,
-      posStatus: "sold",
+      posStatus: finalized.posStatus,
       cardcomEnvironment,
       cardcomTransactionId: cardcomTransactionId ?? null,
     });

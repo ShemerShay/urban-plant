@@ -48,6 +48,7 @@ async function main(): Promise<void> {
     setPosSpotStatus,
     updatePosSpot,
   } = await import("../lib/posSpotStorage");
+  const { createPlant, deletePlant, getPlantByIdAsync } = await import("../lib/plantStorage");
   const { sql } = await import("../lib/db");
 
   // --- Pure TTL helper ---
@@ -76,14 +77,14 @@ async function main(): Promise<void> {
   const attemptIds: string[] = [];
   const createdAt = new Date().toISOString();
 
-  async function insertAwaitingAttempt(): Promise<string> {
+  async function insertAwaitingAttempt(productId = "hold-lifecycle-product"): Promise<string> {
     const id = randomUUID();
     attemptIds.push(id);
     await insertPaymentAttempt({
       id,
       status: "awaiting_payment",
       posSpotId: available!.id,
-      productId: "hold-lifecycle-product",
+      productId,
       productName: "Hold Lifecycle Test",
       fullName: "Hold Lifecycle",
       customerEmail: `hold-lifecycle-${id.slice(0, 8)}@example.com`,
@@ -334,6 +335,34 @@ async function main(): Promise<void> {
       assert.equal(exp.expired, false);
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
       await setPosSpotStatus(available.id, "available");
+    }
+
+    // Flower inventory: successful payment returns POS to available and can be held again.
+    {
+      const sample = await getPlantByIdAsync("monstera");
+      assert.ok(sample, "need a catalog row to clone a flower inventory type");
+      const flowerId = randomUUID();
+      await createPlant({
+        ...sample,
+        id: flowerId,
+        name: "Verify Flower Lifecycle",
+        inventoryType: "flowers",
+        createdAt: new Date().toISOString(),
+      });
+      try {
+        await setPosSpotStatus(available.id, "available");
+        const attemptId = await insertAwaitingAttempt(flowerId);
+        assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
+        assert.equal((await completePosSpotSaleFromHold(available.id, attemptId)).ok, true);
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
+        const nextAttempt = await insertAwaitingAttempt(flowerId);
+        assert.equal((await acquirePosSpotHoldForPayment(available.id, nextAttempt)).ok, true);
+        assert.equal((await completePosSpotSaleFromHold(available.id, nextAttempt)).ok, true);
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
+      } finally {
+        await deletePlant(flowerId);
+        await setPosSpotStatus(available.id, "available");
+      }
     }
 
     console.log("verify-payment-hold-lifecycle: all checks ok");

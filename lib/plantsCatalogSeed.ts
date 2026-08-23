@@ -1,6 +1,6 @@
 import type { PlantProduct } from "./types";
 
-const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
+const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
   {
     id: "monstera",
     name: "Monstera Deliciosa",
@@ -110,4 +110,5 @@ const SEED_ENTRIES: Omit<PlantProduct, "price">[] = [
 export const PLANTS_CATALOG_SEED: PlantProduct[] = SEED_ENTRIES.map((plant) => ({
   ...plant,
   price: plant.supplierPrice,
+  inventoryType: "plants",
 }));

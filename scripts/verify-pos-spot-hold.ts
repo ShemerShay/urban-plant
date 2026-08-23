@@ -150,6 +150,9 @@ async function assertDbMutations(): Promise<void> {
     deletePaymentAttemptById,
     insertPaymentAttempt,
   } = await import("../lib/paymentAttemptStorage");
+  const { createPlant, deletePlant, getPlantByIdAsync } = await import(
+    "../lib/plantStorage"
+  );
 
   const spots = await readPosSpots();
   const spot = spots[0];
@@ -373,6 +376,81 @@ async function assertDbMutations(): Promise<void> {
     const adminClear = await setPosSpotStatus(spot.id, "available");
     assert.equal(adminClear?.status, "available");
     assert.equal(adminClear?.paymentHoldStartedAt, undefined);
+
+    const sample = await getPlantByIdAsync("monstera");
+    assert.ok(sample, "need a catalog row to clone a flower inventory type");
+    const flowerId = randomUUID();
+    await createPlant({
+      ...sample,
+      id: flowerId,
+      name: "Verify Flower Hold",
+      inventoryType: "flowers",
+      createdAt: new Date().toISOString(),
+    });
+    try {
+      await setPosSpotStatus(spot.id, "available");
+      async function insertFlowerAttempt(): Promise<string> {
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        await insertPaymentAttempt({
+          id,
+          status: "created",
+          posSpotId: spot.id,
+          productId: flowerId,
+          productName: "Verify Flower Hold",
+          fullName: "Hold Verify",
+          customerEmail: "hold-verify@example.com",
+          phone: "0500000000",
+          address: "",
+          apartmentOrNotes: "",
+          fulfillmentMethod: "delivery",
+          amount: 1,
+          paymentResumeToken: `resume-${randomUUID()}`,
+          createdAt: now,
+          updatedAt: now,
+        });
+        attemptIds.push(id);
+        return id;
+      }
+
+      const flowerAttemptA = await insertFlowerAttempt();
+      assert.equal((await acquirePosSpotHoldForPayment(spot.id, flowerAttemptA)).ok, true);
+      const flowerSold = await completePosSpotSaleFromHold(spot.id, flowerAttemptA);
+      assert.equal(flowerSold.ok, true);
+      if (flowerSold.ok) {
+        assert.equal(flowerSold.posSpot.status, "available");
+        assert.equal(flowerSold.posSpot.paymentHoldAttemptId, undefined);
+      }
+      assert.equal((await getPosSpotById(spot.id))?.status, "available");
+
+      const flowerAttemptB = await insertFlowerAttempt();
+      const secondHold = await acquirePosSpotHoldForPayment(spot.id, flowerAttemptB);
+      assert.equal(secondHold.ok, true);
+      if (secondHold.ok) {
+        assert.equal(secondHold.posSpot.status, "held_for_payment");
+      }
+      const flowerSoldAgain = await completePosSpotSaleFromHold(spot.id, flowerAttemptB);
+      assert.equal(flowerSoldAgain.ok, true);
+      if (flowerSoldAgain.ok) {
+        assert.equal(flowerSoldAgain.posSpot.status, "available");
+      }
+
+      const { sql } = await import("../lib/db");
+      const uniqueOnPos = await sql`
+        SELECT conname
+        FROM pg_constraint
+        WHERE conrelid = 'orders'::regclass
+          AND contype IN ('u', 'p')
+          AND pg_get_constraintdef(oid) ILIKE '%pos_spot_id%'
+      `;
+      assert.equal(
+        (uniqueOnPos as { conname: string }[]).length,
+        0,
+        "orders.pos_spot_id must allow multiple completed flower orders",
+      );
+    } finally {
+      await deletePlant(flowerId);
+    }
 
     console.log("verify-pos-spot-hold: DB atomic mutations ok");
   } finally {

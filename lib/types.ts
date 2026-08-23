@@ -1,3 +1,5 @@
+import type { InventoryType } from "@/lib/inventoryType";
+
 export type CareLevel = "Easy" | "Moderate" | "Advanced";
 export type LightLevel =
   | "Low light"
@@ -32,4 +34,6 @@ export interface PlantProduct {
   location: string;
   petFriendly: boolean;
   careInstructions: string[];
+  /** Catalog inventory type. Existing rows default to plants. */
+  inventoryType: InventoryType;
 }

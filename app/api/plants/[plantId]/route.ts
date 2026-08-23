@@ -53,6 +53,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         "description_he",
       ),
       waterHe: localizedFieldFromBody(record, existing.waterHe, "waterHe", "water_he"),
+      inventoryType: existing.inventoryType,
       ...(existing.createdAt ? { createdAt: existing.createdAt } : {}),
     });
     if (!plant) {

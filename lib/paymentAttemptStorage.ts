@@ -660,11 +660,18 @@ export async function markPaymentAttemptNeedsReconciliation(input: {
 }
 
 export type FinalizeVerifiedPaymentAttemptResult =
-  | { ok: true; order: SavedOrder; attempt: SavedPaymentAttempt; finalized: boolean }
+  | {
+      ok: true;
+      order: SavedOrder;
+      attempt: SavedPaymentAttempt;
+      finalized: boolean;
+      posStatus: string;
+    }
   | { ok: false; reason: "ineligible" | "conflict" };
 
 /**
- * Atomic: awaiting attempt + owned held POS → insert Order + POS sold + attempt finalized.
+ * Atomic: awaiting attempt + owned held POS → insert Order + POS sold/available + attempt finalized.
+ * Flowers catalog items return POS to available; plants remain sold.
  * Single SQL statement (Postgres CTE). Email/document run after commit by caller.
  */
 export async function finalizeVerifiedPaymentAttemptAtomic(input: {
@@ -823,14 +830,24 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
     pos_upd AS (
       UPDATE pos_spots p
       SET
-        status = 'sold',
+        status = CASE
+          WHEN COALESCE(
+            (
+              SELECT pl.inventory_type
+              FROM plants pl
+              WHERE pl.id = e.product_id
+            ),
+            'plants'
+          ) = 'flowers' THEN 'available'
+          ELSE 'sold'
+        END,
         payment_hold_started_at = NULL,
         payment_hold_attempt_id = NULL
       FROM eligible e
       WHERE p.id = e.pos_spot_id
         AND p.status = 'held_for_payment'
         AND p.payment_hold_attempt_id = e.attempt_id
-      RETURNING p.id
+      RETURNING p.id, p.status
     ),
     attempt_upd AS (
       UPDATE payment_attempts a
@@ -885,6 +902,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       o.purchase_email_sent_at,
       o.purchase_email_last_error,
       (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
+      (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
       (SELECT id FROM attempt_upd LIMIT 1) AS finalized_attempt_id
     FROM order_ins o
   `;
@@ -893,6 +911,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
     rows as (OrderRow & {
       finalized_pos_spot_id: string | null;
       finalized_attempt_id: string | null;
+      pos_status: string | null;
     })[]
   )[0];
 
@@ -910,5 +929,6 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
     order: mapOrderRowLite(row),
     attempt,
     finalized: true,
+    posStatus: row.pos_status === "available" ? "available" : "sold",
   };
 }

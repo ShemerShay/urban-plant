@@ -27,7 +27,7 @@ registerHooks({
   },
 });
 
-const { createPlant, getPlantByIdAsync, readPlants, updatePlant } = await import(
+const { createPlant, deletePlant, getPlantByIdAsync, readPlants, updatePlant } = await import(
   "../lib/plantStorage.ts"
 );
 
@@ -82,6 +82,50 @@ if (
   process.exit(1);
 }
 console.log("OK: Hebrew save left English fields unchanged");
+
+if (created.inventoryType !== "plants") {
+  console.error("FAIL: new catalog rows must default inventoryType to plants", created);
+  process.exit(1);
+}
+console.log("OK: createPlant defaults inventoryType=plants");
+
+const flowerId = randomUUID();
+const flower = await createPlant({
+  ...created,
+  id: flowerId,
+  name: "Verify Flower CRUD",
+  inventoryType: "flowers",
+  createdAt: new Date().toISOString(),
+});
+if (flower.inventoryType !== "flowers") {
+  console.error("FAIL: createPlant did not persist flowers inventoryType", flower);
+  process.exit(1);
+}
+const flowerRows = await readPlants({ inventoryType: "flowers" });
+if (!flowerRows.some((row) => row.id === flowerId)) {
+  console.error("FAIL: readPlants({inventoryType:flowers}) missing flower row");
+  process.exit(1);
+}
+const plantRows = await readPlants({ inventoryType: "plants" });
+if (plantRows.some((row) => row.id === flowerId)) {
+  console.error("FAIL: flower row leaked into plants inventory filter");
+  process.exit(1);
+}
+const flowerUpdated = await updatePlant(flowerId, {
+  ...flower,
+  name: "Verify Flower Updated",
+  inventoryType: "plants",
+});
+if (!flowerUpdated || flowerUpdated.inventoryType !== "flowers") {
+  console.error("FAIL: updatePlant must not change inventoryType", flowerUpdated);
+  process.exit(1);
+}
+const deletedFlower = await deletePlant(flowerId);
+if (!deletedFlower) {
+  console.error("FAIL: deletePlant flower");
+  process.exit(1);
+}
+console.log("OK: flowers inventoryType create/filter/preserve");
 
 const { localizedPlantText } = await import("../lib/plantDisplay.ts");
 const { localizedFieldFromBody } = await import("../lib/plantValidation.ts");

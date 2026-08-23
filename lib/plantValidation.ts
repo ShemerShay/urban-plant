@@ -1,3 +1,4 @@
+import { parseInventoryType } from "@/lib/inventoryType";
 import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
 
 const UUID_PATTERN =
@@ -176,6 +177,16 @@ export function parsePlantBody(
 
   const baseSupplierPrice = parseOptionalNumber(body.baseSupplierPrice);
 
+  const inventoryTypeRaw = body.inventoryType ?? body.inventory_type;
+  let inventoryType: PlantProduct["inventoryType"] = "plants";
+  if (inventoryTypeRaw !== undefined && inventoryTypeRaw !== null && inventoryTypeRaw !== "") {
+    const parsedType = parseInventoryType(inventoryTypeRaw);
+    if (!parsedType) {
+      return { ok: false, error: "inventoryType must be plants or flowers" };
+    }
+    inventoryType = parsedType;
+  }
+
   const plant: PlantProduct = {
     id: resolvedId,
     name,
@@ -200,6 +211,7 @@ export function parsePlantBody(
     ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
+    inventoryType,
   };
 
   return { ok: true, plant };

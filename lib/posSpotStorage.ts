@@ -422,8 +422,8 @@ export async function releasePosSpotHoldForPayment(
 }
 
 /**
- * Atomically: held_for_payment → sold (clears hold clock + owner).
- * Used by verify scripts; production finalize uses attempt CTE.
+ * Atomically: held_for_payment → sold (plants) or available (flowers).
+ * Clears hold clock + owner. Used by verify scripts; production finalize uses attempt CTE.
  */
 export async function completePosSpotSaleFromHold(
   id: string,
@@ -444,7 +444,18 @@ export async function completePosSpotSaleFromHold(
     ? await sql`
         UPDATE pos_spots
         SET
-          status = 'sold',
+          status = CASE
+            WHEN COALESCE(
+              (
+                SELECT pl.inventory_type
+                FROM payment_attempts a
+                INNER JOIN plants pl ON pl.id = a.product_id
+                WHERE a.id = ${attemptId}::uuid
+              ),
+              'plants'
+            ) = 'flowers' THEN 'available'
+            ELSE 'sold'
+          END,
           payment_hold_started_at = NULL,
           payment_hold_attempt_id = NULL
         WHERE id = ${trimmed}::uuid
@@ -455,7 +466,18 @@ export async function completePosSpotSaleFromHold(
     : await sql`
         UPDATE pos_spots
         SET
-          status = 'sold',
+          status = CASE
+            WHEN COALESCE(
+              (
+                SELECT pl.inventory_type
+                FROM offers o
+                INNER JOIN plants pl ON pl.id = o.product_id
+                WHERE o.id = pos_spots.current_offer_id
+              ),
+              'plants'
+            ) = 'flowers' THEN 'available'
+            ELSE 'sold'
+          END,
           payment_hold_started_at = NULL,
           payment_hold_attempt_id = NULL
         WHERE id = ${trimmed}::uuid

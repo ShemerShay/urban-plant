@@ -872,6 +872,7 @@ export type FinalizeVerifiedPendingPaymentResult =
       ok: true;
       order: SavedOrder;
       finalized: boolean;
+      posStatus: string;
     }
   | { ok: false; reason: "ineligible" | "conflict" };
 
@@ -881,7 +882,7 @@ export type FinalizeVerifiedPendingPaymentResult =
  *
  * Delivery: pending_payment → sold
  * Pickup: pending_payment → picked_up (+ picked_up_at)
- * POS: held_for_payment → sold
+ * POS: held_for_payment → sold (plants) or available (flowers)
  *
  * Also persists verified Cardcom TranzactionId and sets purchase_email_status = pending
  * so post-payment document/email can be claimed without rolling back payment.
@@ -914,7 +915,8 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
     WITH eligible AS (
       SELECT
         o.order_id,
-        o.pos_spot_id
+        o.pos_spot_id,
+        o.product_id
       FROM orders o
       INNER JOIN pos_spots p ON p.id = o.pos_spot_id
       WHERE o.order_id = ${orderId}::uuid
@@ -976,12 +978,22 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
     pos_upd AS (
       UPDATE pos_spots p
       SET
-        status = 'sold',
+        status = CASE
+          WHEN COALESCE(
+            (
+              SELECT pl.inventory_type
+              FROM plants pl
+              WHERE pl.id = e.product_id
+            ),
+            'plants'
+          ) = 'flowers' THEN 'available'
+          ELSE 'sold'
+        END,
         payment_hold_started_at = NULL,
         payment_hold_attempt_id = NULL
       FROM eligible e
       WHERE p.id = e.pos_spot_id
-      RETURNING p.id
+      RETURNING p.id, p.status
     )
     SELECT
       o.order_id,
@@ -1017,11 +1029,15 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       o.purchase_email_status,
       o.purchase_email_sent_at,
       o.purchase_email_last_error,
-      (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id
+      (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
+      (SELECT status FROM pos_upd LIMIT 1) AS pos_status
     FROM order_upd o
   `;
 
-  const row = (rows as (OrderRow & { finalized_pos_spot_id: string | null })[])[0];
+  const row = (rows as (OrderRow & {
+    finalized_pos_spot_id: string | null;
+    pos_status: string | null;
+  })[])[0];
   if (!row || !row.finalized_pos_spot_id) {
     return { ok: false, reason: "conflict" };
   }
@@ -1030,6 +1046,7 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
     ok: true,
     order: mapOrderRow(row),
     finalized: true,
+    posStatus: row.pos_status === "available" ? "available" : "sold",
   };
 }
 

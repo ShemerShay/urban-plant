@@ -17,6 +17,7 @@ import {
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
+import type { InventoryType } from "@/lib/inventoryType";
 import type { PlantProduct } from "@/lib/types";
 
 type PlantsApiResponse = {
@@ -850,8 +851,34 @@ function AdminPlantCard({
   );
 }
 
-export function AdminPlantsManager() {
+export function AdminPlantsManager({
+  inventoryType,
+}: {
+  inventoryType: InventoryType;
+}) {
   const locale = useLocale();
+  const isFlowers = inventoryType === "flowers";
+  const titleKey = isFlowers ? "admin.flowers.title" : "admin.plants.title";
+  const newKey = isFlowers ? "admin.flowers.new" : "admin.plants.new";
+  const createKey = isFlowers ? "admin.flowers.create" : "admin.plants.create";
+  const createAriaKey = isFlowers ? "admin.flowers.createAria" : "admin.plants.createAria";
+  const closeCreateAriaKey = isFlowers
+    ? "admin.flowers.closeCreateAria"
+    : "admin.plants.closeCreateAria";
+  const searchAriaKey = isFlowers ? "admin.flowers.searchAria" : "admin.plants.searchAria";
+  const searchPlaceholderKey = isFlowers
+    ? "admin.flowers.searchPlaceholder"
+    : "admin.plants.searchPlaceholder";
+  const loadingKey = isFlowers ? "admin.flowers.loading" : "admin.plants.loading";
+  const emptyKey = isFlowers ? "admin.flowers.empty" : "admin.plants.empty";
+  const noMatchKey = isFlowers ? "admin.flowers.noMatch" : "admin.plants.noMatch";
+  const loadFailedKey = isFlowers ? "admin.flowers.loadFailed" : "admin.plants.loadFailed";
+  const loadNetworkKey = isFlowers
+    ? "admin.flowers.loadNetworkError"
+    : "admin.plants.loadNetworkError";
+  const createFailedKey = isFlowers
+    ? "admin.flowers.createFailed"
+    : "admin.plants.createFailed";
   const [plants, setPlants] = useState<PlantProduct[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -871,23 +898,26 @@ export function AdminPlantsManager() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(routes.api.plants(), { cache: "no-store", signal });
+      const res = await fetch(
+        `${routes.api.plants()}?inventoryType=${inventoryType}`,
+        { cache: "no-store", signal },
+      );
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (signal?.aborted) return;
       if (!res.ok) {
-        setLoadError(displayApiError(locale, data.error, "admin.plants.loadFailed"));
+        setLoadError(displayApiError(locale, data.error, loadFailedKey));
         setPlants([]);
         return;
       }
       setPlants(data.plants ?? []);
     } catch {
       if (signal?.aborted) return;
-      setLoadError(t(locale, "admin.plants.loadNetworkError"));
+      setLoadError(t(locale, loadNetworkKey));
       setPlants([]);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, [locale]);
+  }, [inventoryType, locale, loadFailedKey, loadNetworkKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -902,11 +932,14 @@ export function AdminPlantsManager() {
       const res = await fetch(routes.api.plants(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draftToPayload(createDraft, { omitId: true })),
+        body: JSON.stringify({
+          ...draftToPayload(createDraft, { omitId: true }),
+          inventoryType,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (!res.ok) {
-        setCreateError(displayApiError(locale, data.error, "admin.plants.createFailed"));
+        setCreateError(displayApiError(locale, data.error, createFailedKey));
         return;
       }
       setShowCreate(false);
@@ -927,10 +960,16 @@ export function AdminPlantsManager() {
             {t(locale, "admin.brand")}
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
-            {t(locale, "admin.plants.title")}
+            {t(locale, titleKey)}
           </h1>
         </div>
         <div className="flex items-center gap-2">
+           <Link
+            href={routes.admin.products()}
+            className="text-sm font-medium text-emerald-700 underline underline-offset-2"
+          >
+            {t(locale, "admin.products.title")}
+          </Link>
            <Link
             href={routes.admin.index()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
@@ -948,8 +987,8 @@ export function AdminPlantsManager() {
             aria-expanded={showCreate}
             aria-label={
               showCreate
-                ? t(locale, "admin.plants.closeCreateAria")
-                : t(locale, "admin.plants.createAria")
+                ? t(locale, closeCreateAriaKey)
+                : t(locale, createAriaKey)
             }
           >
             <IconPlus className="h-6 w-6" />
@@ -961,7 +1000,7 @@ export function AdminPlantsManager() {
       {showCreate ? (
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
           <h2 className="mb-4 text-base font-semibold text-emerald-950">
-            {t(locale, "admin.plants.new")}
+            {t(locale, newKey)}
           </h2>
           <PlantFieldsForm draft={createDraft} onChange={setCreateDraft} />
           {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
@@ -972,7 +1011,7 @@ export function AdminPlantsManager() {
               disabled={isCreating}
               className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
             >
-              {isCreating ? t(locale, "admin.common.creating") : t(locale, "admin.plants.create")}
+              {isCreating ? t(locale, "admin.common.creating") : t(locale, createKey)}
             </button>
             <button
               type="button"
@@ -992,28 +1031,28 @@ export function AdminPlantsManager() {
 
       {!isLoading && !loadError && plants.length > 0 ? (
         <label className="mb-4 block">
-          <span className="sr-only">{t(locale, "admin.plants.searchAria")}</span>
+          <span className="sr-only">{t(locale, searchAriaKey)}</span>
           <input
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t(locale, "admin.plants.searchPlaceholder")}
+            placeholder={t(locale, searchPlaceholderKey)}
             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
           />
         </label>
       ) : null}
 
       {isLoading ? (
-        <p className="text-sm text-slate-600">{t(locale, "admin.plants.loading")}</p>
+        <p className="text-sm text-slate-600">{t(locale, loadingKey)}</p>
       ) : loadError ? (
         <p className="text-sm text-red-700">{loadError}</p>
       ) : plants.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          {t(locale, "admin.plants.empty")}
+          {t(locale, emptyKey)}
         </p>
       ) : filteredPlants.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          {t(locale, "admin.plants.noMatch", { query: searchQuery.trim() })}
+          {t(locale, noMatchKey, { query: searchQuery.trim() })}
         </p>
       ) : (
         <ul className="space-y-3">

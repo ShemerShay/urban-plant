@@ -37,7 +37,8 @@
     "db:migrate:held-payment-hold-started-at-check": "node scripts/apply-sql-file.mjs db/migrations/025_pos_spots_held_for_payment_timestamp_check.sql",
     "db:migrate:payment-attempts": "node scripts/apply-sql-file.mjs db/migrations/026_payment_attempts.sql",
     "db:migrate:pos-last-watered": "node scripts/apply-sql-file.mjs db/migrations/027_pos_spots_last_watered.sql",
-    "db:migrate:plants-he": "node scripts/apply-sql-file.mjs db/migrations/028_plants_hebrew_content.sql"
+    "db:migrate:plants-he": "node scripts/apply-sql-file.mjs db/migrations/028_plants_hebrew_content.sql",
+    "db:migrate:plants-inventory-type": "node scripts/apply-sql-file.mjs db/migrations/029_plants_inventory_type.sql"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

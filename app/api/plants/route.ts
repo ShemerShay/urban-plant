@@ -2,10 +2,23 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createPlant, readPlants } from "@/lib/plantStorage";
+import { parseInventoryType } from "@/lib/inventoryType";
 import { plantToWire, plantsToWire, wireBodyToParseInput } from "@/lib/plantWire";
 import { parsePlantBody } from "@/lib/plantValidation";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const raw = request.nextUrl.searchParams.get("inventoryType");
+  if (raw != null && raw.trim() !== "") {
+    const inventoryType = parseInventoryType(raw);
+    if (!inventoryType) {
+      return NextResponse.json(
+        { error: "inventoryType must be plants or flowers" },
+        { status: 400 },
+      );
+    }
+    const plants = await readPlants({ inventoryType });
+    return NextResponse.json({ plants: plantsToWire(plants) });
+  }
   const plants = await readPlants();
   return NextResponse.json({ plants: plantsToWire(plants) });
 }
