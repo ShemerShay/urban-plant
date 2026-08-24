@@ -965,10 +965,10 @@ export function AdminPlantsManager({
         </div>
         <div className="flex items-center gap-2">
            <Link
-            href={routes.admin.products()}
+            href={routes.admin.inventoryTypes()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
-            {t(locale, "admin.products.title")}
+            {t(locale, "admin.inventoryTypes.title")}
           </Link>
            <Link
             href={routes.admin.index()}

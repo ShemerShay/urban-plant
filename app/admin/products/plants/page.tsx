@@ -1,12 +1,7 @@
-import { AdminPlantsManager } from "@/components/admin/AdminPlantsManager";
+import { redirect } from "next/navigation";
 
-export default function AdminProductsPlantsPage() {
-  return (
-    <main
-      id="admin-products-plants-page"
-      className="mx-auto min-h-screen w-full max-w-md px-4 py-6 pb-12"
-    >
-      <AdminPlantsManager inventoryType="plants" />
-    </main>
-  );
+import { routes } from "@/lib/routes";
+
+export default function AdminProductsPlantsRedirectPage() {
+  redirect(routes.admin.inventoryTypesPlants());
 }
