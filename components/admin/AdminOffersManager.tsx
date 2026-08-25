@@ -8,6 +8,7 @@ import { displayApiError, offerStatusLabel } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import type { OfferStatus, OfferWithProduct } from "@/lib/offerTypes";
+import type { InventoryType } from "@/lib/inventoryType";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
 
@@ -454,7 +455,7 @@ function AdminOfferCard({
   );
 }
 
-export function AdminOffersManager() {
+export function AdminOffersManager({ inventoryType }: { inventoryType: InventoryType }) {
   const locale = useLocale();
   const [offers, setOffers] = useState<OfferWithProduct[]>([]);
   const [plants, setPlants] = useState<PlantProduct[]>([]);
@@ -477,8 +478,14 @@ export function AdminOffersManager() {
     setLoadError(null);
     try {
       const [offersRes, plantsRes] = await Promise.all([
-        fetch(routes.api.offers(), { cache: "no-store", signal }),
-        fetch(routes.api.plants(), { cache: "no-store", signal }),
+        fetch(`${routes.api.offers()}?inventoryType=${inventoryType}`, {
+          cache: "no-store",
+          signal,
+        }),
+        fetch(`${routes.api.plants()}?inventoryType=${inventoryType}`, {
+          cache: "no-store",
+          signal,
+        }),
       ]);
       const offersData = (await offersRes.json().catch(() => ({}))) as OffersApiResponse;
       const plantsData = (await plantsRes.json().catch(() => ({}))) as PlantsApiResponse;
@@ -499,7 +506,7 @@ export function AdminOffersManager() {
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, [locale]);
+  }, [inventoryType, locale]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -523,7 +530,7 @@ export function AdminOffersManager() {
     const payload = draftToPayload(createDraft);
 
     try {
-      const res = await fetch(routes.api.offers(), {
+      const res = await fetch(`${routes.api.offers()}?inventoryType=${inventoryType}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -551,15 +558,18 @@ export function AdminOffersManager() {
             {t(locale, "admin.brand")}
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
-            {t(locale, "admin.offers.title")}
+            {t(
+              locale,
+              inventoryType === "flowers" ? "admin.offers.flowersTitle" : "admin.offers.plantsTitle",
+            )}
           </h1>
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={routes.admin.index()}
+            href={routes.admin.offers()}
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
-            {t(locale, "admin.common.admin")}
+            {t(locale, "admin.offers.title")}
           </Link>
           <button
             type="button"
@@ -582,7 +592,10 @@ export function AdminOffersManager() {
       </div>
 
       <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        {t(locale, "admin.offers.intro")}
+        {t(
+          locale,
+          inventoryType === "flowers" ? "admin.offers.flowersIntro" : "admin.offers.plantsIntro",
+        )}
       </p>
 
       {showCreate ? (

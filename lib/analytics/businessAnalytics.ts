@@ -30,6 +30,10 @@ export type BusinessAnalyticsSnapshot = {
   totalScans: number | null;
   uniqueScanners: number | null;
   purchases: number | null;
+  purchasesPlants: number | null;
+  purchasesFlowers: number | null;
+  purchasesMissingCatalog: number | null;
+  inventoryTypeFallback: "plants";
   /** Person-based: distinct_ids with checkout_started among those with pos_scan. */
   scanToCheckoutPercent: number | null;
   scansOverTime: AnalyticsTimePoint[];
@@ -201,6 +205,12 @@ LIMIT 100
     totalScans,
     uniqueScanners,
     purchases: neonResult.ok ? neonResult.data.purchases : null,
+    purchasesPlants: neonResult.ok ? neonResult.data.purchasesPlants : null,
+    purchasesFlowers: neonResult.ok ? neonResult.data.purchasesFlowers : null,
+    purchasesMissingCatalog: neonResult.ok
+      ? neonResult.data.purchasesMissingCatalog
+      : null,
+    inventoryTypeFallback: "plants",
     scanToCheckoutPercent,
     scansOverTime,
     topPlantsByScans,

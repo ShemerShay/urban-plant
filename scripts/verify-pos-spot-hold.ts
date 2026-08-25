@@ -17,11 +17,16 @@ import {
   POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
   POS_SOLD_CTA,
   isPosSpotPurchasable,
+  posAllowsVerifiedPaymentFinalize,
   productPageCtaText,
   shouldShowHeldForPaymentCheckoutMessage,
   shouldShowHeldForPaymentProductMessage,
 } from "../lib/posSpotHold";
 import type { PosSpotStatus } from "../lib/posSpotTypes";
+import {
+  posRequiresPaymentHold,
+  posStatusAfterSuccessfulPayment,
+} from "../lib/inventoryType";
 
 function assertGates(): void {
   const statuses: PosSpotStatus[] = [
@@ -78,6 +83,26 @@ function assertGates(): void {
   );
   assert.equal(POS_HELD_FOR_PAYMENT_CTA, "Purchase in progress");
   assert.equal(POS_SOLD_CTA, "Already found a home");
+  assert.equal(posStatusAfterSuccessfulPayment("plants"), "sold");
+  assert.equal(posStatusAfterSuccessfulPayment("flowers"), null);
+  assert.equal(posRequiresPaymentHold("plants"), true);
+  assert.equal(posRequiresPaymentHold("flowers"), false);
+  assert.equal(
+    posAllowsVerifiedPaymentFinalize("plants", { status: "held_for_payment", paymentHoldAttemptId: "a1" }, "a1"),
+    true,
+  );
+  assert.equal(
+    posAllowsVerifiedPaymentFinalize("plants", { status: "available" }, "a1"),
+    false,
+  );
+  assert.equal(
+    posAllowsVerifiedPaymentFinalize("flowers", { status: "available" }, "a1"),
+    true,
+  );
+  assert.equal(
+    posAllowsVerifiedPaymentFinalize("flowers", { status: "held_for_payment", paymentHoldAttemptId: "a1" }, "a1"),
+    false,
+  );
 
   // Product page must derive CTA + gate + message from one post-cleanup status.
   // Documents the fixed race: never mix pre-expiry held copy with post-expiry enabled.
@@ -149,6 +174,7 @@ async function assertDbMutations(): Promise<void> {
   const {
     deletePaymentAttemptById,
     insertPaymentAttempt,
+    finalizeVerifiedPaymentAttemptAtomic,
   } = await import("../lib/paymentAttemptStorage");
   const { createPlant, deletePlant, getPlantByIdAsync } = await import(
     "../lib/plantStorage"
@@ -163,6 +189,7 @@ async function assertDbMutations(): Promise<void> {
 
   const before = spot.status;
   const attemptIds: string[] = [];
+  const orderIds: string[] = [];
 
   async function insertAttempt(): Promise<string> {
     const id = randomUUID();
@@ -389,12 +416,12 @@ async function assertDbMutations(): Promise<void> {
     });
     try {
       await setPosSpotStatus(spot.id, "available");
-      async function insertFlowerAttempt(): Promise<string> {
+      async function insertFlowerAttempt(checkoutSessionId: string): Promise<string> {
         const id = randomUUID();
         const now = new Date().toISOString();
         await insertPaymentAttempt({
           id,
-          status: "created",
+          status: "awaiting_payment",
           posSpotId: spot.id,
           productId: flowerId,
           productName: "Verify Flower Hold",
@@ -403,8 +430,9 @@ async function assertDbMutations(): Promise<void> {
           phone: "0500000000",
           address: "",
           apartmentOrNotes: "",
-          fulfillmentMethod: "delivery",
+          fulfillmentMethod: "pickup",
           amount: 1,
+          checkoutSessionId,
           paymentResumeToken: `resume-${randomUUID()}`,
           createdAt: now,
           updatedAt: now,
@@ -413,27 +441,51 @@ async function assertDbMutations(): Promise<void> {
         return id;
       }
 
-      const flowerAttemptA = await insertFlowerAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(spot.id, flowerAttemptA)).ok, true);
-      const flowerSold = await completePosSpotSaleFromHold(spot.id, flowerAttemptA);
-      assert.equal(flowerSold.ok, true);
-      if (flowerSold.ok) {
-        assert.equal(flowerSold.posSpot.status, "available");
-        assert.equal(flowerSold.posSpot.paymentHoldAttemptId, undefined);
-      }
+      const sessionA = `cs-flower-a-${randomUUID()}`;
+      const sessionB = `cs-flower-b-${randomUUID()}`;
+      const flowerAttemptA = await insertFlowerAttempt(sessionA);
+      const flowerAttemptB = await insertFlowerAttempt(sessionB);
       assert.equal((await getPosSpotById(spot.id))?.status, "available");
 
-      const flowerAttemptB = await insertFlowerAttempt();
-      const secondHold = await acquirePosSpotHoldForPayment(spot.id, flowerAttemptB);
-      assert.equal(secondHold.ok, true);
-      if (secondHold.ok) {
-        assert.equal(secondHold.posSpot.status, "held_for_payment");
+      const noHoldSale = await completePosSpotSaleFromHold(spot.id, flowerAttemptA);
+      assert.equal(noHoldSale.ok, false);
+      assert.equal((await getPosSpotById(spot.id))?.status, "available");
+
+      const flowerFinalA = await finalizeVerifiedPaymentAttemptAtomic({
+        attemptId: flowerAttemptA,
+        checkoutSessionId: sessionA,
+        posSpotId: spot.id,
+        fulfillmentMethod: "pickup",
+      });
+      const flowerFinalB = await finalizeVerifiedPaymentAttemptAtomic({
+        attemptId: flowerAttemptB,
+        checkoutSessionId: sessionB,
+        posSpotId: spot.id,
+        fulfillmentMethod: "pickup",
+      });
+      assert.equal(flowerFinalA.ok, true);
+      assert.equal(flowerFinalB.ok, true);
+      if (flowerFinalA.ok) {
+        orderIds.push(flowerFinalA.order.orderId);
+        assert.equal(flowerFinalA.posStatus, "available");
       }
-      const flowerSoldAgain = await completePosSpotSaleFromHold(spot.id, flowerAttemptB);
-      assert.equal(flowerSoldAgain.ok, true);
-      if (flowerSoldAgain.ok) {
-        assert.equal(flowerSoldAgain.posSpot.status, "available");
+      if (flowerFinalB.ok) {
+        orderIds.push(flowerFinalB.order.orderId);
+        assert.equal(flowerFinalB.posStatus, "available");
       }
+      assert.notEqual(
+        flowerFinalA.ok && flowerFinalA.order.orderId,
+        flowerFinalB.ok && flowerFinalB.order.orderId,
+      );
+      assert.equal((await getPosSpotById(spot.id))?.status, "available");
+
+      const flowerDup = await finalizeVerifiedPaymentAttemptAtomic({
+        attemptId: flowerAttemptA,
+        checkoutSessionId: sessionA,
+        posSpotId: spot.id,
+        fulfillmentMethod: "pickup",
+      });
+      assert.equal(flowerDup.ok, false);
 
       const { sql } = await import("../lib/db");
       const uniqueOnPos = await sql`
@@ -460,6 +512,12 @@ async function assertDbMutations(): Promise<void> {
     }
     for (const id of [...new Set(attemptIds)]) {
       await deletePaymentAttemptById(id);
+    }
+    if (orderIds.length > 0) {
+      const { sql } = await import("../lib/db");
+      for (const id of [...new Set(orderIds)]) {
+        await sql`DELETE FROM orders WHERE order_id = ${id}::uuid`;
+      }
     }
     await setPosSpotStatus(spot.id, before);
   }

@@ -9,8 +9,9 @@ import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import type { PosSpot } from "@/lib/posSpotTypes";
 
 /**
- * Return one POS row + purchase gate. Expiry runs only when the loaded row is
- * `held_for_payment` (available / sold / inactive are already a no-op for expiry).
+ * Return one POS row + purchase gate. Hold expiry runs when the loaded row is
+ * `held_for_payment`. Available POS still run expiry so flower attempts can
+ * expire without a hold (POS status is not updated).
  * Callers must derive CTA / messages / badges from the returned `posSpot.status`.
  */
 export async function getPosSpotForCustomerPurchase(
@@ -22,12 +23,12 @@ export async function getPosSpotForCustomerPurchase(
   let posSpot = await getPosSpotBySpotSlug(slug);
   if (!posSpot) return undefined;
 
-  if (posSpot.status === "held_for_payment") {
+  if (posSpot.status === "held_for_payment" || posSpot.status === "available") {
     const expiry = await expireStalePaymentHold(posSpot.id);
     // `not_stale` means the CTE did not UPDATE pos_spots. Other results may have
     // changed status (released, sold, or concurrent release) — re-read then.
     const holdUnchanged = !expiry.expired && expiry.reason === "not_stale";
-    if (!holdUnchanged) {
+    if (posSpot.status === "held_for_payment" && !holdUnchanged) {
       posSpot = (await getPosSpotBySpotSlug(slug)) ?? posSpot;
     }
   }

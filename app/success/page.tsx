@@ -7,6 +7,7 @@ import { isValidOrderIdUuid } from "@/lib/cardcomPaymentStatus";
 import { getLocale } from "@/lib/getLocale";
 import { t } from "@/lib/messages";
 import { getPlantById } from "@/lib/plantCatalog";
+import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { getOrderById } from "@/lib/ordersStorage";
 import { posSpotPath } from "@/lib/routes";
@@ -76,18 +77,22 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
   const livePlantName = plant
     ? localizedPlantText(locale, plant.name, plant.nameHe)
     : "";
-  const plantName =
-    livePlantName ||
-    order?.snapshot?.productName ||
-    order?.plantName ||
-    (!order ? readPlantName(sp.plantName) : "") ||
-    t(locale, "success.fallbackPlant");
+  const isFlowerOrder = inventoryTypeOrDefault(plant?.inventoryType) === "flowers";
+  const plantName = isFlowerOrder
+    ? ""
+    : livePlantName ||
+      order?.snapshot?.productName ||
+      order?.plantName ||
+      (!order ? readPlantName(sp.plantName) : "") ||
+      t(locale, "success.fallbackPlant");
   const spotSlug =
     order?.snapshot?.spotSlug?.trim() ||
     readSpotSlug(sp.spotSlug) ||
     "";
   const returnToPlantHref = spotSlug ? posSpotPath(spotSlug) : null;
-  const plantImage = order?.snapshot?.productImage ?? plant?.images[0];
+  const plantImage = isFlowerOrder
+    ? undefined
+    : order?.snapshot?.productImage ?? plant?.images?.[0];
 
   const isPendingPayment = order?.orderStatus === "pending_payment";
   // With orderId: only verified paid statuses show final success. Without orderId: legacy thank-you.
@@ -117,9 +122,11 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
             undefined
           }
           plant_name={
-            trackVerifiedPurchase.snapshot?.productName ||
-            trackVerifiedPurchase.plantName ||
-            undefined
+            isFlowerOrder
+              ? undefined
+              : trackVerifiedPurchase.snapshot?.productName ||
+                trackVerifiedPurchase.plantName ||
+                undefined
           }
           offer_id={
             trackVerifiedPurchase.offerId ||
@@ -208,9 +215,11 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
             </div>
           ) : null}
           <p className="mt-3 text-base font-semibold text-emerald-900">
-            {t(locale, isPickup ? "success.line.pickup" : "success.line.delivery", {
-              plantName,
-            })}
+            {isFlowerOrder
+              ? t(locale, "success.line.flowers")
+              : t(locale, isPickup ? "success.line.pickup" : "success.line.delivery", {
+                  plantName,
+                })}
           </p>
         </section>
       </div>
@@ -218,7 +227,11 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
       <CustomerRecoveryActions
         preferredReturnHref={returnToPlantHref}
         returnLabel={t(locale, "success.returnPlant")}
-        whatsAppMessage={t(locale, "success.whatsapp", { plantName })}
+        whatsAppMessage={
+          isFlowerOrder
+            ? t(locale, "success.whatsapp.flowers")
+            : t(locale, "success.whatsapp", { plantName })
+        }
       />
     </main>
   );

@@ -22,11 +22,10 @@ assert.match(helpers, /shouldCaptureBusinessAnalytics/);
 assert.match(helpers, /NODE_ENV === ["']production["']/);
 
 const posPage = read("app/pos/[spotSlug]/page.tsx");
-assert.match(posPage, /TrackPosScan/);
-assert.match(posPage, /getPosLandingDetails/);
-assert.match(posPage, /pocket_name/);
+assert.match(posPage, /redirect\(posSpotCheckoutPath/);
 
 const checkoutPage = read("app/checkout/pos/[spotSlug]/page.tsx");
+assert.match(checkoutPage, /TrackPosScan/);
 assert.match(checkoutPage, /TrackCheckoutStarted/);
 assert.match(checkoutPage, /analyticsContext/);
 

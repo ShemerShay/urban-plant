@@ -13,7 +13,7 @@ export interface OrderSnapshot {
   productName: string;
   productFamily?: string;
   productImage?: string;
-  productDescription: string;
+  productDescription?: string;
   offerId: string;
   consumerPrice: number;
   supplierPrice?: number;

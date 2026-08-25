@@ -1,23 +1,32 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 
 import { useLocale } from "@/components/locale/LocaleProvider";
+import { localeHtmlDir } from "@/lib/locale";
 import { t } from "@/lib/messages";
 
 interface PlantImageGalleryProps {
   images: string[];
   name: string;
+  /** Smaller gallery for checkout product summary. Default is the product-page size. */
+  compact?: boolean;
 }
 
-export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
+export function PlantImageGallery({ images, name, compact = false }: PlantImageGalleryProps) {
   const locale = useLocale();
-  const [emblaRef, emblaApi] = useEmblaCarousel({
-    align: "start",
-    loop: false,
-  });
+  const direction = localeHtmlDir(locale);
+  const emblaOptions = useMemo(
+    () => ({
+      align: "start" as const,
+      loop: false,
+      direction,
+    }),
+    [direction],
+  );
+  const [emblaRef, emblaApi] = useEmblaCarousel(emblaOptions);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   useEffect(() => {
@@ -62,11 +71,16 @@ export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
   return (
     <section
       id="plant-image-gallery"
-      className="space-y-3"
+      className={compact ? "space-y-1.5" : "space-y-3"}
       aria-label={t(locale, "plant.gallery.photos", { name })}
     >
       <div
-        className="overflow-hidden rounded-[28px] bg-neutral-100 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+        className={
+          compact
+            ? "overflow-hidden rounded-xl bg-neutral-100 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+            : "overflow-hidden rounded-[28px] bg-neutral-100 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+        }
+        dir={direction}
         ref={emblaRef}
         tabIndex={images.length > 1 ? 0 : undefined}
         role={images.length > 1 ? "region" : undefined}
@@ -95,7 +109,7 @@ export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
                 fill
                 priority={index === 0}
                 className="object-cover"
-                sizes="(max-width: 448px) 100vw, 448px"
+                sizes={compact ? "128px" : "(max-width: 448px) 100vw, 448px"}
               />
             </div>
           ))}
@@ -118,7 +132,11 @@ export function PlantImageGallery({ images, name }: PlantImageGalleryProps) {
                 total: images.length,
               })}
               onClick={() => emblaApi?.scrollTo(index)}
-              className="flex h-11 min-w-11 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+              className={
+                compact
+                  ? "flex h-8 min-w-8 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+                  : "flex h-11 min-w-11 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+              }
             >
               <span
                 aria-hidden

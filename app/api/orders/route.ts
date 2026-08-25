@@ -22,6 +22,7 @@ import {
   isValidPhone,
 } from "@/lib/formValidation";
 import { getPlantById } from "@/lib/plantCatalog";
+import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import { getOfferById } from "@/lib/offerStorage";
 import type { Offer } from "@/lib/offerTypes";
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "@/lib/orderTypes";
@@ -58,8 +59,8 @@ async function buildSnapshot(input: {
     productId: plant.id,
     productName: plant.name,
     ...(plant.family ? { productFamily: plant.family } : {}),
-    ...(plant.images[0] ? { productImage: plant.images[0] } : {}),
-    productDescription: plant.description,
+    ...(plant.images?.[0] ? { productImage: plant.images[0] } : {}),
+    ...(plant.description ? { productDescription: plant.description } : {}),
     offerId: offer.id,
     consumerPrice: offer.consumerPrice,
     ...(posSpot ? { partnerLocationId: posSpot.partnerLocationId } : {}),
@@ -407,6 +408,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "plantId must match a catalog plant" }, { status: 400 });
   }
 
+  const inventoryType = inventoryTypeOrDefault(catalogPlant.inventoryType);
+  if (inventoryType === "flowers" && fulfillmentMethod === "delivery") {
+    return NextResponse.json(
+      { error: "Flower orders must be picked up; delivery is not available." },
+      { status: 400 },
+    );
+  }
+
   const posSpot = await getPosSpotBySpotSlug(spotSlug);
   if (!posSpot) {
     return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
@@ -427,7 +436,11 @@ export async function POST(request: NextRequest) {
   }
 
   const partner = await getLocationById(posSpot.partnerLocationId);
-  if (fulfillmentMethod === "pickup" && partner?.pickupDisabled) {
+  if (
+    fulfillmentMethod === "pickup" &&
+    partner?.pickupDisabled &&
+    inventoryType !== "flowers"
+  ) {
     return NextResponse.json(
       { error: "Pickup is not available at this location." },
       { status: 400 },
@@ -467,7 +480,8 @@ export async function POST(request: NextRequest) {
   });
 
   await appendOrder(order);
-  const updatedPosSpot = await setPosSpotStatus(posSpot.id, "sold");
+  const updatedPosSpot =
+    inventoryType === "flowers" ? posSpot : await setPosSpotStatus(posSpot.id, "sold");
   const orderCreatedEvent = await appendOrderCreatedEvent(order);
 
   logOnlineOrderFlow({

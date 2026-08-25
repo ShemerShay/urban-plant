@@ -63,7 +63,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
   const o = value as Record<string, unknown>;
   const productId = typeof o.productId === "string" ? o.productId : "";
   const productName = typeof o.productName === "string" ? o.productName : "";
-  const productDescription = typeof o.productDescription === "string" ? o.productDescription : "";
+  const productDescription = typeof o.productDescription === "string" ? o.productDescription.trim() : "";
   const offerId = typeof o.offerId === "string" ? o.offerId : "";
   const consumerPrice =
     typeof o.consumerPrice === "number" && Number.isFinite(o.consumerPrice)
@@ -71,7 +71,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       : null;
   const fulfillmentType: FulfillmentMethod =
     o.fulfillmentType === "pickup" ? "pickup" : "delivery";
-  if (!productId || !productName || !productDescription || !offerId || consumerPrice === null) {
+  if (!productId || !productName || !offerId || consumerPrice === null) {
     return undefined;
   }
 
@@ -80,7 +80,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
     productName,
     ...(typeof o.productFamily === "string" && o.productFamily ? { productFamily: o.productFamily } : {}),
     ...(typeof o.productImage === "string" && o.productImage ? { productImage: o.productImage } : {}),
-    productDescription,
+    ...(productDescription ? { productDescription } : {}),
     offerId,
     consumerPrice,
     ...(typeof o.supplierPrice === "number" && Number.isFinite(o.supplierPrice)
@@ -882,7 +882,7 @@ export type FinalizeVerifiedPendingPaymentResult =
  *
  * Delivery: pending_payment → sold
  * Pickup: pending_payment → picked_up (+ picked_up_at)
- * POS: held_for_payment → sold (plants) or available (flowers)
+ * POS: plants held_for_payment → sold. Flowers: POS is not updated.
  *
  * Also persists verified Cardcom TranzactionId and sets purchase_email_status = pending
  * so post-payment document/email can be claimed without rolling back payment.
@@ -916,14 +916,25 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       SELECT
         o.order_id,
         o.pos_spot_id,
-        o.product_id
+        o.product_id,
+        COALESCE(pl.inventory_type, 'plants') AS inventory_type
       FROM orders o
       INNER JOIN pos_spots p ON p.id = o.pos_spot_id
+      LEFT JOIN plants pl ON pl.id = o.product_id
       WHERE o.order_id = ${orderId}::uuid
         AND o.order_status = 'pending_payment'
         AND o.checkout_session_id = ${checkoutSessionId}
         AND o.pos_spot_id = ${posSpotId}::uuid
-        AND p.status = 'held_for_payment'
+        AND (
+          (
+            COALESCE(pl.inventory_type, 'plants') = 'flowers'
+            AND p.status = 'available'
+          )
+          OR (
+            COALESCE(pl.inventory_type, 'plants') <> 'flowers'
+            AND p.status = 'held_for_payment'
+          )
+        )
     ),
     order_upd AS (
       UPDATE orders o
@@ -978,21 +989,12 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
     pos_upd AS (
       UPDATE pos_spots p
       SET
-        status = CASE
-          WHEN COALESCE(
-            (
-              SELECT pl.inventory_type
-              FROM plants pl
-              WHERE pl.id = e.product_id
-            ),
-            'plants'
-          ) = 'flowers' THEN 'available'
-          ELSE 'sold'
-        END,
+        status = 'sold',
         payment_hold_started_at = NULL,
         payment_hold_attempt_id = NULL
       FROM eligible e
       WHERE p.id = e.pos_spot_id
+        AND e.inventory_type <> 'flowers'
       RETURNING p.id, p.status
     )
     SELECT
@@ -1030,15 +1032,21 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       o.purchase_email_sent_at,
       o.purchase_email_last_error,
       (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
-      (SELECT status FROM pos_upd LIMIT 1) AS pos_status
+      (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
+      (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type
     FROM order_upd o
   `;
 
   const row = (rows as (OrderRow & {
     finalized_pos_spot_id: string | null;
     pos_status: string | null;
+    inventory_type: string | null;
   })[])[0];
-  if (!row || !row.finalized_pos_spot_id) {
+  const isFlower = row?.inventory_type === "flowers";
+  if (!row) {
+    return { ok: false, reason: "conflict" };
+  }
+  if (!isFlower && !row.finalized_pos_spot_id) {
     return { ok: false, reason: "conflict" };
   }
 
@@ -1046,7 +1054,7 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
     ok: true,
     order: mapOrderRow(row),
     finalized: true,
-    posStatus: row.pos_status === "available" ? "available" : "sold",
+    posStatus: isFlower ? "available" : row.pos_status === "available" ? "available" : "sold",
   };
 }
 

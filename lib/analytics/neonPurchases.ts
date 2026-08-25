@@ -9,11 +9,21 @@ export type NamedCount = {
 
 export type NeonPurchaseAnalytics = {
   purchases: number;
+  purchasesPlants: number;
+  purchasesFlowers: number;
+  /** Verified orders whose product_id did not match plants; counted as plants. */
+  purchasesMissingCatalog: number;
+  inventoryTypeFallback: "plants";
   topPlants: NamedCount[];
   byPartner: NamedCount[];
 };
 
-type CountRow = { cnt: string | number };
+type CountRow = {
+  cnt: string | number;
+  plants_cnt?: string | number;
+  flowers_cnt?: string | number;
+  missing_catalog_cnt?: string | number;
+};
 type NamedCountRow = { name: string | null; cnt: string | number };
 
 function toCount(value: string | number | null | undefined): number {
@@ -45,15 +55,33 @@ export async function getNeonPurchaseAnalytics(
   const [totalRaw, plantRaw, partnerRaw] = await Promise.all([
     fromIso
       ? sql`
-          SELECT COUNT(*)::int AS cnt
-          FROM orders
-          WHERE order_status IN ('sold', 'picked_up', 'delivered')
-            AND created_at >= ${fromIso}::timestamptz
+          SELECT
+            COUNT(*)::int AS cnt,
+            COUNT(*) FILTER (
+              WHERE COALESCE(pl.inventory_type, 'plants') = 'flowers'
+            )::int AS flowers_cnt,
+            COUNT(*) FILTER (
+              WHERE COALESCE(pl.inventory_type, 'plants') <> 'flowers'
+            )::int AS plants_cnt,
+            COUNT(*) FILTER (WHERE pl.id IS NULL)::int AS missing_catalog_cnt
+          FROM orders o
+          LEFT JOIN plants pl ON pl.id = o.product_id
+          WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
+            AND o.created_at >= ${fromIso}::timestamptz
         `
       : sql`
-          SELECT COUNT(*)::int AS cnt
-          FROM orders
-          WHERE order_status IN ('sold', 'picked_up', 'delivered')
+          SELECT
+            COUNT(*)::int AS cnt,
+            COUNT(*) FILTER (
+              WHERE COALESCE(pl.inventory_type, 'plants') = 'flowers'
+            )::int AS flowers_cnt,
+            COUNT(*) FILTER (
+              WHERE COALESCE(pl.inventory_type, 'plants') <> 'flowers'
+            )::int AS plants_cnt,
+            COUNT(*) FILTER (WHERE pl.id IS NULL)::int AS missing_catalog_cnt
+          FROM orders o
+          LEFT JOIN plants pl ON pl.id = o.product_id
+          WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
         `,
     fromIso
       ? sql`
@@ -125,8 +153,13 @@ export async function getNeonPurchaseAnalytics(
   const plantRows = asNamedCountRows(plantRaw);
   const partnerRows = asNamedCountRows(partnerRaw);
 
+  const total = totalRows[0];
   return {
-    purchases: toCount(totalRows[0]?.cnt),
+    purchases: toCount(total?.cnt),
+    purchasesPlants: toCount(total?.plants_cnt),
+    purchasesFlowers: toCount(total?.flowers_cnt),
+    purchasesMissingCatalog: toCount(total?.missing_catalog_cnt),
+    inventoryTypeFallback: "plants",
     topPlants: plantRows.map((r) => ({
       name: (r.name ?? "").trim() || "Unknown plant",
       count: toCount(r.cnt),

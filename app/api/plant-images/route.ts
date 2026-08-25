@@ -25,7 +25,7 @@ export async function GET() {
   const fromCatalog: { url: string; filename: string }[] = [];
 
   for (const plant of plants) {
-    for (const url of plant.images) {
+    for (const url of plant.images ?? []) {
       if (!url.trim() || urlSet.has(url) || fromCatalog.some((item) => item.url === url)) {
         continue;
       }

@@ -2,6 +2,7 @@
  * Abandoned Cardcom payment hold expiry (17 minutes).
  * Owned holds: expire awaiting attempt + release only that attempt's hold (no Order).
  * Legacy holds (null owner): cancel pending_payment Orders + release as before.
+ * Flowers: expire awaiting attempts by expires_at (same TTL); never update POS.
  *
  * Canonical rule: a held_for_payment hold is active only while its hold timestamp
  * is less than {@link PAYMENT_HOLD_TTL_MS} old (DB `now()` for SQL comparisons).
@@ -39,6 +40,8 @@ export type ExpireAllStalePaymentHoldsResult = {
  * - legacy hold: cancel linked pending_payment order(s); release hold
  * - missing hold timestamp (after fallbacks): treat as expired and release
  * Never releases sold / inactive / another attempt's hold / a newer fresh hold.
+ * Flower awaiting attempts on this POS past expires_at are marked expired without
+ * acquiring, releasing, or otherwise updating the POS row.
  */
 export async function expireStalePaymentHold(
   posSpotId: string,
@@ -164,14 +167,38 @@ export async function expireStalePaymentHold(
     };
   }
   if (row.current_status !== "held_for_payment") {
+    await expireStaleFlowerPaymentAttempts(id);
     return { expired: false, reason: "not_held" };
   }
+  await expireStaleFlowerPaymentAttempts(id);
   return { expired: false, reason: "not_stale" };
+}
+
+/** Expire awaiting flower attempts past TTL. Does not update pos_spots. */
+async function expireStaleFlowerPaymentAttempts(posSpotId: string): Promise<void> {
+  await sql`
+    UPDATE payment_attempts a
+    SET
+      status = 'expired',
+      failure_reason = 'Payment hold expired',
+      payment_retry_lock_at = NULL,
+      updated_at = now()
+    FROM plants pl
+    WHERE a.pos_spot_id = ${posSpotId}::uuid
+      AND a.status = 'awaiting_payment'
+      AND pl.id = a.product_id
+      AND COALESCE(pl.inventory_type, 'plants') = 'flowers'
+      AND COALESCE(
+        a.expires_at,
+        a.created_at + (${PAYMENT_HOLD_TTL_MS} * interval '1 millisecond')
+      ) <= now()
+  `;
 }
 
 /**
  * Background / cron entry point: find every held_for_payment spot past the TTL
- * (or with a missing hold clock), then reuse {@link expireStalePaymentHold} per spot.
+ * (or with a missing hold clock), plus POS with stale awaiting flower attempts,
+ * then reuse {@link expireStalePaymentHold} per spot.
  */
 export async function expireAllStalePaymentHolds(): Promise<ExpireAllStalePaymentHoldsResult> {
   console.log("[expire-payment-holds] cleanup start");
@@ -216,6 +243,16 @@ export async function expireAllStalePaymentHolds(): Promise<ExpireAllStalePaymen
           ) * 1000
         ) >= ${PAYMENT_HOLD_TTL_MS}
       )
+    UNION
+    SELECT DISTINCT a.pos_spot_id AS id
+    FROM payment_attempts a
+    INNER JOIN plants pl ON pl.id = a.product_id
+    WHERE a.status = 'awaiting_payment'
+      AND COALESCE(pl.inventory_type, 'plants') = 'flowers'
+      AND COALESCE(
+        a.expires_at,
+        a.created_at + (${PAYMENT_HOLD_TTL_MS} * interval '1 millisecond')
+      ) <= now()
   `;
 
   const candidateIds = (rows as { id: string }[]).map((r) => r.id);

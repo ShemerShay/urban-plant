@@ -22,6 +22,12 @@ import {
   type CheckoutFieldKey,
   type CheckoutFulfillmentMethod,
 } from "@/lib/checkoutValidation";
+import {
+  defaultCheckoutFulfillment,
+  hideCheckoutPickupOption,
+  isCheckoutDeliveryDisabled,
+} from "@/lib/checkoutFulfillment";
+import type { InventoryType } from "@/lib/inventoryType";
 import { displayApiError, translateCheckoutFieldErrors } from "@/lib/displayLabels";
 import { t } from "@/lib/messages";
 import { isPosSpotPurchasable, shouldShowHeldForPaymentCheckoutMessage } from "@/lib/posSpotHold";
@@ -58,7 +64,8 @@ interface CheckoutFormProps {
   priceDisplay: string;
   /** POS Spot slug from `/checkout/pos/{spotSlug}`. */
   spotSlug: string;
-  /** When true, pickup is hidden and only delivery is available. */
+  inventoryType: InventoryType;
+  /** When true, pickup is hidden and only delivery is available (plants only). */
   pickupDisabled?: boolean;
   /** Latest POS inventory status from the server (page load). */
   posSpotStatus: PosSpotStatus;
@@ -93,8 +100,9 @@ const buttonFocusClass =
 export function CheckoutForm({
   plantId,
   plantName,
-  priceDisplay: _priceDisplay,
+  priceDisplay,
   spotSlug,
+  inventoryType,
   pickupDisabled = false,
   posSpotStatus,
   paymentResume,
@@ -103,13 +111,17 @@ export function CheckoutForm({
   const posthog = usePostHog();
   const locale = useLocale();
   const resumeHolder = Boolean(paymentResume);
+  const deliveryDisabled = isCheckoutDeliveryDisabled(inventoryType);
+  const hidePickup = hideCheckoutPickupOption(inventoryType, pickupDisabled);
   const formHeadingId = useId();
   const statusRegionId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>(
-    paymentResume?.prefill.fulfillmentMethod === "pickup" && !pickupDisabled
-      ? "pickup"
-      : "delivery",
+    defaultCheckoutFulfillment({
+      inventoryType,
+      pickupDisabled,
+      resumeFulfillment: paymentResume?.prefill.fulfillmentMethod,
+    }),
   );
   const [fields, setFields] = useState<FormFields>({
     fullName: paymentResume?.prefill.fullName ?? "",
@@ -144,7 +156,10 @@ export function CheckoutForm({
   }
 
   function handleFulfillmentChange(next: FulfillmentMethod) {
-    if (pickupDisabled && next === "pickup") {
+    if (hidePickup && next === "pickup") {
+      return;
+    }
+    if (deliveryDisabled && next === "delivery") {
       return;
     }
     setFulfillmentMethod(next);
@@ -260,8 +275,8 @@ export function CheckoutForm({
         return;
       }
 
-      // First attempt: payment_attempt + owned hold + Cardcom Create → hosted payment page.
-      // Browser never finalizes; webhook + GetLpResult create Order and send email.
+      // First attempt: payment_attempt (+ plant POS hold) + Cardcom Create → hosted page.
+      // Flowers skip the hold. Browser never finalizes; webhook creates the Order.
       const response = await fetch(routes.api.cardcomCreate(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -336,20 +351,24 @@ export function CheckoutForm({
 
       <fieldset className="space-y-2">
         <legend className="sr-only">{t(locale, "checkout.fulfillment.legend")}</legend>
-        <div className={pickupDisabled ? "" : "grid grid-cols-2 gap-2"} role="group">
+        <div className={hidePickup ? "" : "grid grid-cols-2 gap-2"} role="group">
           <button
             type="button"
             aria-pressed={fulfillmentMethod === "delivery"}
+            disabled={deliveryDisabled || undefined}
+            aria-disabled={deliveryDisabled || undefined}
             onClick={() => handleFulfillmentChange("delivery")}
             className={`min-h-12 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${buttonFocusClass} ${
-              fulfillmentMethod === "delivery"
-                ? "border-emerald-700 bg-emerald-50 text-emerald-900"
-                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+              deliveryDisabled
+                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                : fulfillmentMethod === "delivery"
+                  ? "border-emerald-700 bg-emerald-50 text-emerald-900"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
             }`}
           >
             {t(locale, "checkout.fulfillment.delivery")}
           </button>
-          {!pickupDisabled ? (
+          {!hidePickup ? (
             <button
               type="button"
               aria-pressed={fulfillmentMethod === "pickup"}
@@ -396,11 +415,17 @@ export function CheckoutForm({
 
       <div className="rounded-2xl bg-emerald-50/80 p-4">
         <p className="text-sm text-emerald-900">
-          {t(locale, "checkout.confirm.prefix")}
-          <span className="font-semibold">{plantName}</span>
-          {fulfillmentMethod === "delivery"
-            ? t(locale, "checkout.confirm.deliverySuffix")
-            : t(locale, "checkout.confirm.pickupSuffix")}
+          {deliveryDisabled ? (
+            t(locale, "checkout.confirm.flowersPickup")
+          ) : (
+            <>
+              {t(locale, "checkout.confirm.prefix")}
+              <span className="font-semibold">{plantName}</span>
+              {fulfillmentMethod === "delivery"
+                ? t(locale, "checkout.confirm.deliverySuffix")
+                : t(locale, "checkout.confirm.pickupSuffix")}
+            </>
+          )}
         </p>
       </div>
 
@@ -433,7 +458,11 @@ export function CheckoutForm({
           aria-disabled={isSubmitDisabled || undefined}
           className={`min-h-12 w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition enabled:hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:opacity-60 ${buttonFocusClass}`}
         >
-          {isSubmitting ? t(locale, "checkout.processing") : t(locale, "checkout.submit")}
+          {isSubmitting
+            ? t(locale, "checkout.processing")
+            : deliveryDisabled
+              ? t(locale, "checkout.submitWithPrice", { price: priceDisplay })
+              : t(locale, "checkout.submit")}
         </button>
         {isSubmitting ? (
           <p className="sr-only" role="status" aria-live="polite">

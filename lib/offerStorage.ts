@@ -5,6 +5,7 @@
 import { randomUUID } from "crypto";
 
 import { sql } from "@/lib/db";
+import type { InventoryType } from "@/lib/inventoryType";
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
@@ -55,13 +56,24 @@ export function mapOfferRow(row: OfferRow): Offer {
   };
 }
 
-export async function readOffers(): Promise<Offer[]> {
-  const rows = await sql`
-    SELECT id, product_id, consumer_price, status, created_at
-    FROM offers
-    ORDER BY created_at ASC
-  `;
+export async function readOffers(filter?: {
+  inventoryType?: InventoryType;
+}): Promise<Offer[]> {
+  const rows = filter?.inventoryType
+    ? await sql`
+        SELECT o.id, o.product_id, o.consumer_price, o.status, o.created_at
+        FROM offers o
+        INNER JOIN plants pl ON pl.id = o.product_id
+        WHERE pl.inventory_type = ${filter.inventoryType}
+        ORDER BY o.created_at ASC
+      `
+    : await sql`
+        SELECT id, product_id, consumer_price, status, created_at
+        FROM offers
+        ORDER BY created_at ASC
+      `;
   const offers = (rows as OfferRow[]).map(mapOfferRow);
+  if (filter?.inventoryType) return offers;
   return offers.length > 0 ? offers : defaultOffers();
 }
 

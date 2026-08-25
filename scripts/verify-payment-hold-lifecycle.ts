@@ -38,6 +38,7 @@ async function main(): Promise<void> {
     deletePaymentAttemptById,
     getPaymentAttemptById,
     insertPaymentAttempt,
+    finalizeVerifiedPaymentAttemptAtomic,
   } = await import("../lib/paymentAttemptStorage");
   const {
     acquirePosSpotHoldForPayment,
@@ -49,6 +50,10 @@ async function main(): Promise<void> {
     updatePosSpot,
   } = await import("../lib/posSpotStorage");
   const { createPlant, deletePlant, getPlantByIdAsync } = await import("../lib/plantStorage");
+  const { appendOrder, finalizeVerifiedPendingPaymentAtomic } = await import(
+    "../lib/ordersStorage"
+  );
+  const { posStatusAfterSuccessfulPayment } = await import("../lib/inventoryType");
   const { sql } = await import("../lib/db");
 
   // --- Pure TTL helper ---
@@ -65,6 +70,8 @@ async function main(): Promise<void> {
   assert.equal(isPaymentHoldExpired(undefined, now), true);
   assert.equal(isPaymentHoldExpired("", now), true);
   assert.equal(isPaymentHoldExpired("bogus", now), true);
+  assert.equal(posStatusAfterSuccessfulPayment("plants"), "sold");
+  assert.equal(posStatusAfterSuccessfulPayment("flowers"), null);
 
   const spots = await readPosSpots();
   const available = spots.find((s) => s.status === "available");
@@ -75,9 +82,13 @@ async function main(): Promise<void> {
 
   const before = available.status;
   const attemptIds: string[] = [];
+  const orderIds: string[] = [];
   const createdAt = new Date().toISOString();
 
-  async function insertAwaitingAttempt(productId = "hold-lifecycle-product"): Promise<string> {
+  async function insertAwaitingAttempt(
+    productId = "hold-lifecycle-product",
+    checkoutSessionId?: string,
+  ): Promise<string> {
     const id = randomUUID();
     attemptIds.push(id);
     await insertPaymentAttempt({
@@ -93,6 +104,7 @@ async function main(): Promise<void> {
       apartmentOrNotes: "",
       fulfillmentMethod: "pickup",
       amount: 1,
+      checkoutSessionId,
       paymentResumeToken: `resume-${randomUUID()}`,
       createdAt,
       updatedAt: createdAt,
@@ -110,6 +122,9 @@ async function main(): Promise<void> {
     }
     for (const id of [...new Set(attemptIds)]) {
       await deletePaymentAttemptById(id);
+    }
+    for (const id of [...new Set(orderIds)]) {
+      await sql`DELETE FROM orders WHERE order_id = ${id}::uuid`;
     }
     await setPosSpotStatus(available!.id, before);
   }
@@ -337,7 +352,7 @@ async function main(): Promise<void> {
       await setPosSpotStatus(available.id, "available");
     }
 
-    // Flower inventory: successful payment returns POS to available and can be held again.
+    // Flower inventory: no POS hold; completePosSpotSaleFromHold is a no-op; POS stays available.
     {
       const sample = await getPlantByIdAsync("monstera");
       assert.ok(sample, "need a catalog row to clone a flower inventory type");
@@ -352,14 +367,194 @@ async function main(): Promise<void> {
       try {
         await setPosSpotStatus(available.id, "available");
         const attemptId = await insertAwaitingAttempt(flowerId);
-        assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
-        assert.equal((await completePosSpotSaleFromHold(available.id, attemptId)).ok, true);
+        const sale = await completePosSpotSaleFromHold(available.id, attemptId);
+        assert.equal(sale.ok, false);
         assert.equal((await getPosSpotById(available.id))?.status, "available");
-        const nextAttempt = await insertAwaitingAttempt(flowerId);
-        assert.equal((await acquirePosSpotHoldForPayment(available.id, nextAttempt)).ok, true);
-        assert.equal((await completePosSpotSaleFromHold(available.id, nextAttempt)).ok, true);
+        const fresh = await expireStalePaymentHold(available.id);
+        assert.equal(fresh.expired, false);
+        assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
+
+        await sql`
+          UPDATE payment_attempts
+          SET expires_at = now() - interval '1 minute'
+          WHERE id = ${attemptId}::uuid
+        `;
+        const expired = await expireStalePaymentHold(available.id);
+        assert.equal(expired.expired, false);
+        assert.equal((await getPaymentAttemptById(attemptId))?.status, "expired");
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
+        assert.equal((await getPosSpotById(available.id))?.paymentHoldAttemptId, undefined);
+
+        const staleAttempt = await insertAwaitingAttempt(flowerId);
+        await sql`
+          UPDATE payment_attempts
+          SET expires_at = now() - interval '1 minute'
+          WHERE id = ${staleAttempt}::uuid
+        `;
+        const cron = await expireAllStalePaymentHolds();
+        assert.equal((await getPaymentAttemptById(staleAttempt))?.status, "expired");
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
+        assert.equal(cron.expiredPosSpotIds.includes(available.id), false);
+      } finally {
+        await deletePlant(flowerId);
+        await setPosSpotStatus(available.id, "available");
+      }
+    }
+
+    // Successful-payment POS status through all three finalization paths.
+    {
+      const sample = await getPlantByIdAsync("monstera");
+      assert.ok(sample, "need a catalog row to clone plant/flower types");
+      const plantId = randomUUID();
+      const flowerId = randomUUID();
+      await createPlant({
+        ...sample,
+        id: plantId,
+        name: "Verify Plant Finalize",
+        inventoryType: "plants",
+        createdAt: new Date().toISOString(),
+      });
+      await createPlant({
+        ...sample,
+        id: flowerId,
+        name: "Verify Flower Finalize",
+        inventoryType: "flowers",
+        createdAt: new Date().toISOString(),
+      });
+
+      async function seedPendingOrder(productId: string): Promise<{
+        orderId: string;
+        checkoutSessionId: string;
+      }> {
+        const orderId = randomUUID();
+        const checkoutSessionId = `lp-inv-${randomUUID()}`;
+        orderIds.push(orderId);
+        await appendOrder({
+          orderId,
+          checkoutSessionId,
+          posSpotId: available!.id,
+          plantId: productId,
+          plantName: "Inventory Finalize Verify",
+          locationId: available!.partnerLocationId,
+          locationName: "Verify",
+          locationAddress: null,
+          price: 1,
+          fullName: "Inventory Finalize Verify",
+          customerEmail: "inventory-finalize@example.com",
+          phone: "0500000000",
+          address: "",
+          apartmentOrNotes: "",
+          fulfillmentMethod: "delivery",
+          createdAt: new Date().toISOString(),
+          orderStatus: "pending_payment",
+          source: "online",
+        });
+        return { orderId, checkoutSessionId };
+      }
+
+      try {
+        // Path: completePosSpotSaleFromHold — missing catalog falls back to sold.
+        await setPosSpotStatus(available.id, "available");
+        const missingAttempt = await insertAwaitingAttempt("missing-catalog-product");
+        assert.equal((await acquirePosSpotHoldForPayment(available.id, missingAttempt)).ok, true);
+        assert.equal((await completePosSpotSaleFromHold(available.id, missingAttempt)).ok, true);
+        assert.equal((await getPosSpotById(available.id))?.status, "sold");
+
+        // Path: finalizeVerifiedPaymentAttemptAtomic — plant → sold, flower → available.
+        await setPosSpotStatus(available.id, "available");
+        const plantSession = `cs-plant-${randomUUID()}`;
+        const plantAttempt = await insertAwaitingAttempt(plantId, plantSession);
+        assert.equal((await acquirePosSpotHoldForPayment(available.id, plantAttempt)).ok, true);
+        const plantFinal = await finalizeVerifiedPaymentAttemptAtomic({
+          attemptId: plantAttempt,
+          checkoutSessionId: plantSession,
+          posSpotId: available.id,
+          fulfillmentMethod: "pickup",
+        });
+        assert.equal(plantFinal.ok, true);
+        if (plantFinal.ok) {
+          orderIds.push(plantFinal.order.orderId);
+          assert.equal(plantFinal.posStatus, "sold");
+        }
+        assert.equal((await getPosSpotById(available.id))?.status, "sold");
+        const plantDup = await finalizeVerifiedPaymentAttemptAtomic({
+          attemptId: plantAttempt,
+          checkoutSessionId: plantSession,
+          posSpotId: available.id,
+          fulfillmentMethod: "pickup",
+        });
+        assert.equal(plantDup.ok, false);
+
+        await setPosSpotStatus(available.id, "available");
+        const flowerSession = `cs-flower-${randomUUID()}`;
+        const flowerAttempt = await insertAwaitingAttempt(flowerId, flowerSession);
+        const flowerFinal = await finalizeVerifiedPaymentAttemptAtomic({
+          attemptId: flowerAttempt,
+          checkoutSessionId: flowerSession,
+          posSpotId: available.id,
+          fulfillmentMethod: "pickup",
+        });
+        assert.equal(flowerFinal.ok, true);
+        if (flowerFinal.ok) {
+          orderIds.push(flowerFinal.order.orderId);
+          assert.equal(flowerFinal.posStatus, "available");
+        }
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
+
+        const flowerSessionB = `cs-flower-b-${randomUUID()}`;
+        const flowerAttemptB = await insertAwaitingAttempt(flowerId, flowerSessionB);
+        const flowerFinalB = await finalizeVerifiedPaymentAttemptAtomic({
+          attemptId: flowerAttemptB,
+          checkoutSessionId: flowerSessionB,
+          posSpotId: available.id,
+          fulfillmentMethod: "pickup",
+        });
+        assert.equal(flowerFinalB.ok, true);
+        if (flowerFinalB.ok) {
+          orderIds.push(flowerFinalB.order.orderId);
+          assert.equal(flowerFinalB.posStatus, "available");
+        }
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
+
+        // Path: finalizeVerifiedPendingPaymentAtomic
+        await setPosSpotStatus(available.id, "available");
+        const pendingPlant = await seedPendingOrder(plantId);
+        await sql`
+          UPDATE pos_spots
+          SET
+            status = 'held_for_payment',
+            payment_hold_started_at = now(),
+            payment_hold_attempt_id = NULL
+          WHERE id = ${available.id}::uuid
+        `;
+        const pendingPlantFinal = await finalizeVerifiedPendingPaymentAtomic({
+          orderId: pendingPlant.orderId,
+          checkoutSessionId: pendingPlant.checkoutSessionId,
+          posSpotId: available.id,
+          fulfillmentMethod: "delivery",
+        });
+        assert.equal(pendingPlantFinal.ok, true);
+        if (pendingPlantFinal.ok) {
+          assert.equal(pendingPlantFinal.posStatus, "sold");
+        }
+        assert.equal((await getPosSpotById(available.id))?.status, "sold");
+
+        await setPosSpotStatus(available.id, "available");
+        const pendingFlower = await seedPendingOrder(flowerId);
+        const pendingFlowerFinal = await finalizeVerifiedPendingPaymentAtomic({
+          orderId: pendingFlower.orderId,
+          checkoutSessionId: pendingFlower.checkoutSessionId,
+          posSpotId: available.id,
+          fulfillmentMethod: "pickup",
+        });
+        assert.equal(pendingFlowerFinal.ok, true);
+        if (pendingFlowerFinal.ok) {
+          assert.equal(pendingFlowerFinal.posStatus, "available");
+        }
         assert.equal((await getPosSpotById(available.id))?.status, "available");
       } finally {
+        await deletePlant(plantId);
         await deletePlant(flowerId);
         await setPosSpotStatus(available.id, "available");
       }

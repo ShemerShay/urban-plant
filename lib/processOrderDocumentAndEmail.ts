@@ -16,6 +16,7 @@ import {
 } from "@/lib/cardcomDocuments";
 import { formatPrice } from "@/lib/mockPlants";
 import type { SavedOrder } from "@/lib/orderTypes";
+import { CARDCOM_FLOWER_LINE_ITEM_NAME, inventoryTypeOrDefault } from "@/lib/inventoryType";
 import {
   claimPurchaseEmailProcessing,
   ensurePurchaseEmailPending,
@@ -88,6 +89,12 @@ async function resolveDocument(
     throw new Error("Missing customer email for CreateDocument");
   }
 
+  const catalogPlant = order.plantId ? await getPlantById(order.plantId) : undefined;
+  const isFlower = inventoryTypeOrDefault(catalogPlant?.inventoryType) === "flowers";
+  const publicProductName = isFlower
+    ? CARDCOM_FLOWER_LINE_ITEM_NAME
+    : order.plantName || "Customer";
+
   const createDocument = deps.createDocument ?? createCardcomDocument;
   const created = await createDocument(
     {
@@ -96,7 +103,7 @@ async function resolveDocument(
       email,
       phone: order.phone || "",
       addressLine1: buildDeliveryAddress(order),
-      productDescription: order.plantName || "Plant",
+      productDescription: publicProductName,
       unitCost: order.price,
       externalId: order.orderId,
     },
@@ -167,13 +174,18 @@ export async function processOrderDocumentAndEmail(
     }
 
     let careInstructions: string[] = [];
+    let publicPlantName = order.plantName || "your plant";
     try {
       const plant = order.plantId
         ? await getPlantById(order.plantId)
         : undefined;
-      careInstructions = (plant?.careInstructions ?? [])
-        .map((line) => line.trim())
-        .filter(Boolean);
+      if (inventoryTypeOrDefault(plant?.inventoryType) === "flowers") {
+        publicPlantName = CARDCOM_FLOWER_LINE_ITEM_NAME;
+      } else {
+        careInstructions = (plant?.careInstructions ?? [])
+          .map((line) => line.trim())
+          .filter(Boolean);
+      }
     } catch (error) {
       console.error("[cardcom-document-email] care instructions lookup failed", {
         orderId: order.orderId,
@@ -186,7 +198,7 @@ export async function processOrderDocumentAndEmail(
     await sendEmail({
       customerEmail,
       fullName: order.fullName,
-      plantName: order.plantName || "your plant",
+      plantName: publicPlantName,
       priceDisplay: formatPrice(order.price, "ILS"),
       fulfillmentMethod: order.fulfillmentMethod,
       ...(careInstructions.length > 0 ? { careInstructions } : {}),

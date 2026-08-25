@@ -13,33 +13,39 @@ export type PlantRow = {
   name: string;
   name_he: string | null;
   family: string | null;
-  subtitle: string;
+  subtitle: string | null;
   subtitle_he: string | null;
-  description: string;
+  description: string | null;
   description_he: string | null;
   supplier_price: string | number;
   currency: string;
   images: unknown;
   labels: unknown;
-  light: string;
-  water: string;
+  light: string | null;
+  water: string | null;
   water_he: string | null;
   average_size: string | null;
   supplier_name: string | null;
-  difficulty: string;
-  location: string;
-  pet_friendly: boolean;
+  difficulty: string | null;
+  location: string | null;
+  pet_friendly: boolean | null;
   care_instructions: unknown;
   created_at: string | Date | null;
   inventory_type?: string | null;
 };
 
-function parseJsonStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
+function parseJsonStringArray(value: unknown): string[] | undefined {
+  if (value == null) return undefined;
+  if (!Array.isArray(value)) return undefined;
+  const items = value
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
+function jsonArrayOrNull(value: string[] | undefined): string | null {
+  return value && value.length > 0 ? JSON.stringify(value) : null;
 }
 
 function optionalTrimmed(value: string | null | undefined): string | undefined {
@@ -66,22 +72,45 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
       ? averageSizeRaw
       : undefined;
 
+  const subtitle = optionalTrimmed(row.subtitle);
+  const description = optionalTrimmed(row.description);
+  const water = optionalTrimmed(row.water);
+  const location = optionalTrimmed(row.location);
+  const images = parseJsonStringArray(row.images);
+  const labels = parseJsonStringArray(row.labels);
+  const careInstructions = parseJsonStringArray(row.care_instructions);
+  const lightRaw = optionalTrimmed(row.light);
+  const light =
+    lightRaw === "Low light" ||
+    lightRaw === "Medium light" ||
+    lightRaw === "Bright indirect light" ||
+    lightRaw === "Direct sun"
+      ? (lightRaw as LightLevel)
+      : undefined;
+  const difficultyRaw = optionalTrimmed(row.difficulty);
+  const difficulty =
+    difficultyRaw === "Easy" || difficultyRaw === "Moderate" || difficultyRaw === "Advanced"
+      ? (difficultyRaw as CareLevel)
+      : undefined;
+
   return {
     id: row.id,
     name: row.name,
-    subtitle: row.subtitle,
-    description: row.description,
     supplierPrice,
     price: supplierPrice,
     currency: row.currency as PlantProduct["currency"],
-    images: parseJsonStringArray(row.images),
-    labels: parseJsonStringArray(row.labels),
-    light: row.light as LightLevel,
-    water: row.water,
-    difficulty: row.difficulty as CareLevel,
-    location: row.location,
-    petFriendly: row.pet_friendly,
-    careInstructions: parseJsonStringArray(row.care_instructions),
+    ...(subtitle ? { subtitle } : {}),
+    ...(description ? { description } : {}),
+    ...(images ? { images } : {}),
+    ...(labels ? { labels } : {}),
+    ...(light ? { light } : {}),
+    ...(water ? { water } : {}),
+    ...(difficulty ? { difficulty } : {}),
+    ...(location ? { location } : {}),
+    ...(row.pet_friendly === true || row.pet_friendly === false
+      ? { petFriendly: row.pet_friendly }
+      : {}),
+    ...(careInstructions ? { careInstructions } : {}),
     ...(nameHe ? { nameHe } : {}),
     ...(family ? { family } : {}),
     ...(subtitleHe ? { subtitleHe } : {}),
@@ -169,9 +198,9 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
     throw new Error("A plant with this id already exists");
   }
 
-  const imagesJson = JSON.stringify(plant.images);
-  const labelsJson = JSON.stringify(plant.labels);
-  const careJson = JSON.stringify(plant.careInstructions);
+  const imagesJson = jsonArrayOrNull(plant.images);
+  const labelsJson = jsonArrayOrNull(plant.labels);
+  const careJson = jsonArrayOrNull(plant.careInstructions);
 
   const rows = await sql`
     INSERT INTO plants (
@@ -185,22 +214,22 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.name},
       ${plant.nameHe ?? null},
       ${plant.family ?? null},
-      ${plant.subtitle},
+      ${plant.subtitle ?? null},
       ${plant.subtitleHe ?? null},
-      ${plant.description},
+      ${plant.description ?? null},
       ${plant.descriptionHe ?? null},
       ${plant.supplierPrice},
       ${plant.currency},
       ${imagesJson}::jsonb,
       ${labelsJson}::jsonb,
-      ${plant.light},
-      ${plant.water},
+      ${plant.light ?? null},
+      ${plant.water ?? null},
       ${plant.waterHe ?? null},
       ${plant.averageSize ?? null},
       ${plant.supplierName ?? null},
-      ${plant.difficulty},
-      ${plant.location},
-      ${plant.petFriendly},
+      ${plant.difficulty ?? null},
+      ${plant.location ?? null},
+      ${plant.petFriendly ?? null},
       ${careJson}::jsonb,
       ${plant.createdAt ?? new Date().toISOString()}::timestamptz,
       ${inventoryTypeOrDefault(plant.inventoryType)}
@@ -226,9 +255,9 @@ export async function updatePlant(
     throw new Error("Plant id cannot be changed");
   }
 
-  const imagesJson = JSON.stringify(plant.images);
-  const labelsJson = JSON.stringify(plant.labels);
-  const careJson = JSON.stringify(plant.careInstructions);
+  const imagesJson = jsonArrayOrNull(plant.images);
+  const labelsJson = jsonArrayOrNull(plant.labels);
+  const careJson = jsonArrayOrNull(plant.careInstructions);
 
   const rows = await sql`
     UPDATE plants
@@ -236,22 +265,22 @@ export async function updatePlant(
       name = ${plant.name},
       name_he = ${plant.nameHe ?? null},
       family = ${plant.family ?? null},
-      subtitle = ${plant.subtitle},
+      subtitle = ${plant.subtitle ?? null},
       subtitle_he = ${plant.subtitleHe ?? null},
-      description = ${plant.description},
+      description = ${plant.description ?? null},
       description_he = ${plant.descriptionHe ?? null},
       supplier_price = ${plant.supplierPrice},
       currency = ${plant.currency},
       images = ${imagesJson}::jsonb,
       labels = ${labelsJson}::jsonb,
-      light = ${plant.light},
-      water = ${plant.water},
+      light = ${plant.light ?? null},
+      water = ${plant.water ?? null},
       water_he = ${plant.waterHe ?? null},
       average_size = ${plant.averageSize ?? null},
       supplier_name = ${plant.supplierName ?? null},
-      difficulty = ${plant.difficulty},
-      location = ${plant.location},
-      pet_friendly = ${plant.petFriendly},
+      difficulty = ${plant.difficulty ?? null},
+      location = ${plant.location ?? null},
+      pet_friendly = ${plant.petFriendly ?? null},
       care_instructions = ${careJson}::jsonb
     WHERE id = ${trimmed}
     RETURNING

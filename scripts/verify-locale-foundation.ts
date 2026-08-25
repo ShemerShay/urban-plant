@@ -53,17 +53,12 @@ const switcherIdx = header.indexOf("<LanguageSwitcher");
 const locationIdx = header.indexOf("{knownPartner ?");
 assert.ok(switcherIdx > 0 && locationIdx > switcherIdx);
 
-const hero = read("components/plant/PlantHero.tsx");
-assert.match(hero, /localeDisplayFontClass/);
-assert.doesNotMatch(hero, /font-serif-display text-\[2\.125rem\]/);
-
-const about = read("components/plant/PlantProductAbout.tsx");
-assert.match(about, /localeDisplayFontClass/);
-assert.doesNotMatch(about, /locale === "he"\s*\?\s*"font-sans/);
-
 const pos = read("app/pos/[spotSlug]/page.tsx");
-assert.match(pos, /locale === "he" \? "" : "tracking-\[0\.02em\]"/);
-assert.match(pos, /<PlantHero locale=\{locale\}/);
+assert.match(pos, /redirect\(posSpotCheckoutPath/);
+assert.doesNotMatch(pos, /PlantHero/);
+
+const checkout = read("app/checkout/pos/[spotSlug]/page.tsx");
+assert.match(checkout, /<PlantPageHeader knownPartner=/);
 
 const login = read("app/admin-login/AdminLoginForm.tsx");
 assert.match(login, /LanguageSwitcher/);

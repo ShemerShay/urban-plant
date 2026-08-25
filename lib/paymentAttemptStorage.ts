@@ -19,7 +19,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
   const productId = typeof o.productId === "string" ? o.productId : "";
   const productName = typeof o.productName === "string" ? o.productName : "";
   const productDescription =
-    typeof o.productDescription === "string" ? o.productDescription : "";
+    typeof o.productDescription === "string" ? o.productDescription.trim() : "";
   const offerId = typeof o.offerId === "string" ? o.offerId : "";
   const consumerPrice =
     typeof o.consumerPrice === "number" && Number.isFinite(o.consumerPrice)
@@ -27,7 +27,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       : null;
   const fulfillmentType: FulfillmentMethod =
     o.fulfillmentType === "pickup" ? "pickup" : "delivery";
-  if (!productId || !productName || !productDescription || !offerId || consumerPrice === null) {
+  if (!productId || !productName || !offerId || consumerPrice === null) {
     return undefined;
   }
 
@@ -40,7 +40,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
     ...(typeof o.productImage === "string" && o.productImage
       ? { productImage: o.productImage }
       : {}),
-    productDescription,
+    ...(productDescription ? { productDescription } : {}),
     offerId,
     consumerPrice,
     ...(typeof o.supplierPrice === "number" && Number.isFinite(o.supplierPrice)
@@ -670,9 +670,9 @@ export type FinalizeVerifiedPaymentAttemptResult =
   | { ok: false; reason: "ineligible" | "conflict" };
 
 /**
- * Atomic: awaiting attempt + owned held POS → insert Order + POS sold/available + attempt finalized.
- * Flowers catalog items return POS to available; plants remain sold.
- * Single SQL statement (Postgres CTE). Email/document run after commit by caller.
+ * Atomic: awaiting attempt + eligible POS → insert Order + plant POS sold + attempt finalized.
+ * Flowers do not update POS. Single SQL statement (Postgres CTE).
+ * Email/document run after commit by caller.
  */
 export async function finalizeVerifiedPaymentAttemptAtomic(input: {
   attemptId: string;
@@ -727,15 +727,26 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         COALESCE(
           a.snapshot->>'partnerLocationName',
           NULL
-        ) AS partner_location_name
+        ) AS partner_location_name,
+        COALESCE(pl.inventory_type, 'plants') AS inventory_type
       FROM payment_attempts a
       INNER JOIN pos_spots p ON p.id = a.pos_spot_id
+      LEFT JOIN plants pl ON pl.id = a.product_id
       WHERE a.id = ${attemptId}::uuid
         AND a.status = 'awaiting_payment'
         AND a.checkout_session_id = ${checkoutSessionId}
         AND a.pos_spot_id = ${posSpotId}::uuid
-        AND p.status = 'held_for_payment'
-        AND p.payment_hold_attempt_id = a.id
+        AND (
+          (
+            COALESCE(pl.inventory_type, 'plants') = 'flowers'
+            AND p.status = 'available'
+          )
+          OR (
+            COALESCE(pl.inventory_type, 'plants') <> 'flowers'
+            AND p.status = 'held_for_payment'
+            AND p.payment_hold_attempt_id = a.id
+          )
+        )
     ),
     order_ins AS (
       INSERT INTO orders (
@@ -830,21 +841,12 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
     pos_upd AS (
       UPDATE pos_spots p
       SET
-        status = CASE
-          WHEN COALESCE(
-            (
-              SELECT pl.inventory_type
-              FROM plants pl
-              WHERE pl.id = e.product_id
-            ),
-            'plants'
-          ) = 'flowers' THEN 'available'
-          ELSE 'sold'
-        END,
+        status = 'sold',
         payment_hold_started_at = NULL,
         payment_hold_attempt_id = NULL
       FROM eligible e
       WHERE p.id = e.pos_spot_id
+        AND e.inventory_type <> 'flowers'
         AND p.status = 'held_for_payment'
         AND p.payment_hold_attempt_id = e.attempt_id
       RETURNING p.id, p.status
@@ -903,6 +905,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       o.purchase_email_last_error,
       (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
       (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
+      (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type,
       (SELECT id FROM attempt_upd LIMIT 1) AS finalized_attempt_id
     FROM order_ins o
   `;
@@ -912,10 +915,15 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       finalized_pos_spot_id: string | null;
       finalized_attempt_id: string | null;
       pos_status: string | null;
+      inventory_type: string | null;
     })[]
   )[0];
 
-  if (!row || !row.finalized_pos_spot_id || !row.finalized_attempt_id) {
+  const isFlower = row?.inventory_type === "flowers";
+  if (!row || !row.finalized_attempt_id) {
+    return { ok: false, reason: "conflict" };
+  }
+  if (!isFlower && !row.finalized_pos_spot_id) {
     return { ok: false, reason: "conflict" };
   }
 
@@ -929,6 +937,6 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
     order: mapOrderRowLite(row),
     attempt,
     finalized: true,
-    posStatus: row.pos_status === "available" ? "available" : "sold",
+    posStatus: isFlower ? "available" : row.pos_status === "available" ? "available" : "sold",
   };
 }

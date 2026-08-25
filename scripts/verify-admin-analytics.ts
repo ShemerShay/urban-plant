@@ -21,6 +21,9 @@ assert.match(dash, /analyticsRangeLabel/);
 assert.match(dash, /admin\.analytics\.totalScans/);
 assert.match(dash, /admin\.analytics\.uniqueScanners/);
 assert.match(dash, /admin\.analytics\.purchases/);
+assert.match(dash, /admin\.analytics\.purchasesPlants/);
+assert.match(dash, /admin\.analytics\.purchasesFlowers/);
+assert.match(dash, /admin\.analytics\.inventoryTypeFallback/);
 assert.match(dash, /admin\.analytics\.scanToCheckout/);
 assert.doesNotMatch(dash, /POSTHOG_PERSONAL_API_KEY/);
 assert.doesNotMatch(dash, /purchase_completed/);
@@ -31,6 +34,10 @@ assert.match(ph, /POSTHOG_PERSONAL_API_KEY/);
 assert.match(ph, /HogQLQuery/);
 
 const neon = read("lib/analytics/neonPurchases.ts");
+assert.match(neon, /LEFT JOIN plants pl ON pl\.id = o\.product_id/);
+assert.match(neon, /COALESCE\(pl\.inventory_type, 'plants'\)/);
+assert.match(neon, /missing_catalog_cnt/);
+assert.match(neon, /inventoryTypeFallback: "plants"/);
 assert.match(neon, /order_status IN \('sold', 'picked_up', 'delivered'\)/);
 assert.match(neon, /server-only/);
 

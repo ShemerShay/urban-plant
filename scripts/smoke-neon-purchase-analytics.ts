@@ -42,11 +42,42 @@ async function main() {
     LIMIT 5
   `) as { name: string; cnt: number }[];
 
+  const breakdown = (await sql`
+    SELECT
+      COUNT(*)::int AS cnt,
+      COUNT(*) FILTER (
+        WHERE COALESCE(pl.inventory_type, 'plants') = 'flowers'
+      )::int AS flowers_cnt,
+      COUNT(*) FILTER (
+        WHERE COALESCE(pl.inventory_type, 'plants') <> 'flowers'
+      )::int AS plants_cnt,
+      COUNT(*) FILTER (WHERE pl.id IS NULL)::int AS missing_catalog_cnt
+    FROM orders o
+    LEFT JOIN plants pl ON pl.id = o.product_id
+    WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
+  `) as {
+    cnt: number;
+    flowers_cnt: number;
+    plants_cnt: number;
+    missing_catalog_cnt: number;
+  }[];
+
   const allCount = Number(all[0]?.cnt ?? 0);
   const weekCount = Number(week[0]?.cnt ?? 0);
+  const plantsCount = Number(breakdown[0]?.plants_cnt ?? 0);
+  const flowersCount = Number(breakdown[0]?.flowers_cnt ?? 0);
+  const missingCatalogCount = Number(breakdown[0]?.missing_catalog_cnt ?? 0);
   assert.ok(allCount >= weekCount);
+  assert.equal(Number(breakdown[0]?.cnt ?? 0), allCount);
+  assert.equal(plantsCount + flowersCount, allCount);
   console.log("all-time purchases:", allCount);
   console.log("last-7d purchases:", weekCount);
+  console.log("purchases plants:", plantsCount);
+  console.log("purchases flowers:", flowersCount);
+  console.log(
+    "missing catalog (counted as plants, fallback=plants):",
+    missingCatalogCount,
+  );
   console.log("top plants:", plants);
   console.log("OK: neon purchase analytics smoke");
 }

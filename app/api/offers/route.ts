@@ -3,13 +3,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPlantById } from "@/lib/plantCatalog";
 import { enrichOfferWithProduct, enrichOffersWithProduct } from "@/lib/offerEnrichment";
 import { appendOffer, readOffers } from "@/lib/offerStorage";
+import { inventoryTypeOrDefault, parseInventoryType } from "@/lib/inventoryType";
 import type { OfferStatus } from "@/lib/offerTypes";
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const raw = request.nextUrl.searchParams.get("inventoryType");
+  if (raw != null && raw.trim() !== "") {
+    const inventoryType = parseInventoryType(raw);
+    if (!inventoryType) {
+      return NextResponse.json(
+        { error: "inventoryType must be plants or flowers" },
+        { status: 400 },
+      );
+    }
+    const offers = await readOffers({ inventoryType });
+    return NextResponse.json({ offers: await enrichOffersWithProduct(offers) });
+  }
   const offers = await readOffers();
   return NextResponse.json({ offers: await enrichOffersWithProduct(offers) });
 }
@@ -29,12 +42,25 @@ export async function POST(request: NextRequest) {
   const productId = cleanString(record.productId);
   const consumerPriceRaw = record.consumerPrice;
   const statusRaw = record.status;
+  const requestedType = parseInventoryType(
+    request.nextUrl.searchParams.get("inventoryType"),
+  );
 
   if (!productId) {
     return NextResponse.json({ error: "productId is required" }, { status: 400 });
   }
-  if (!(await getPlantById(productId))) {
+  const catalogProduct = await getPlantById(productId);
+  if (!catalogProduct) {
     return NextResponse.json({ error: "productId must match a catalog plant" }, { status: 400 });
+  }
+  if (
+    requestedType &&
+    inventoryTypeOrDefault(catalogProduct.inventoryType) !== requestedType
+  ) {
+    return NextResponse.json(
+      { error: "productId must match the requested inventoryType" },
+      { status: 400 },
+    );
   }
 
   const consumerPrice =

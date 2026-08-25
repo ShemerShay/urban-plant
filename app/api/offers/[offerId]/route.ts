@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPlantById } from "@/lib/plantCatalog";
 import { enrichOfferWithProduct } from "@/lib/offerEnrichment";
 import { getOfferById, updateOffer } from "@/lib/offerStorage";
+import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import type { OfferStatus } from "@/lib/offerTypes";
 
 interface RouteParams {
@@ -44,8 +45,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!productId) {
       return NextResponse.json({ error: "productId is required" }, { status: 400 });
     }
-    if (!(await getPlantById(productId))) {
+    const nextProduct = await getPlantById(productId);
+    if (!nextProduct) {
       return NextResponse.json({ error: "productId must match a catalog plant" }, { status: 400 });
+    }
+    const existingProduct = await getPlantById(existing.productId);
+    if (
+      existingProduct &&
+      inventoryTypeOrDefault(nextProduct.inventoryType) !==
+        inventoryTypeOrDefault(existingProduct.inventoryType)
+    ) {
+      return NextResponse.json(
+        { error: "productId must keep the same inventory type" },
+        { status: 400 },
+      );
     }
   }
 

@@ -245,10 +245,25 @@ export function AdminAnalyticsDashboard({
           value={formatNumber(data.purchases, locale)}
         />
         <KpiCard
+          label={t(locale, "admin.analytics.purchasesPlants")}
+          value={formatNumber(data.purchasesPlants, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.purchasesFlowers")}
+          value={formatNumber(data.purchasesFlowers, locale)}
+        />
+        <KpiCard
           label={t(locale, "admin.analytics.scanToCheckout")}
           value={formatPercent(data.scanToCheckoutPercent)}
         />
       </div>
+      {data.purchasesMissingCatalog != null && data.purchasesMissingCatalog > 0 ? (
+        <p className="mt-3 text-xs leading-relaxed text-slate-500">
+          {t(locale, "admin.analytics.inventoryTypeFallback", {
+            count: data.purchasesMissingCatalog,
+          })}
+        </p>
+      ) : null}
 
       <div className="mt-6 space-y-4">
         <SectionCard

@@ -79,6 +79,7 @@ const en = {
 
   "checkout.back": "Back to plant",
   "checkout.ordering": "You are ordering",
+  "checkout.plant.withPot": "{name} and its pot",
   "checkout.details.delivery": "Delivery details",
   "checkout.details.pickup": "Pickup details",
   "checkout.fulfillment.legend": "Fulfillment method",
@@ -92,7 +93,9 @@ const en = {
   "checkout.confirm.prefix": "Completing this order confirms purchase for ",
   "checkout.confirm.deliverySuffix": ". Delivery takes 1–3 business days.",
   "checkout.confirm.pickupSuffix": "immediate pickup.",
+  "checkout.confirm.flowersPickup": "Completing this order confirms pickup.",
   "checkout.submit": "Complete Order",
+  "checkout.submitWithPrice": "Complete Order · {price}",
   "checkout.processing": "Processing…",
   "checkout.processingSr": "Processing your order. Please wait.",
   "checkout.validation.summaryOne":
@@ -145,9 +148,11 @@ const en = {
   "success.photoAlt": "Photo of {plantName}",
   "success.line.delivery": "{plantName} · Delivery",
   "success.line.pickup": "{plantName} · Pickup",
+  "success.line.flowers": "Pickup",
   "success.returnPlant": "Return to plant",
   "success.whatsapp":
     "Hi Urban Plant — I have a question about my order for “{plantName}”.",
+  "success.whatsapp.flowers": "Hi Urban Plant — I have a question about my flower order.",
 
   "payment.verify.invalidTitle": "We couldn’t verify this payment",
   "payment.verify.timeoutTitle": "Payment verification is taking longer than expected",
@@ -559,7 +564,7 @@ const en = {
   "admin.inventoryTypes.plants": "Plants",
   "admin.inventoryTypes.plantsDesc": "Unique catalog items. A successful purchase marks the POS as sold.",
   "admin.inventoryTypes.flowers": "Flowers",
-  "admin.inventoryTypes.flowersDesc": "Reusable catalog items. A successful purchase returns the POS to available.",
+  "admin.inventoryTypes.flowersDesc": "Reusable catalog items. The POS stays available during and after payment.",
   "admin.flowers.title": "Flowers",
   "admin.flowers.new": "New flower",
   "admin.flowers.create": "Create flower",
@@ -574,6 +579,16 @@ const en = {
   "admin.flowers.loadNetworkError": "Network error while loading flowers",
   "admin.flowers.createFailed": "Could not create flower",
   "admin.offers.title": "Offers",
+  "admin.offers.hubIntro":
+    "Choose Plants or Flowers. Each section lists and creates offers only for that catalog type.",
+  "admin.offers.plantsTitle": "Plant offers",
+  "admin.offers.flowersTitle": "Flower offers",
+  "admin.offers.plantsDesc": "Offers linked to plant catalog items.",
+  "admin.offers.flowersDesc": "Offers linked to flower catalog items.",
+  "admin.offers.plantsIntro":
+    "Sale offers linked to catalog plants. Images and currency come from the selected plant; each offer sets its own consumer price.",
+  "admin.offers.flowersIntro":
+    "Sale offers linked to catalog flowers. Each offer sets its own consumer price.",
   "admin.offers.intro":
     "Sale offers linked to catalog plants. Images and currency come from the selected plant; each offer sets its own consumer price.",
   "admin.offers.new": "New offer",
@@ -640,6 +655,10 @@ const en = {
   "admin.analytics.uniqueScanners": "Unique scanners",
   "admin.analytics.uniqueDevices": "Unique browsers/devices",
   "admin.analytics.purchases": "Purchases",
+  "admin.analytics.purchasesPlants": "Plant purchases",
+  "admin.analytics.purchasesFlowers": "Flower purchases",
+  "admin.analytics.inventoryTypeFallback":
+    "Orders with no matching catalog item are counted as Plants ({count}). Fallback: plants.",
   "admin.analytics.scanToCheckout": "Scan → Checkout",
   "admin.analytics.scansOverTime": "Scans over time",
   "admin.analytics.topPlantsScans": "Top plants by scans",
@@ -774,6 +793,7 @@ const he: { [K in keyof typeof en]: string } = {
 
   "checkout.back": "חזרה לדף הצמח",
   "checkout.ordering": "אתם מזמינים",
+  "checkout.plant.withPot": "{name} והכד שאיתו",
   "checkout.details.delivery": "פרטי משלוח",
   "checkout.details.pickup": "פרטי איסוף",
   "checkout.fulfillment.legend": "שיטת אספקה",
@@ -787,7 +807,9 @@ const he: { [K in keyof typeof en]: string } = {
   "checkout.confirm.prefix": "השלמת ההזמנה מאשרת רכישה של ",
   "checkout.confirm.deliverySuffix": ". המשלוח לוקח 1–3 ימי עסקים.",
   "checkout.confirm.pickupSuffix": " לאיסוף מיידי.",
+  "checkout.confirm.flowersPickup": "השלמת ההזמנה מאשרת איסוף.",
   "checkout.submit": "השלמת הזמנה",
+  "checkout.submitWithPrice": "השלמת הזמנה · {price}",
   "checkout.processing": "מעבד…",
   "checkout.processingSr": "מעבדים את ההזמנה. אנא המתינו.",
   "checkout.validation.summaryOne": "יש לתקן שדה אחד לפני השלמת ההזמנה.",
@@ -838,9 +860,11 @@ const he: { [K in keyof typeof en]: string } = {
   "success.photoAlt": "תמונה של {plantName}",
   "success.line.delivery": "{plantName} · משלוח",
   "success.line.pickup": "{plantName} · איסוף",
+  "success.line.flowers": "איסוף",
   "success.returnPlant": "חזרה לצמח",
   "success.whatsapp":
     "שלום Urban Plant — יש לי שאלה לגבי ההזמנה שלי עבור \"{plantName}\".",
+  "success.whatsapp.flowers": "שלום Urban Plant — יש לי שאלה לגבי הזמנת הפרחים שלי.",
 
   "payment.verify.invalidTitle": "לא הצלחנו לאמת את התשלום",
   "payment.verify.timeoutTitle": "אימות התשלום לוקח יותר זמן מהצפוי",
@@ -1014,7 +1038,7 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.inventoryTypes.plants": "צמחים",
   "admin.inventoryTypes.plantsDesc": "פריטי קטלוג ייחודיים. רכישה מוצלחת מסמנת את נקודת המכירה כנמכרה.",
   "admin.inventoryTypes.flowers": "פרחים",
-  "admin.inventoryTypes.flowersDesc": "פריטי קטלוג לשימוש חוזר. רכישה מוצלחת מחזירה את נקודת המכירה לזמין.",
+  "admin.inventoryTypes.flowersDesc": "פריטי קטלוג לשימוש חוזר. נקודת המכירה נשארת זמינה במהלך התשלום ואחריו.",
   "admin.flowers.title": "פרחים",
   "admin.flowers.new": "פרח חדש",
   "admin.flowers.create": "יצירת פרח",
@@ -1029,6 +1053,16 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.flowers.loadNetworkError": "שגיאת רשת בטעינת פרחים",
   "admin.flowers.createFailed": "לא ניתן ליצור פרח",
   "admin.offers.title": "הצעות",
+  "admin.offers.hubIntro":
+    "בחרו צמחים או פרחים. כל מקטע מציג ויוצר הצעות רק לסוג הקטלוג הזה.",
+  "admin.offers.plantsTitle": "הצעות צמחים",
+  "admin.offers.flowersTitle": "הצעות פרחים",
+  "admin.offers.plantsDesc": "הצעות המקושרות לפריטי קטלוג של צמחים.",
+  "admin.offers.flowersDesc": "הצעות המקושרות לפריטי קטלוג של פרחים.",
+  "admin.offers.plantsIntro":
+    "הצעות מכירה המקושרות לצמחי הקטלוג. תמונות ומטבע מגיעים מהצמח שנבחר; כל הצעה מגדירה מחיר לצרכן משלה.",
+  "admin.offers.flowersIntro":
+    "הצעות מכירה המקושרות לפרחי הקטלוג. כל הצעה מגדירה מחיר לצרכן משלה.",
   "admin.offers.intro":
     "הצעות מכירה המקושרות לצמחי הקטלוג. תמונות ומטבע מגיעים מהצמח שנבחר; כל הצעה מגדירה מחיר לצרכן משלה.",
   "admin.offers.new": "הצעה חדשה",
@@ -1328,6 +1362,10 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.analytics.uniqueScanners": "סורקים ייחודיים",
   "admin.analytics.uniqueDevices": "דפדפנים/מכשירים ייחודיים",
   "admin.analytics.purchases": "רכישות",
+  "admin.analytics.purchasesPlants": "רכישות צמחים",
+  "admin.analytics.purchasesFlowers": "רכישות פרחים",
+  "admin.analytics.inventoryTypeFallback":
+    "הזמנות ללא פריט קטלוג תואם נספרות כצמחים ({count}). ברירת מחדל: plants.",
   "admin.analytics.scanToCheckout": "סריקה → קופה",
   "admin.analytics.scansOverTime": "סריקות לאורך זמן",
   "admin.analytics.topPlantsScans": "צמחים מובילים לפי סריקות",

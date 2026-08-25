@@ -24,6 +24,12 @@ import {
   rotateCheckoutSessionIdForResume,
 } from "@/lib/ordersStorage";
 import { getPosSpotById } from "@/lib/posSpotStorage";
+import { getPlantById } from "@/lib/plantCatalog";
+import {
+  cardcomLineItemName,
+  inventoryTypeOrDefault,
+} from "@/lib/inventoryType";
+import { posAllowsVerifiedPaymentFinalize } from "@/lib/posSpotHold";
 import { buildCardcomCallbackUrls, getPublicAppOrigin } from "@/lib/routes";
 
 const CARDCOM_PRODUCT_NAME_MAX_LENGTH = 50;
@@ -61,9 +67,26 @@ function productNameFromSource(source: {
     source.plantName?.trim() ||
     "";
   if (!raw) throw new Error("missing product name");
-  return raw.length > CARDCOM_PRODUCT_NAME_MAX_LENGTH
-    ? raw.slice(0, CARDCOM_PRODUCT_NAME_MAX_LENGTH)
-    : raw;
+  return raw;
+}
+
+async function cardcomRetryProductName(
+  productId: string,
+  source: {
+    snapshot?: { productName?: string };
+    productName?: string;
+    plantName?: string;
+  },
+): Promise<string> {
+  const raw = productNameFromSource(source);
+  const plant = await getPlantById(productId);
+  const named = cardcomLineItemName(
+    inventoryTypeOrDefault(plant?.inventoryType),
+    raw,
+  );
+  return named.length > CARDCOM_PRODUCT_NAME_MAX_LENGTH
+    ? named.slice(0, CARDCOM_PRODUCT_NAME_MAX_LENGTH)
+    : named;
 }
 
 async function retryAttemptPayment(
@@ -100,10 +123,17 @@ async function retryAttemptPayment(
   }
 
   const posSpot = await getPosSpotById(attempt.posSpotId);
+  const plant = await getPlantById(attempt.productId);
   if (
     !posSpot ||
-    posSpot.status !== "held_for_payment" ||
-    posSpot.paymentHoldAttemptId !== attempt.id
+    !posAllowsVerifiedPaymentFinalize(
+      inventoryTypeOrDefault(plant?.inventoryType),
+      {
+        status: posSpot.status,
+        paymentHoldAttemptId: posSpot.paymentHoldAttemptId,
+      },
+      attempt.id,
+    )
   ) {
     return {
       ok: false,
@@ -141,7 +171,7 @@ async function retryAttemptPayment(
 
   let productName: string;
   try {
-    productName = productNameFromSource(attempt);
+    productName = await cardcomRetryProductName(attempt.productId, attempt);
   } catch {
     return {
       ok: false,
@@ -318,7 +348,13 @@ async function retryLegacyOrderPayment(
   }
 
   const posSpot = await getPosSpotById(order.posSpotId);
-  if (!posSpot || posSpot.status !== "held_for_payment") {
+  const plant = await getPlantById(order.plantId);
+  const inventoryType = inventoryTypeOrDefault(plant?.inventoryType);
+  const posOk =
+    inventoryType === "flowers"
+      ? posSpot?.status === "available"
+      : posSpot?.status === "held_for_payment";
+  if (!posSpot || !posOk) {
     return {
       ok: false,
       code: "conflict",
@@ -355,7 +391,7 @@ async function retryLegacyOrderPayment(
 
   let productName: string;
   try {
-    productName = productNameFromSource(order);
+    productName = await cardcomRetryProductName(order.plantId, order);
   } catch {
     return {
       ok: false,

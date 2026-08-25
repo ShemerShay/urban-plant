@@ -5,12 +5,12 @@ import type { ReactNode } from "react";
 import { useLocale } from "@/components/locale/LocaleProvider";
 import { careLabel, lightLabel, sizeLabel } from "@/lib/displayLabels";
 import { t } from "@/lib/messages";
-import { PlantProduct } from "@/lib/types";
+import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
 
 interface PlantProductInfoGridProps {
-  light: PlantProduct["light"];
+  light: LightLevel;
   water: string;
-  difficulty: PlantProduct["difficulty"];
+  difficulty: CareLevel;
   averageSize?: PlantProduct["averageSize"];
 }
 

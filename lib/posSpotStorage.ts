@@ -422,7 +422,8 @@ export async function releasePosSpotHoldForPayment(
 }
 
 /**
- * Atomically: held_for_payment → sold (plants) or available (flowers).
+ * Atomically: held_for_payment → sold for plants only.
+ * Flowers do not use POS holds; this no-ops if the catalog row is flowers.
  * Clears hold clock + owner. Used by verify scripts; production finalize uses attempt CTE.
  */
 export async function completePosSpotSaleFromHold(
@@ -442,46 +443,45 @@ export async function completePosSpotSaleFromHold(
   const attemptId = paymentAttemptId?.trim() ?? "";
   const rows = attemptId
     ? await sql`
+        WITH e AS (
+          SELECT a.product_id
+          FROM payment_attempts a
+          WHERE a.id = ${attemptId}::uuid
+        )
         UPDATE pos_spots
         SET
-          status = CASE
-            WHEN COALESCE(
-              (
-                SELECT pl.inventory_type
-                FROM payment_attempts a
-                INNER JOIN plants pl ON pl.id = a.product_id
-                WHERE a.id = ${attemptId}::uuid
-              ),
-              'plants'
-            ) = 'flowers' THEN 'available'
-            ELSE 'sold'
-          END,
+          status = 'sold',
           payment_hold_started_at = NULL,
           payment_hold_attempt_id = NULL
-        WHERE id = ${trimmed}::uuid
-          AND status = 'held_for_payment'
-          AND payment_hold_attempt_id = ${attemptId}::uuid
+        FROM e
+        WHERE pos_spots.id = ${trimmed}::uuid
+          AND pos_spots.status = 'held_for_payment'
+          AND pos_spots.payment_hold_attempt_id = ${attemptId}::uuid
+          AND COALESCE(
+            (SELECT pl.inventory_type FROM plants pl WHERE pl.id = e.product_id),
+            'plants'
+          ) <> 'flowers'
         RETURNING ${POS_SPOT_ROW_SQL}
       `
     : await sql`
+        WITH e AS (
+          SELECT o.product_id
+          FROM pos_spots p
+          LEFT JOIN offers o ON o.id = p.current_offer_id
+          WHERE p.id = ${trimmed}::uuid
+        )
         UPDATE pos_spots
         SET
-          status = CASE
-            WHEN COALESCE(
-              (
-                SELECT pl.inventory_type
-                FROM offers o
-                INNER JOIN plants pl ON pl.id = o.product_id
-                WHERE o.id = pos_spots.current_offer_id
-              ),
-              'plants'
-            ) = 'flowers' THEN 'available'
-            ELSE 'sold'
-          END,
+          status = 'sold',
           payment_hold_started_at = NULL,
           payment_hold_attempt_id = NULL
-        WHERE id = ${trimmed}::uuid
-          AND status = 'held_for_payment'
+        FROM e
+        WHERE pos_spots.id = ${trimmed}::uuid
+          AND pos_spots.status = 'held_for_payment'
+          AND COALESCE(
+            (SELECT pl.inventory_type FROM plants pl WHERE pl.id = e.product_id),
+            'plants'
+          ) <> 'flowers'
         RETURNING ${POS_SPOT_ROW_SQL}
       `;
   const row = (rows as PosSpotRow[])[0];

@@ -3,6 +3,8 @@
  * Hold begins only when starting external payment (wired later) — not on browse/checkout open.
  */
 
+import type { InventoryType } from "./inventoryType";
+import { posRequiresPaymentHold } from "./inventoryType";
 import type { PosSpotStatus } from "./posSpotTypes";
 
 /** Customer-facing CTA when status is held_for_payment. */
@@ -28,6 +30,21 @@ export function isPosSpotPurchasable(
 ): boolean {
   if (options?.resumeHolder && status === "held_for_payment") return true;
   return status === "available";
+}
+
+/** Whether webhook/retry/finalize may proceed for this POS + attempt. */
+export function posAllowsVerifiedPaymentFinalize(
+  inventoryType: InventoryType,
+  pos: { status: PosSpotStatus; paymentHoldAttemptId?: string },
+  paymentAttemptId: string,
+): boolean {
+  if (!posRequiresPaymentHold(inventoryType)) {
+    return pos.status === "available";
+  }
+  return (
+    pos.status === "held_for_payment" &&
+    pos.paymentHoldAttemptId === paymentAttemptId
+  );
 }
 
 export function shouldShowHeldForPaymentProductMessage(status: PosSpotStatus): boolean {

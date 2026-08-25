@@ -18,7 +18,7 @@ import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 import type { InventoryType } from "@/lib/inventoryType";
-import type { PlantProduct } from "@/lib/types";
+import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
 
 type PlantsApiResponse = {
   plants?: PlantProduct[];
@@ -40,26 +40,26 @@ type PlantDraft = {
   currency: PlantProduct["currency"];
   imagesText: string;
   labelsText: string;
-  light: PlantProduct["light"];
+  light: LightLevel;
   water: string;
   waterHe: string;
   averageSize: PlantProduct["averageSize"] | "";
   supplierName: string;
   baseSupplierPrice: string;
-  difficulty: PlantProduct["difficulty"];
+  difficulty: CareLevel;
   location: string;
   petFriendly: boolean;
   careInstructionsText: string;
 };
 
-const LIGHT_OPTIONS: PlantProduct["light"][] = [
+const LIGHT_OPTIONS: LightLevel[] = [
   "Low light",
   "Medium light",
   "Bright indirect light",
   "Direct sun",
 ];
 
-const DIFFICULTY_OPTIONS: PlantProduct["difficulty"][] = ["Easy", "Moderate", "Advanced"];
+const DIFFICULTY_OPTIONS: CareLevel[] = ["Easy", "Moderate", "Advanced"];
 
 const CURRENCY_OPTIONS: PlantProduct["currency"][] = ["ILS", "USD", "EUR"];
 
@@ -87,25 +87,25 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     name: plant.name,
     nameHe: plant.nameHe ?? "",
     family: plant.family ?? "",
-    subtitle: plant.subtitle,
+    subtitle: plant.subtitle ?? "",
     subtitleHe: plant.subtitleHe ?? "",
-    description: plant.description,
+    description: plant.description ?? "",
     descriptionHe: plant.descriptionHe ?? "",
     price: String(plant.price),
     currency: plant.currency,
-    imagesText: linesFromArray(plant.images),
-    labelsText: linesFromArray(plant.labels),
-    light: plant.light,
-    water: plant.water,
+    imagesText: linesFromArray(plant.images ?? []),
+    labelsText: linesFromArray(plant.labels ?? []),
+    light: plant.light ?? "Bright indirect light",
+    water: plant.water ?? "",
     waterHe: plant.waterHe ?? "",
     averageSize: plant.averageSize ?? "",
     supplierName: plant.supplierName ?? "",
     baseSupplierPrice:
       typeof plant.baseSupplierPrice === "number" ? String(plant.baseSupplierPrice) : "",
-    difficulty: plant.difficulty,
-    location: plant.location,
-    petFriendly: plant.petFriendly,
-    careInstructionsText: linesFromArray(plant.careInstructions),
+    difficulty: plant.difficulty ?? "Easy",
+    location: plant.location ?? "",
+    petFriendly: plant.petFriendly ?? false,
+    careInstructionsText: linesFromArray(plant.careInstructions ?? []),
   };
 }
 
@@ -136,8 +136,21 @@ function emptyDraft(): PlantDraft {
   };
 }
 
-function draftToPayload(draft: PlantDraft, options?: { omitId?: boolean }): Record<string, unknown> {
+function draftToPayload(
+  draft: PlantDraft,
+  options?: { omitId?: boolean; inventoryType?: InventoryType },
+): Record<string, unknown> {
   const price = Number(draft.price);
+  const inventoryType = options?.inventoryType ?? "plants";
+  if (inventoryType === "flowers") {
+    return {
+      ...(options?.omitId ? {} : { id: draft.id.trim() }),
+      name: draft.name.trim(),
+      price,
+      currency: draft.currency,
+      inventoryType: "flowers",
+    };
+  }
   const baseSupplierPrice =
     draft.baseSupplierPrice.trim() === "" ? undefined : Number(draft.baseSupplierPrice);
 
@@ -166,6 +179,7 @@ function draftToPayload(draft: PlantDraft, options?: { omitId?: boolean }): Reco
     location: draft.location.trim(),
     petFriendly: draft.petFriendly,
     careInstructions: arrayFromLines(draft.careInstructionsText),
+    inventoryType: "plants",
   };
 }
 
@@ -249,8 +263,8 @@ function plantMatchesSearch(plant: PlantProduct, query: string): boolean {
     plant.difficulty,
     plant.location,
     plant.supplierName,
-    ...plant.labels,
-    ...plant.careInstructions,
+    ...(plant.labels ?? []),
+    ...(plant.careInstructions ?? []),
   ]
     .filter(Boolean)
     .join(" ")
@@ -263,13 +277,13 @@ function PlantImagesRow({
   name,
   size = "md",
 }: {
-  images: string[];
+  images?: string[];
   name: string;
   size?: "sm" | "md";
 }) {
   const locale = useLocale();
 
-  if (images.length === 0) {
+  if (!images || images.length === 0) {
     return (
       <div
         className={`flex items-center justify-center rounded-xl bg-slate-100 text-xs text-slate-500 ${
@@ -303,12 +317,15 @@ function PlantFieldsForm({
   draft,
   onChange,
   idReadOnly,
+  inventoryType,
 }: {
   draft: PlantDraft;
   onChange: (next: PlantDraft) => void;
   idReadOnly?: boolean;
+  inventoryType: InventoryType;
 }) {
   const locale = useLocale();
+  const isFlowers = inventoryType === "flowers";
 
   function patch(partial: Partial<PlantDraft>) {
     onChange({ ...draft, ...partial });
@@ -319,6 +336,7 @@ function PlantFieldsForm({
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
+        {!isFlowers ? (
         <div className="sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.plants.images")}</span>
           <div className="mt-1">
@@ -329,6 +347,7 @@ function PlantFieldsForm({
             />
           </div>
         </div>
+        ) : null}
         {idReadOnly ? (
           <label className="block sm:col-span-2">
             <span className={labelClassName}>{t(locale, "admin.plants.id")}</span>
@@ -349,6 +368,8 @@ function PlantFieldsForm({
             onChange={(e) => patch({ name: e.target.value })}
           />
         </label>
+        {!isFlowers ? (
+        <>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.plants.nameHe")}</span>
           <input
@@ -400,6 +421,8 @@ function PlantFieldsForm({
             dir="rtl"
           />
         </label>
+        </>
+        ) : null}
         <label className="block">
           <span className={labelClassName}>{t(locale, "admin.common.price")}</span>
           <input
@@ -425,6 +448,8 @@ function PlantFieldsForm({
             ))}
           </select>
         </label>
+        {!isFlowers ? (
+        <>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.plants.labelsHint")}</span>
           <textarea
@@ -438,7 +463,7 @@ function PlantFieldsForm({
           <select
             className={inputClassName}
             value={draft.light}
-            onChange={(e) => patch({ light: e.target.value as PlantProduct["light"] })}
+            onChange={(e) => patch({ light: e.target.value as LightLevel })}
           >
             {LIGHT_OPTIONS.map((light) => (
               <option key={light} value={light}>
@@ -469,7 +494,7 @@ function PlantFieldsForm({
           <select
             className={inputClassName}
             value={draft.difficulty}
-            onChange={(e) => patch({ difficulty: e.target.value as PlantProduct["difficulty"] })}
+            onChange={(e) => patch({ difficulty: e.target.value as CareLevel })}
           >
             {DIFFICULTY_OPTIONS.map((difficulty) => (
               <option key={difficulty} value={difficulty}>
@@ -539,6 +564,8 @@ function PlantFieldsForm({
             onChange={(e) => patch({ baseSupplierPrice: e.target.value })}
           />
         </label>
+        </>
+        ) : null}
       </div>
     </div>
   );
@@ -569,10 +596,12 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           <dd className="text-slate-900">{plant.family}</dd>
         </div>
       ) : null}
+      {plant.subtitle ? (
       <div className="flex flex-wrap gap-x-2">
         <dt className="font-medium text-slate-500">{t(locale, "admin.plants.subtitle")}</dt>
         <dd className="text-slate-900">{plant.subtitle}</dd>
       </div>
+      ) : null}
       {plant.subtitleHe ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.subtitleHe")}</dt>
@@ -581,10 +610,12 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           </dd>
         </div>
       ) : null}
+      {plant.description ? (
       <div>
         <dt className="font-medium text-slate-500">{t(locale, "admin.plants.description")}</dt>
         <dd className="mt-0.5 text-slate-900">{plant.description}</dd>
       </div>
+      ) : null}
       {plant.descriptionHe ? (
         <div>
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.descriptionHe")}</dt>
@@ -597,18 +628,24 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
         <dt className="font-medium text-slate-500">{t(locale, "admin.common.price")}</dt>
         <dd className="text-slate-900">{formatPrice(plant.price, plant.currency, locale)}</dd>
       </div>
+      {plant.labels && plant.labels.length > 0 ? (
       <div>
         <dt className="font-medium text-slate-500">{t(locale, "admin.plants.labels")}</dt>
         <dd className="mt-0.5 text-slate-900">{plant.labels.join(" · ")}</dd>
       </div>
+      ) : null}
+      {plant.light ? (
       <div className="flex flex-wrap gap-x-2">
         <dt className="font-medium text-slate-500">{t(locale, "plant.info.light")}</dt>
         <dd className="text-slate-900">{lightLabel(locale, plant.light)}</dd>
       </div>
+      ) : null}
+      {plant.water ? (
       <div className="flex flex-wrap gap-x-2">
         <dt className="font-medium text-slate-500">{t(locale, "plant.info.water")}</dt>
         <dd className="text-slate-900">{plant.water}</dd>
       </div>
+      ) : null}
       {plant.waterHe ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.waterHe")}</dt>
@@ -617,24 +654,31 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           </dd>
         </div>
       ) : null}
+      {plant.difficulty ? (
       <div className="flex flex-wrap gap-x-2">
         <dt className="font-medium text-slate-500">{t(locale, "admin.plants.difficulty")}</dt>
         <dd className="text-slate-900">{careLabel(locale, plant.difficulty)}</dd>
       </div>
+      ) : null}
       {plant.averageSize ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.averageSize")}</dt>
           <dd className="text-slate-900">{sizeLabel(locale, plant.averageSize)}</dd>
         </div>
       ) : null}
+      {plant.location ? (
       <div className="flex flex-wrap gap-x-2">
         <dt className="font-medium text-slate-500">{t(locale, "admin.common.location")}</dt>
         <dd className="text-slate-900">{plant.location}</dd>
       </div>
+      ) : null}
+      {plant.petFriendly !== undefined ? (
       <div className="flex flex-wrap gap-x-2">
         <dt className="font-medium text-slate-500">{t(locale, "admin.plants.petFriendly")}</dt>
         <dd className="text-slate-900">{yesNoLabel(locale, plant.petFriendly)}</dd>
       </div>
+      ) : null}
+      {plant.careInstructions && plant.careInstructions.length > 0 ? (
       <div>
         <dt className="font-medium text-slate-500">{t(locale, "admin.plants.careInstructions")}</dt>
         <dd className="mt-0.5">
@@ -645,6 +689,7 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           </ul>
         </dd>
       </div>
+      ) : null}
       {plant.supplierName ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.supplier")}</dt>
@@ -707,7 +752,7 @@ function AdminPlantCard({
       const res = await fetch(routes.api.plant(plant.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draftToPayload(draft)),
+        body: JSON.stringify(draftToPayload(draft, { inventoryType: plant.inventoryType })),
       });
       const data = (await res.json().catch(() => ({}))) as PlantsApiResponse;
       if (!res.ok) {
@@ -741,7 +786,7 @@ function AdminPlantCard({
     }
   }
 
-  const headerImage = plant.images[0];
+  const headerImage = plant.images?.[0];
 
   return (
     <article className="overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
@@ -807,7 +852,12 @@ function AdminPlantCard({
         <div className="border-t border-slate-100 px-4 pb-4 pt-4">
           {isEditing ? (
             <>
-              <PlantFieldsForm draft={draft} onChange={setDraft} idReadOnly />
+              <PlantFieldsForm
+                draft={draft}
+                onChange={setDraft}
+                idReadOnly
+                inventoryType={plant.inventoryType}
+              />
               {saveError ? <p className="mt-3 text-sm text-red-700">{saveError}</p> : null}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -933,7 +983,7 @@ export function AdminPlantsManager({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...draftToPayload(createDraft, { omitId: true }),
+          ...draftToPayload(createDraft, { omitId: true, inventoryType }),
           inventoryType,
         }),
       });
@@ -1002,7 +1052,11 @@ export function AdminPlantsManager({
           <h2 className="mb-4 text-base font-semibold text-emerald-950">
             {t(locale, newKey)}
           </h2>
-          <PlantFieldsForm draft={createDraft} onChange={setCreateDraft} />
+          <PlantFieldsForm
+            draft={createDraft}
+            onChange={setCreateDraft}
+            inventoryType={inventoryType}
+          />
           {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <button

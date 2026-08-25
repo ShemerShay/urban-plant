@@ -31,7 +31,11 @@ import {
   type ProcessOrderDocumentAndEmailDeps,
 } from "@/lib/processOrderDocumentAndEmail";
 import { isVerifiedPaidOrderStatus } from "@/lib/status";
+import { getPlantById } from "@/lib/plantCatalog";
+import { inventoryTypeOrDefault } from "@/lib/inventoryType";
+import { posAllowsVerifiedPaymentFinalize } from "@/lib/posSpotHold";
 import { getPosSpotById } from "@/lib/posSpotStorage";
+import type { PosSpot } from "@/lib/posSpotTypes";
 
 export type ProcessCardcomWebhookDeps = {
   getLpResult?: (
@@ -71,6 +75,33 @@ function resolveAttemptCardcomEnv(attempt: SavedPaymentAttempt): CardcomEnvironm
 
 function resolveOrderCardcomEnv(order: SavedOrder): CardcomEnvironment {
   return isCardcomEnvironment(order.cardcomEnv) ? order.cardcomEnv : "production";
+}
+
+async function attemptPosAllowsFinalize(
+  posSpot: PosSpot,
+  productId: string,
+  attemptId: string,
+): Promise<boolean> {
+  const plant = await getPlantById(productId);
+  return posAllowsVerifiedPaymentFinalize(
+    inventoryTypeOrDefault(plant?.inventoryType),
+    {
+      status: posSpot.status,
+      paymentHoldAttemptId: posSpot.paymentHoldAttemptId,
+    },
+    attemptId,
+  );
+}
+
+/** Legacy pending Order: plants need a hold; flowers need POS available (no owner). */
+async function legacyOrderPosAllowsFinalize(
+  posSpot: PosSpot,
+  productId: string,
+): Promise<boolean> {
+  const plant = await getPlantById(productId);
+  const inventoryType = inventoryTypeOrDefault(plant?.inventoryType);
+  if (inventoryType === "flowers") return posSpot.status === "available";
+  return posSpot.status === "held_for_payment";
 }
 
 function verifyGetLpResultAgainstAttempt(
@@ -416,8 +447,11 @@ async function processAttemptWebhook(
   const posSpot = await getPosSpotById(attemptAfterExpiry.posSpotId);
   if (
     !posSpot ||
-    posSpot.status !== "held_for_payment" ||
-    posSpot.paymentHoldAttemptId !== attemptAfterExpiry.id
+    !(await attemptPosAllowsFinalize(
+      posSpot,
+      attemptAfterExpiry.productId,
+      attemptAfterExpiry.id,
+    ))
   ) {
     logWebhookOp("pos_not_held_by_attempt", {
       attemptId: attemptAfterExpiry.id,
@@ -677,7 +711,10 @@ async function processLegacyOrderWebhook(
   }
 
   const posSpot = await getPosSpotById(orderAfterExpiry.posSpotId ?? order.posSpotId);
-  if (!posSpot || posSpot.status !== "held_for_payment") {
+  if (
+    !posSpot ||
+    !(await legacyOrderPosAllowsFinalize(posSpot, orderAfterExpiry.plantId))
+  ) {
     return {
       httpStatus: 200,
       body: { ok: true },
