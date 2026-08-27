@@ -151,11 +151,10 @@ assert.equal(
   true,
 );
 
-const posPage = read("app/pos/[spotSlug]/page.tsx");
-assert.match(posPage, /redirect\(posSpotCheckoutPath/);
-assert.doesNotMatch(posPage, /PlantHero/);
-assert.doesNotMatch(posPage, /FixedBottomCTA/);
-assert.doesNotMatch(posPage, /PosPlantLanding/);
+const nextConfig = read("next.config.ts");
+assert.match(nextConfig, /source:\s*"\/pos\/:spotSlug"/);
+assert.match(nextConfig, /destination:\s*"\/checkout\/pos\/:spotSlug"/);
+assert.match(nextConfig, /permanent:\s*false/);
 
 const plantLanding = read("components/plant/PosPlantLanding.tsx");
 assert.match(plantLanding, /export async function PosPlantLanding/);
@@ -166,9 +165,6 @@ assert.match(plantLanding, /PlantProductInfoGrid/);
 assert.match(plantLanding, /FixedBottomCTA/);
 assert.match(plantLanding, /PlantInventoryBadge/);
 assert.match(plantLanding, /PlantPageContactLink/);
-
-const posLoading = read("app/pos/[spotSlug]/loading.tsx");
-assert.match(posLoading, /data-page="plant-page"/);
 
 const plantsManager = read("components/admin/AdminPlantsManager.tsx");
 assert.match(plantsManager, /if \(inventoryType === "flowers"\) \{/);

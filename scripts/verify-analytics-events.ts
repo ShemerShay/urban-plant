@@ -21,8 +21,10 @@ assert.match(helpers, /captureOncePerSession/);
 assert.match(helpers, /shouldCaptureBusinessAnalytics/);
 assert.match(helpers, /NODE_ENV === ["']production["']/);
 
-const posPage = read("app/pos/[spotSlug]/page.tsx");
-assert.match(posPage, /redirect\(posSpotCheckoutPath/);
+const nextConfig = read("next.config.ts");
+assert.match(nextConfig, /source:\s*"\/pos\/:spotSlug"/);
+assert.match(nextConfig, /destination:\s*"\/checkout\/pos\/:spotSlug"/);
+assert.match(nextConfig, /permanent:\s*false/);
 
 const checkoutPage = read("app/checkout/pos/[spotSlug]/page.tsx");
 assert.match(checkoutPage, /TrackPosScan/);

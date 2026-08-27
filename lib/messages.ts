@@ -79,6 +79,7 @@ const en = {
 
   "checkout.back": "Back to plant",
   "checkout.ordering": "You are ordering",
+  "checkout.ordering.flowers": "You are ordering flowers",
   "checkout.plant.withPot": "{name} and its pot",
   "checkout.details.delivery": "Delivery details",
   "checkout.details.pickup": "Pickup details",
@@ -793,6 +794,7 @@ const he: { [K in keyof typeof en]: string } = {
 
   "checkout.back": "חזרה לדף הצמח",
   "checkout.ordering": "אתם מזמינים",
+  "checkout.ordering.flowers": "אתם מזמינים פרחים",
   "checkout.plant.withPot": "{name} והכד שאיתו",
   "checkout.details.delivery": "פרטי משלוח",
   "checkout.details.pickup": "פרטי איסוף",

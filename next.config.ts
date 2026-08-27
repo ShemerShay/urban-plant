@@ -9,6 +9,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: "/pos/:spotSlug",
+        destination: "/checkout/pos/:spotSlug",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

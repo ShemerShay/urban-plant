@@ -53,9 +53,9 @@ const switcherIdx = header.indexOf("<LanguageSwitcher");
 const locationIdx = header.indexOf("{knownPartner ?");
 assert.ok(switcherIdx > 0 && locationIdx > switcherIdx);
 
-const pos = read("app/pos/[spotSlug]/page.tsx");
-assert.match(pos, /redirect\(posSpotCheckoutPath/);
-assert.doesNotMatch(pos, /PlantHero/);
+const nextConfig = read("next.config.ts");
+assert.match(nextConfig, /source:\s*"\/pos\/:spotSlug"/);
+assert.match(nextConfig, /destination:\s*"\/checkout\/pos\/:spotSlug"/);
 
 const checkout = read("app/checkout/pos/[spotSlug]/page.tsx");
 assert.match(checkout, /<PlantPageHeader knownPartner=/);
