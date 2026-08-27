@@ -168,7 +168,10 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
           ) : showCompletedPurchase ? (
             <>
               <h1 id="success-page-heading" className="mt-3 text-3xl font-semibold text-emerald-950">
-                {t(locale, "success.thanks.title")}
+                {t(
+                  locale,
+                  isFlowerOrder ? "success.thanks.title.flowers" : "success.thanks.title",
+                )}
               </h1>
               <p className="mt-3 text-sm leading-6 text-slate-600">
                 {isPickup
@@ -226,7 +229,10 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
 
       <CustomerRecoveryActions
         preferredReturnHref={returnToPlantHref}
-        returnLabel={t(locale, "success.returnPlant")}
+        returnLabel={t(
+          locale,
+          isFlowerOrder ? "success.returnPlant.flowers" : "success.returnPlant",
+        )}
         whatsAppMessage={
           isFlowerOrder
             ? t(locale, "success.whatsapp.flowers")

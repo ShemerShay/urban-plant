@@ -186,6 +186,17 @@ assert.match(checkoutPage, /PlantImageGallery/);
 assert.doesNotMatch(checkoutPage, /posSpotPath\(/);
 assert.doesNotMatch(checkoutPage, /checkout\.back/);
 
+const successPage = read("app/success/page.tsx");
+assert.match(successPage, /success\.thanks\.title\.flowers/);
+assert.match(successPage, /success\.returnPlant\.flowers/);
+assert.match(successPage, /inventoryTypeOrDefault\(plant\?\.inventoryType\) === "flowers"/);
+
+const messages = read("lib/messages.ts");
+assert.match(messages, /"success\.thanks\.title\.flowers": "Thank you for buying flowers"/);
+assert.match(messages, /"success\.returnPlant\.flowers": "Back to flowers"/);
+assert.match(messages, /"success\.thanks\.title\.flowers": "תודה שקניתם פרחים"/);
+assert.match(messages, /"success\.returnPlant\.flowers": "חזרה לפרחים"/);
+
 const checkoutForm = read("components/checkout/CheckoutForm.tsx");
 assert.match(checkoutForm, /disabled=\{deliveryDisabled/);
 assert.match(checkoutForm, /aria-disabled=\{deliveryDisabled/);

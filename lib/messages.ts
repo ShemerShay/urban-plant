@@ -137,6 +137,7 @@ const en = {
   "success.pending.body":
     "We have your order details, but payment has not been confirmed yet. This page does not complete a purchase.",
   "success.thanks.title": "Thank you for your order",
+  "success.thanks.title.flowers": "Thank you for buying flowers",
   "success.thanks.pickup": "Order received. Your plant is ready to leave with you.",
   "success.thanks.delivery":
     "Your order was received successfully. Your plant will be delivered within 1-3 days, team member will contact with you",
@@ -151,6 +152,7 @@ const en = {
   "success.line.pickup": "{plantName} · Pickup",
   "success.line.flowers": "Pickup",
   "success.returnPlant": "Return to plant",
+  "success.returnPlant.flowers": "Back to flowers",
   "success.whatsapp":
     "Hi Urban Plant — I have a question about my order for “{plantName}”.",
   "success.whatsapp.flowers": "Hi Urban Plant — I have a question about my flower order.",
@@ -850,6 +852,7 @@ const he: { [K in keyof typeof en]: string } = {
   "success.pending.body":
     "קיבלנו את פרטי ההזמנה, אך התשלום עדיין לא אושר. עמוד זה אינו משלים רכישה.",
   "success.thanks.title": "איזה כיף שבחרתם בנו",
+  "success.thanks.title.flowers": "תודה שקניתם פרחים",
   "success.thanks.pickup": "ההזמנה התקבלה. הצמח מוכן לצאת איתכם.",
   "success.thanks.delivery":
     "ההזמנה התקבלה בהצלחה. הצמח יישלח תוך 1–3 ימים, ונציג יצור איתכם קשר.",
@@ -864,6 +867,7 @@ const he: { [K in keyof typeof en]: string } = {
   "success.line.pickup": "{plantName} · איסוף",
   "success.line.flowers": "איסוף",
   "success.returnPlant": "חזרה לצמח",
+  "success.returnPlant.flowers": "חזרה לפרחים",
   "success.whatsapp":
     "שלום Urban Plant — יש לי שאלה לגבי ההזמנה שלי עבור \"{plantName}\".",
   "success.whatsapp.flowers": "שלום Urban Plant — יש לי שאלה לגבי הזמנת הפרחים שלי.",
