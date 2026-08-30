@@ -49,4 +49,10 @@ const purchaseTrack = read("components/analytics/TrackPurchaseCompleted.tsx");
 assert.match(purchaseTrack, /order_id/);
 assert.match(purchaseTrack, /purchaseCompleted/);
 
+const provider = read("components/PostHogProvider.tsx");
+assert.match(provider, /up_internal/);
+assert.match(provider, /up_ph_internal/);
+assert.match(provider, /is_internal:\s*true/);
+assert.match(provider, /posthog\.register/);
+
 console.log("OK: analytics event wiring verified");

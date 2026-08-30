@@ -53,6 +53,21 @@ function displayName(raw: string, fallback: string): string {
 }
 
 /**
+ * Drop staff browsers from customer analytics: any distinct_id that has ever
+ * sent `is_internal` (including historical events from that same anonymous ID).
+ * Window matches the "all time" analytics bound so a recent tag still excludes
+ * older scans when the dashboard range is shorter.
+ */
+const POSTHOG_EXCLUDE_INTERNAL_DEVICES = `
+distinct_id NOT IN (
+  SELECT DISTINCT distinct_id
+  FROM events
+  WHERE timestamp >= toDateTime('2020-01-01 00:00:00')
+    AND ifNull(toString(properties.is_internal), '') IN ('true', '1')
+)
+`.trim();
+
+/**
  * Load admin business analytics for a date range.
  * Three parallel PostHog HogQL queries + one Neon purchase aggregate.
  */
@@ -77,6 +92,7 @@ FROM (
     countIf(event = '${checkout}') AS checkout_count
   FROM events
   WHERE ${timeFilter}
+    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
     AND event IN ('${scan}', '${checkout}')
   GROUP BY distinct_id
 )
@@ -88,6 +104,7 @@ SELECT
   count() AS scans
 FROM events
 WHERE ${timeFilter}
+  AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
   AND event = '${scan}'
 GROUP BY period
 ORDER BY period ASC
@@ -106,6 +123,7 @@ SELECT dim, name, scans FROM (
     count() AS scans
   FROM events
   WHERE ${timeFilter}
+    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
     AND event = '${scan}'
   GROUP BY name
 
@@ -121,6 +139,7 @@ SELECT dim, name, scans FROM (
     count() AS scans
   FROM events
   WHERE ${timeFilter}
+    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
     AND event = '${scan}'
   GROUP BY name
 
@@ -136,6 +155,7 @@ SELECT dim, name, scans FROM (
     count() AS scans
   FROM events
   WHERE ${timeFilter}
+    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
     AND event = '${scan}'
   GROUP BY name
 )

@@ -45,6 +45,9 @@ const biz = read("lib/analytics/businessAnalytics.ts");
 assert.match(biz, /pos_scan/);
 assert.match(biz, /checkout_started/);
 assert.doesNotMatch(biz, /purchase_completed/);
+assert.match(biz, /POSTHOG_EXCLUDE_INTERNAL_DEVICES/);
+assert.match(biz, /properties\.is_internal/);
+assert.match(biz, /distinct_id NOT IN/);
 
 const routes = read("lib/routes.ts");
 assert.match(routes, /analytics:\s*\(\)\s*=>\s*"\/admin\/analytics"/);
