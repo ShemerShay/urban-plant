@@ -186,21 +186,6 @@ export function yesNoLabel(locale: Locale, value: boolean): string {
   return t(locale, value ? "admin.common.yes" : "admin.common.no");
 }
 
-export function analyticsRangeLabel(
-  locale: Locale,
-  key: "today" | "7d" | "30d" | "all",
-): string {
-  switch (key) {
-    case "today":
-      return t(locale, "admin.analytics.today");
-    case "7d":
-      return t(locale, "admin.analytics.last7");
-    case "30d":
-      return t(locale, "admin.analytics.last30");
-    case "all":
-      return t(locale, "admin.analytics.allTime");
-  }
-}
 export function displayApiError(
   locale: Locale,
   error: string | undefined,

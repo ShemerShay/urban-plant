@@ -128,6 +128,7 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
                 trackVerifiedPurchase.plantName ||
                 undefined
           }
+          inventory_type={inventoryTypeOrDefault(plant?.inventoryType)}
           offer_id={
             trackVerifiedPurchase.offerId ||
             trackVerifiedPurchase.snapshot?.offerId ||

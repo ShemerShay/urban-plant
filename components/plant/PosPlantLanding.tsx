@@ -12,6 +12,7 @@ import { PlantProductAbout } from "@/components/plant/PlantProductAbout";
 import { PlantProductInfoGrid } from "@/components/plant/PlantProductInfoGrid";
 import { productPageCtaDisplay } from "@/lib/displayLabels";
 import { getLocale } from "@/lib/getLocale";
+import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import { t } from "@/lib/messages";
 import { formatBuyCta } from "@/lib/mockPlants";
 import { localizedPlantText } from "@/lib/plantDisplay";
@@ -79,6 +80,7 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
         spot_slug={posSpot.spotSlug}
         plant_id={plant.id}
         plant_name={plant.name}
+        inventory_type={inventoryTypeOrDefault(plant.inventoryType)}
         offer_id={offer.id}
         partner_id={posSpot.partnerLocationId}
         partner_name={partnerName || undefined}

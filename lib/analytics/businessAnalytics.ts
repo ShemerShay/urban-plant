@@ -1,13 +1,19 @@
 import "server-only";
 
+import type { AnalyticsFilterState, AnalyticsInventoryFilter } from "@/lib/analytics/analyticsQuery";
+import {
+  getNeonPurchaseAnalytics,
+  listPlantIdsByInventoryType,
+} from "@/lib/analytics/neonPurchases";
 import { ANALYTICS_EVENTS } from "@/lib/analyticsEvents";
 import {
-  neonCreatedAtFrom,
-  posthogTimeBucketExpr,
-  posthogTimestampPredicate,
-  type AnalyticsRangeKey,
-} from "@/lib/analytics/dateRange";
-import { getNeonPurchaseAnalytics } from "@/lib/analytics/neonPurchases";
+  BUSINESS_TIME_ZONE,
+  resolveDateFilterBounds,
+  timeGranularityForCalendarRange,
+  type DateFilterValue,
+  type TimeGranularity,
+} from "@/lib/dateFilter";
+import type { InventoryType } from "@/lib/inventoryType";
 import {
   hogqlRowNumber,
   hogqlRowString,
@@ -26,7 +32,8 @@ export type AnalyticsTimePoint = {
 };
 
 export type BusinessAnalyticsSnapshot = {
-  range: AnalyticsRangeKey;
+  inventoryType: AnalyticsInventoryFilter;
+  dateFilter: DateFilterValue;
   totalScans: number | null;
   uniqueScanners: number | null;
   purchases: number | null;
@@ -44,7 +51,7 @@ export type BusinessAnalyticsSnapshot = {
   scansByPocket: AnalyticsNamedCount[];
   posthogError: string | null;
   neonError: string | null;
-  timeGranularity: "hour" | "day" | "week";
+  timeGranularity: TimeGranularity;
 };
 
 function displayName(raw: string, fallback: string): string {
@@ -52,10 +59,51 @@ function displayName(raw: string, fallback: string): string {
   return t || fallback;
 }
 
+function hogqlDateTime(instant: Date): string {
+  return `toDateTime('${instant.toISOString().slice(0, 19).replace("T", " ")}')`;
+}
+
+function hogqlQuote(value: string): string {
+  return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+function hogqlTimeBucketExpr(granularity: TimeGranularity): string {
+  const tz = hogqlQuote(BUSINESS_TIME_ZONE);
+  switch (granularity) {
+    case "hour":
+      return `toStartOfHour(timestamp, ${tz})`;
+    case "day":
+      return `toStartOfDay(timestamp, ${tz})`;
+    case "week":
+      return `toStartOfWeek(timestamp, 0, ${tz})`;
+  }
+}
+
+/**
+ * inventory_type is authoritative when present.
+ * plant_id catalog lookup applies only when inventory_type is missing.
+ */
+function hogqlInventoryPredicate(
+  inventoryType: InventoryType,
+  plantIds: string[],
+): string {
+  const typeLit = hogqlQuote(inventoryType);
+  const idList = plantIds.filter((id) => id.trim() !== "").map((id) => hogqlQuote(id));
+  const plantFallback =
+    idList.length > 0 ? `toString(properties.plant_id) IN (${idList.join(", ")})` : "1 = 0";
+  return `(
+  toString(properties.inventory_type) = ${typeLit}
+  OR (
+    ifNull(nullIf(toString(properties.inventory_type), ''), '') = ''
+    AND ${plantFallback}
+  )
+)`.trim();
+}
+
 /**
  * Drop staff browsers from customer analytics: any distinct_id that has ever
  * sent `is_internal` (including historical events from that same anonymous ID).
- * Window matches the "all time" analytics bound so a recent tag still excludes
+ * Window matches a fixed lower bound so a recent tag still excludes
  * older scans when the dashboard range is shorter.
  */
 const POSTHOG_EXCLUDE_INTERNAL_DEVICES = `
@@ -102,16 +150,27 @@ AND ${POSTHOG_EXCLUDE_LOCALHOST}
 `.trim();
 
 /**
- * Load admin business analytics for a date range.
+ * Load admin business analytics for inventory type + resolved date bounds.
  * Three parallel PostHog HogQL queries + one Neon purchase aggregate.
  */
 export async function loadBusinessAnalytics(
-  range: AnalyticsRangeKey,
+  filters: AnalyticsFilterState,
 ): Promise<BusinessAnalyticsSnapshot> {
-  const timeFilter = posthogTimestampPredicate(range);
-  const bucket = posthogTimeBucketExpr(range);
+  const bounds = resolveDateFilterBounds(filters.dateFilter);
+  const timeFilter = `timestamp >= ${hogqlDateTime(bounds.startInclusive)} AND timestamp < ${hogqlDateTime(bounds.endExclusive)}`;
+  const granularity = timeGranularityForCalendarRange(bounds.from, bounds.to);
+  const bucketExpr = hogqlTimeBucketExpr(granularity);
   const scan = ANALYTICS_EVENTS.posScan;
   const purchase = ANALYTICS_EVENTS.purchaseCompleted;
+
+  const plantIds =
+    filters.inventoryType === "all"
+      ? []
+      : await listPlantIdsByInventoryType(filters.inventoryType);
+  const inventoryPredicate =
+    filters.inventoryType === "all"
+      ? "1 = 1"
+      : hogqlInventoryPredicate(filters.inventoryType, plantIds);
 
   // Scan-level: a pos_scan converts if a purchase_completed exists in the same
   // $session_id + pos_spot_id with timestamp >= the scan.
@@ -131,6 +190,7 @@ FROM (
   FROM events
   WHERE ${timeFilter}
     AND ${POSTHOG_CUSTOMER_SCOPE}
+    AND ${inventoryPredicate}
     AND event IN ('${scan}', '${purchase}')
 )
 WHERE event = '${scan}'
@@ -138,11 +198,12 @@ WHERE event = '${scan}'
 
   const seriesSql = `
 SELECT
-  ${bucket.expr} AS period,
+  ${bucketExpr} AS period,
   count() AS scans
 FROM events
 WHERE ${timeFilter}
   AND ${POSTHOG_CUSTOMER_SCOPE}
+  AND ${inventoryPredicate}
   AND event = '${scan}'
 GROUP BY period
 ORDER BY period ASC
@@ -162,6 +223,7 @@ SELECT dim, name, scans FROM (
   FROM events
   WHERE ${timeFilter}
     AND ${POSTHOG_CUSTOMER_SCOPE}
+    AND ${inventoryPredicate}
     AND event = '${scan}'
   GROUP BY name
 
@@ -178,6 +240,7 @@ SELECT dim, name, scans FROM (
   FROM events
   WHERE ${timeFilter}
     AND ${POSTHOG_CUSTOMER_SCOPE}
+    AND ${inventoryPredicate}
     AND event = '${scan}'
   GROUP BY name
 
@@ -194,6 +257,7 @@ SELECT dim, name, scans FROM (
   FROM events
   WHERE ${timeFilter}
     AND ${POSTHOG_CUSTOMER_SCOPE}
+    AND ${inventoryPredicate}
     AND event = '${scan}'
   GROUP BY name
 )
@@ -201,13 +265,15 @@ ORDER BY dim ASC, scans DESC
 LIMIT 100
 `.trim();
 
-  const neonFrom = neonCreatedAtFrom(range);
-
   const [kpis, series, breakdowns, neonResult] = await Promise.all([
-    runHogQLQuery(kpisSql, `admin_analytics_kpis_${range}`),
-    runHogQLQuery(seriesSql, `admin_analytics_series_${range}`),
-    runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns_${range}`),
-    getNeonPurchaseAnalytics(neonFrom)
+    runHogQLQuery(kpisSql, `admin_analytics_kpis`),
+    runHogQLQuery(seriesSql, `admin_analytics_series`),
+    runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`),
+    getNeonPurchaseAnalytics({
+      startInclusive: bounds.startInclusive,
+      endExclusive: bounds.endExclusive,
+      inventoryType: filters.inventoryType,
+    })
       .then((data) => ({ ok: true as const, data }))
       .catch((err: unknown) => ({
         ok: false as const,
@@ -257,7 +323,8 @@ LIMIT 100
   }
 
   return {
-    range,
+    inventoryType: filters.inventoryType,
+    dateFilter: filters.dateFilter,
     totalScans,
     uniqueScanners,
     purchases: neonResult.ok ? neonResult.data.purchases : null,
@@ -276,6 +343,6 @@ LIMIT 100
     scansByPocket,
     posthogError,
     neonError: neonResult.ok ? null : neonResult.error,
-    timeGranularity: bucket.granularity,
+    timeGranularity: granularity,
   };
 }

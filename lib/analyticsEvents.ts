@@ -16,6 +16,7 @@ export type AnalyticsCommerceProps = {
   spot_slug?: string;
   plant_id?: string;
   plant_name?: string;
+  inventory_type?: string;
   offer_id?: string;
   partner_id?: string;
   partner_name?: string;

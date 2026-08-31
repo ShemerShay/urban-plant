@@ -17,6 +17,7 @@ assert.match(helpers, /pos_scan/);
 assert.match(helpers, /checkout_started/);
 assert.match(helpers, /payment_started/);
 assert.match(helpers, /purchase_completed/);
+assert.match(helpers, /inventory_type/);
 assert.match(helpers, /captureOncePerSession/);
 assert.match(helpers, /shouldCaptureBusinessAnalytics/);
 assert.match(helpers, /NODE_ENV === ["']production["']/);
@@ -30,6 +31,7 @@ const checkoutPage = read("app/checkout/pos/[spotSlug]/page.tsx");
 assert.match(checkoutPage, /TrackPosScan/);
 assert.match(checkoutPage, /TrackCheckoutStarted/);
 assert.match(checkoutPage, /analyticsContext/);
+assert.match(checkoutPage, /inventory_type/);
 
 const checkoutForm = read("components/checkout/CheckoutForm.tsx");
 assert.match(checkoutForm, /ANALYTICS_EVENTS\.paymentStarted/);
@@ -48,6 +50,7 @@ assert.match(successPage, /trackVerifiedPurchase/);
 const purchaseTrack = read("components/analytics/TrackPurchaseCompleted.tsx");
 assert.match(purchaseTrack, /order_id/);
 assert.match(purchaseTrack, /purchaseCompleted/);
+assert.match(purchaseTrack, /inventory_type/);
 
 const provider = read("components/PostHogProvider.tsx");
 assert.match(provider, /up_internal/);

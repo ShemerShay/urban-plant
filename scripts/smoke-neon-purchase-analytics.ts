@@ -46,11 +46,11 @@ async function main() {
     SELECT
       COUNT(*)::int AS cnt,
       COUNT(*) FILTER (
+        WHERE COALESCE(pl.inventory_type, 'plants') = 'plants'
+      )::int AS plants_cnt,
+      COUNT(*) FILTER (
         WHERE COALESCE(pl.inventory_type, 'plants') = 'flowers'
       )::int AS flowers_cnt,
-      COUNT(*) FILTER (
-        WHERE COALESCE(pl.inventory_type, 'plants') <> 'flowers'
-      )::int AS plants_cnt,
       COUNT(*) FILTER (WHERE pl.id IS NULL)::int AS missing_catalog_cnt
     FROM orders o
     LEFT JOIN plants pl ON pl.id = o.product_id

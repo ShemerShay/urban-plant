@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { ANALYTICS_RANGE_OPTIONS } from "@/lib/analytics/dateRange";
+import { AdminAnalyticsFilters } from "@/components/admin/AdminAnalyticsFilters";
 import type { BusinessAnalyticsSnapshot } from "@/lib/analytics/businessAnalytics";
-import { analyticsRangeLabel } from "@/lib/displayLabels";
+import { formatInstantInBusinessTimeZone } from "@/lib/dateFilter";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
@@ -22,18 +22,25 @@ function formatPercent(n: number | null): string {
   return `${n}%`;
 }
 
+function parseUtcPeriodInstant(period: string): Date | null {
+  const raw = period.trim();
+  if (!raw) return null;
+  const iso = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const hasZone = /[zZ]$/.test(iso) || /[+-]\d{2}:?\d{2}$/.test(iso);
+  const d = new Date(hasZone ? iso : `${iso}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function formatPeriodLabel(
   period: string,
   granularity: "hour" | "day" | "week",
   locale: Locale,
 ): string {
-  const raw = period.trim();
-  if (!raw) return "—";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return raw;
+  const d = parseUtcPeriodInstant(period);
+  if (!d) return period.trim() || "—";
   const loc = intlLocale(locale);
   if (granularity === "hour") {
-    return d.toLocaleString(loc, {
+    return formatInstantInBusinessTimeZone(d, loc, {
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -41,9 +48,13 @@ function formatPeriodLabel(
     });
   }
   if (granularity === "day") {
-    return d.toLocaleDateString(loc, { month: "short", day: "numeric" });
+    return formatInstantInBusinessTimeZone(d, loc, { month: "short", day: "numeric" });
   }
-  return d.toLocaleDateString(loc, { month: "short", day: "numeric", year: "numeric" });
+  return formatInstantInBusinessTimeZone(d, loc, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function maxCount(items: { count?: number; scans?: number }[]): number {
@@ -167,10 +178,10 @@ export function AdminAnalyticsDashboard({
   data: BusinessAnalyticsSnapshot;
   locale: Locale;
 }) {
-  const activeRange = data.range;
   const emptyMessage = t(locale, "admin.analytics.empty");
   const scansLabel = t(locale, "admin.analytics.colScans");
   const purchasesLabel = t(locale, "admin.analytics.colPurchases");
+  const showInventorySplit = data.inventoryType === "all";
 
   return (
     <main
@@ -197,30 +208,10 @@ export function AdminAnalyticsDashboard({
         </div>
       </div>
 
-      <div
-        className="mb-6 flex flex-wrap gap-2"
-        role="navigation"
-        aria-label={t(locale, "admin.analytics.dateRange")}
-      >
-        {ANALYTICS_RANGE_OPTIONS.map((opt) => {
-          const href = routes.admin.analyticsWithRange(opt.key);
-          const active = opt.key === activeRange;
-          return (
-            <Link
-              key={opt.key}
-              href={href}
-              aria-current={active ? "page" : undefined}
-              className={
-                active
-                  ? "rounded-full bg-emerald-800 px-3.5 py-2 text-sm font-medium text-white"
-                  : "rounded-full bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-[0_8px_30px_rgba(15,23,42,0.04)] hover:bg-slate-50"
-              }
-            >
-              {analyticsRangeLabel(locale, opt.key)}
-            </Link>
-          );
-        })}
-      </div>
+      <AdminAnalyticsFilters
+        inventoryType={data.inventoryType}
+        dateFilter={data.dateFilter}
+      />
       {data.neonError ? (
         <div
           className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -244,20 +235,26 @@ export function AdminAnalyticsDashboard({
           label={t(locale, "admin.analytics.purchases")}
           value={formatNumber(data.purchases, locale)}
         />
-        <KpiCard
-          label={t(locale, "admin.analytics.purchasesPlants")}
-          value={formatNumber(data.purchasesPlants, locale)}
-        />
-        <KpiCard
-          label={t(locale, "admin.analytics.purchasesFlowers")}
-          value={formatNumber(data.purchasesFlowers, locale)}
-        />
+        {showInventorySplit ? (
+          <>
+            <KpiCard
+              label={t(locale, "admin.analytics.purchasesPlants")}
+              value={formatNumber(data.purchasesPlants, locale)}
+            />
+            <KpiCard
+              label={t(locale, "admin.analytics.purchasesFlowers")}
+              value={formatNumber(data.purchasesFlowers, locale)}
+            />
+          </>
+        ) : null}
         <KpiCard
           label={t(locale, "admin.analytics.scanToCheckout")}
           value={formatPercent(data.scanToCheckoutPercent)}
         />
       </div>
-      {data.purchasesMissingCatalog != null && data.purchasesMissingCatalog > 0 ? (
+      {showInventorySplit &&
+      data.purchasesMissingCatalog != null &&
+      data.purchasesMissingCatalog > 0 ? (
         <p className="mt-3 text-xs leading-relaxed text-slate-500">
           {t(locale, "admin.analytics.inventoryTypeFallback", {
             count: data.purchasesMissingCatalog,
@@ -280,7 +277,7 @@ export function AdminAnalyticsDashboard({
 
         <div className="grid gap-4 md:grid-cols-2">
           <SectionCard
-            title={t(locale, "admin.analytics.topPlantsScans")}
+            title={t(locale, "admin.analytics.topProductsScans")}
             empty={data.topPlantsByScans.length === 0}
             emptyMessage={emptyMessage}
           >
@@ -291,7 +288,7 @@ export function AdminAnalyticsDashboard({
             />
           </SectionCard>
           <SectionCard
-            title={t(locale, "admin.analytics.topPlantsPurchases")}
+            title={t(locale, "admin.analytics.topProductsPurchases")}
             empty={data.topPlantsByPurchases.length === 0}
             emptyMessage={emptyMessage}
           >

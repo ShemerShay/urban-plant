@@ -58,6 +58,7 @@ export default async function PosCheckoutPage({
     pos_spot_id: posSpot.id,
     spot_slug: posSpot.spotSlug,
     plant_id: plant.id,
+    inventory_type: inventoryType,
     ...(isFlowerCheckout ? {} : { plant_name: plant.name }),
     offer_id: offer.id,
     partner_id: posSpot.partnerLocationId,

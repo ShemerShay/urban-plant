@@ -24,18 +24,22 @@ export default async function AdminOffersHubPage() {
       id="admin-offers-page"
       className="mx-auto min-h-screen w-full max-w-md px-4 py-6 pb-12"
     >
-      <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-          {t(locale, "admin.brand")}
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
-          {t(locale, "admin.offers.title")}
-        </h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+            {t(locale, "admin.brand")}
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
+            {t(locale, "admin.offers.title")}
+          </h1>
+        </div>
+        <Link
+          href={routes.admin.index()}
+          className="text-sm font-medium text-emerald-700 underline underline-offset-2"
+        >
+          {t(locale, "admin.common.admin")}
+        </Link>
       </div>
-
-      <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        {t(locale, "admin.offers.hubIntro")}
-      </p>
 
       <ul className="space-y-3">
         {OFFER_SECTIONS.map((section) => (
@@ -57,15 +61,6 @@ export default async function AdminOffersHubPage() {
           </li>
         ))}
       </ul>
-
-      <p className="mt-6">
-        <Link
-          href={routes.admin.index()}
-          className="text-sm font-medium text-emerald-700 underline underline-offset-2"
-        >
-          {t(locale, "admin.common.admin")}
-        </Link>
-      </p>
     </main>
   );
 }

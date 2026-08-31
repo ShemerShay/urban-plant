@@ -34,9 +34,9 @@ export const routes = {
     offersFlowers: () => "/admin/offers/flowers",
     partners: () => "/admin/partners",
     analytics: () => "/admin/analytics",
-    analyticsWithRange: (range: string) => {
-      const r = range.trim();
-      return r ? `/admin/analytics?range=${encodeURIComponent(r)}` : "/admin/analytics";
+    analyticsWithQuery: (query: string) => {
+      const qs = query.replace(/^\?/, "");
+      return qs ? `/admin/analytics?${qs}` : "/admin/analytics";
     },
     partner: (partnerId: string) =>
       `/admin/partners/${encodeURIComponent(partnerId.trim())}`,
