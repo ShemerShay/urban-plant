@@ -31,7 +31,6 @@ const POS_SPOT_ROW_SQL = sql`
   check_by,
   next_check,
   pos_weekly_note,
-  last_watered_at,
   created_at,
   payment_hold_started_at,
   payment_hold_attempt_id
@@ -56,7 +55,6 @@ type PosSpotRow = {
   check_by: string | null;
   next_check: string | Date | null;
   pos_weekly_note: string | null;
-  last_watered_at: string | Date | null;
   created_at: string | Date;
   payment_hold_started_at?: string | Date | null;
   payment_hold_attempt_id?: string | null;
@@ -160,9 +158,6 @@ function mapPosSpotRow(row: PosSpotRow): PosSpot {
     ...(checkBy ? { checkBy } : {}),
     ...(nextCheck ? { nextCheck } : {}),
     ...(posWeeklyNote ? { posWeeklyNote } : {}),
-    ...(toIsoString(row.last_watered_at)
-      ? { lastWateredAt: toIsoString(row.last_watered_at)! }
-      : {}),
     createdAt,
     ...(toIsoString(row.payment_hold_started_at)
       ? { paymentHoldStartedAt: toIsoString(row.payment_hold_started_at)! }
@@ -754,41 +749,4 @@ export async function readPosSpotsByPartner(partnerLocationId: string): Promise<
     ORDER BY created_at ASC
   `;
   return sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
-}
-
-/**
- * Marks eligible POS spots as watered now.
- * Only updates rows for the given partner whose status is available or held_for_payment.
- */
-export async function markPosSpotsWatered(input: {
-  partnerLocationId: string;
-  posSpotIds: string[];
-}): Promise<{ updatedCount: number; lastWateredAt: string; posSpots: PosSpot[] }> {
-  const partnerLocationId = input.partnerLocationId.trim();
-  const ids = [
-    ...new Set(
-      input.posSpotIds
-        .map((id) => (typeof id === "string" ? id.trim() : ""))
-        .filter(Boolean),
-    ),
-  ];
-  if (!partnerLocationId || ids.length === 0) {
-    return { updatedCount: 0, lastWateredAt: new Date().toISOString(), posSpots: [] };
-  }
-
-  const lastWateredAt = new Date().toISOString();
-  const rows = await sql`
-    UPDATE pos_spots
-    SET last_watered_at = ${lastWateredAt}::timestamptz
-    WHERE partner_location_id = ${partnerLocationId}
-      AND id = ANY(${ids}::uuid[])
-      AND status IN ('available', 'held_for_payment')
-    RETURNING ${POS_SPOT_ROW_SQL}
-  `;
-  const posSpots = sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
-  return {
-    updatedCount: posSpots.length,
-    lastWateredAt,
-    posSpots,
-  };
 }

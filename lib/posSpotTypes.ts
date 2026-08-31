@@ -47,8 +47,6 @@ export interface PosSpot {
   nextCheck?: string;
   /** Optional weekly note for field staff. */
   posWeeklyNote?: string;
-  /** When this POS plant was last marked watered (ISO timestamptz). */
-  lastWateredAt?: string;
   createdAt: string;
   /** When status became held_for_payment (for abandoned-hold expiry). */
   paymentHoldStartedAt?: string;

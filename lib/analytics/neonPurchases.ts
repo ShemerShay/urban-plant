@@ -43,6 +43,13 @@ function asNamedCountRows(rows: unknown): NamedCountRow[] {
   return rows as NamedCountRow[];
 }
 
+/** Add partner IDs / name needles here to widen purchase KPIs without rewriting queries. */
+const ANALYTICS_PARTNER_NAME_NEEDLE = "%alon shabo%";
+const ANALYTICS_PARTNER_IDS = [
+  "0d11277b-9b47-45a5-ad80-22cf5c1ad2ef",
+  "ef33137e-fe13-4be3-84bb-1f5b80557815",
+] as const;
+
 /**
  * Verified successful orders only (sold / picked_up / delivered).
  * Optional `createdAtFrom` filters by orders.created_at (inclusive lower bound).
@@ -68,6 +75,20 @@ export async function getNeonPurchaseAnalytics(
           LEFT JOIN plants pl ON pl.id = o.product_id
           WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
             AND o.created_at >= ${fromIso}::timestamptz
+            AND (
+              o.partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
+              OR o.partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+            )
+            AND LOWER(COALESCE(o.product_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(o.partner_location_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(o.full_name, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(o.full_name, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(o.full_name, '')) NOT LIKE '%שמר%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%doh%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%sh50%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%dohsh50%'
         `
       : sql`
           SELECT
@@ -82,6 +103,20 @@ export async function getNeonPurchaseAnalytics(
           FROM orders o
           LEFT JOIN plants pl ON pl.id = o.product_id
           WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
+            AND (
+              o.partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
+              OR o.partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+            )
+            AND LOWER(COALESCE(o.product_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(o.partner_location_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(o.full_name, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(o.full_name, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(o.full_name, '')) NOT LIKE '%שמר%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%doh%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%sh50%'
+            AND LOWER(COALESCE(o.customer_email, '')) NOT LIKE '%dohsh50%'
         `,
     fromIso
       ? sql`
@@ -96,6 +131,20 @@ export async function getNeonPurchaseAnalytics(
           FROM orders
           WHERE order_status IN ('sold', 'picked_up', 'delivered')
             AND created_at >= ${fromIso}::timestamptz
+            AND (
+              partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
+              OR partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+            )
+            AND LOWER(COALESCE(product_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(partner_location_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%שמר%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%doh%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%sh50%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%dohsh50%'
           GROUP BY 1
           ORDER BY cnt DESC, name ASC
           LIMIT 20
@@ -111,6 +160,20 @@ export async function getNeonPurchaseAnalytics(
             COUNT(*)::int AS cnt
           FROM orders
           WHERE order_status IN ('sold', 'picked_up', 'delivered')
+            AND (
+              partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
+              OR partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+            )
+            AND LOWER(COALESCE(product_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(partner_location_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%שמר%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%doh%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%sh50%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%dohsh50%'
           GROUP BY 1
           ORDER BY cnt DESC, name ASC
           LIMIT 20
@@ -128,6 +191,20 @@ export async function getNeonPurchaseAnalytics(
           FROM orders
           WHERE order_status IN ('sold', 'picked_up', 'delivered')
             AND created_at >= ${fromIso}::timestamptz
+            AND (
+              partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
+              OR partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+            )
+            AND LOWER(COALESCE(product_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(partner_location_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%שמר%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%doh%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%sh50%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%dohsh50%'
           GROUP BY 1
           ORDER BY cnt DESC, name ASC
           LIMIT 20
@@ -143,6 +220,20 @@ export async function getNeonPurchaseAnalytics(
             COUNT(*)::int AS cnt
           FROM orders
           WHERE order_status IN ('sold', 'picked_up', 'delivered')
+            AND (
+              partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
+              OR partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+            )
+            AND LOWER(COALESCE(product_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(partner_location_name, '')) NOT LIKE '%test%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(full_name, '')) NOT LIKE '%שמר%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%shemer%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%asaf%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%doh%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%sh50%'
+            AND LOWER(COALESCE(customer_email, '')) NOT LIKE '%dohsh50%'
           GROUP BY 1
           ORDER BY cnt DESC, name ASC
           LIMIT 20

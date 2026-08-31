@@ -34,7 +34,7 @@ export type BusinessAnalyticsSnapshot = {
   purchasesFlowers: number | null;
   purchasesMissingCatalog: number | null;
   inventoryTypeFallback: "plants";
-  /** Person-based: distinct_ids with checkout_started among those with pos_scan. */
+  /** Scan-level: pos_scan events with a later-or-equal purchase_completed in the same session and spot. */
   scanToCheckoutPercent: number | null;
   scansOverTime: AnalyticsTimePoint[];
   topPlantsByScans: AnalyticsNamedCount[];
@@ -67,6 +67,40 @@ distinct_id NOT IN (
 )
 `.trim();
 
+/** Add partner IDs / name needles here to widen the dashboard without rewriting queries. */
+const ANALYTICS_PARTNER_NAME_NEEDLE = "alon shabo";
+const ANALYTICS_PARTNER_IDS = [
+  "0d11277b-9b47-45a5-ad80-22cf5c1ad2ef",
+  "ef33137e-fe13-4be3-84bb-1f5b80557815",
+] as const;
+
+const POSTHOG_INCLUDE_PARTNERS = `
+(
+  position(lower(toString(properties.partner_name)), '${ANALYTICS_PARTNER_NAME_NEEDLE}') > 0
+  OR toString(properties.partner_id) IN (${ANALYTICS_PARTNER_IDS.map((id) => `'${id}'`).join(", ")})
+)
+`.trim();
+
+const POSTHOG_EXCLUDE_TEST = `
+position(lower(concat(
+  toString(properties.partner_name), ' ',
+  toString(properties.plant_name), ' ',
+  toString(properties.spot_slug), ' ',
+  toString(properties.pocket_name)
+)), 'test') = 0
+`.trim();
+
+const POSTHOG_EXCLUDE_LOCALHOST = `
+position(lower(toString(properties.$host)), 'localhost') = 0
+`.trim();
+
+const POSTHOG_CUSTOMER_SCOPE = `
+${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
+AND ${POSTHOG_INCLUDE_PARTNERS}
+AND ${POSTHOG_EXCLUDE_TEST}
+AND ${POSTHOG_EXCLUDE_LOCALHOST}
+`.trim();
+
 /**
  * Load admin business analytics for a date range.
  * Three parallel PostHog HogQL queries + one Neon purchase aggregate.
@@ -77,25 +111,29 @@ export async function loadBusinessAnalytics(
   const timeFilter = posthogTimestampPredicate(range);
   const bucket = posthogTimeBucketExpr(range);
   const scan = ANALYTICS_EVENTS.posScan;
-  const checkout = ANALYTICS_EVENTS.checkoutStarted;
+  const purchase = ANALYTICS_EVENTS.purchaseCompleted;
 
-  // One pass over people: total scan events, unique scanners, scan→checkout converters.
+  // Scan-level: a pos_scan converts if a purchase_completed exists in the same
+  // $session_id + pos_spot_id with timestamp >= the scan.
   const kpisSql = `
 SELECT
-  sum(scan_count) AS total_scans,
-  countIf(scan_count > 0) AS unique_scanners,
-  countIf(scan_count > 0 AND checkout_count > 0) AS converted
+  count() AS total_scans,
+  uniq(distinct_id) AS unique_scanners,
+  countIf(max_purchase_ts >= timestamp) AS converted
 FROM (
   SELECT
+    event,
     distinct_id,
-    countIf(event = '${scan}') AS scan_count,
-    countIf(event = '${checkout}') AS checkout_count
+    timestamp,
+    maxIf(timestamp, event = '${purchase}') OVER (
+      PARTITION BY $session_id, toString(properties.pos_spot_id)
+    ) AS max_purchase_ts
   FROM events
   WHERE ${timeFilter}
-    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
-    AND event IN ('${scan}', '${checkout}')
-  GROUP BY distinct_id
+    AND ${POSTHOG_CUSTOMER_SCOPE}
+    AND event IN ('${scan}', '${purchase}')
 )
+WHERE event = '${scan}'
 `.trim();
 
   const seriesSql = `
@@ -104,7 +142,7 @@ SELECT
   count() AS scans
 FROM events
 WHERE ${timeFilter}
-  AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
+  AND ${POSTHOG_CUSTOMER_SCOPE}
   AND event = '${scan}'
 GROUP BY period
 ORDER BY period ASC
@@ -123,7 +161,7 @@ SELECT dim, name, scans FROM (
     count() AS scans
   FROM events
   WHERE ${timeFilter}
-    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
+    AND ${POSTHOG_CUSTOMER_SCOPE}
     AND event = '${scan}'
   GROUP BY name
 
@@ -139,7 +177,7 @@ SELECT dim, name, scans FROM (
     count() AS scans
   FROM events
   WHERE ${timeFilter}
-    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
+    AND ${POSTHOG_CUSTOMER_SCOPE}
     AND event = '${scan}'
   GROUP BY name
 
@@ -155,7 +193,7 @@ SELECT dim, name, scans FROM (
     count() AS scans
   FROM events
   WHERE ${timeFilter}
-    AND ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
+    AND ${POSTHOG_CUSTOMER_SCOPE}
     AND event = '${scan}'
   GROUP BY name
 )
@@ -192,9 +230,7 @@ LIMIT 100
     uniqueScanners = hogqlRowNumber(row, 1);
     const converted = hogqlRowNumber(row, 2);
     scanToCheckoutPercent =
-      uniqueScanners > 0
-        ? Math.round((converted / uniqueScanners) * 1000) / 10
-        : 0;
+      totalScans > 0 ? Math.round((converted / totalScans) * 1000) / 10 : 0;
   }
 
   const scansOverTime: AnalyticsTimePoint[] = series.ok

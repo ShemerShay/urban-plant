@@ -98,7 +98,6 @@ export const routes = {
     posSpots: () => "/api/pos-spots",
     posSpot: (posSpotId: string) =>
       `/api/pos-spots/${encodeURIComponent(posSpotId.trim())}`,
-    posSpotsWater: () => "/api/pos-spots/water",
     plants: () => "/api/plants",
     plant: (plantId: string) => `/api/plants/${encodeURIComponent(plantId.trim())}`,
     plantImages: () => "/api/plant-images",
