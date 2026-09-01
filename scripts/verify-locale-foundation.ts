@@ -60,6 +60,10 @@ assert.match(nextConfig, /destination:\s*"\/checkout\/pos\/:spotSlug"/);
 const checkout = read("app/checkout/pos/[spotSlug]/page.tsx");
 assert.match(checkout, /<PlantPageHeader knownPartner=/);
 
+const displayLabels = read("lib/displayLabels.ts");
+assert.match(displayLabels, /checkout\.fulfillment\.pickup/);
+assert.doesNotMatch(displayLabels, /checkout\.fulfillment\.take/);
+
 const login = read("app/admin-login/AdminLoginForm.tsx");
 assert.match(login, /LanguageSwitcher/);
 assert.match(login, /localeDisplayFontClass/);

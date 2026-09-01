@@ -24,6 +24,7 @@ const DATE_PRESET_LABEL_KEY = {
   today: "admin.dateFilter.today",
   last_week: "admin.dateFilter.lastWeek",
   last_month: "admin.dateFilter.lastMonth",
+  all_time: "admin.dateFilter.allTime",
 } as const;
 
 export function AdminAnalyticsFilters({

@@ -379,7 +379,7 @@ export function CheckoutForm({
                   : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
               }`}
             >
-              {t(locale, "checkout.fulfillment.pickup")}
+              {t(locale, "checkout.fulfillment.take")}
             </button>
           ) : null}
         </div>

@@ -17,6 +17,7 @@ export function hideCheckoutPickupOption(
   return pickupDisabled && inventoryType !== "flowers";
 }
 
+/** Pickup is selected on first load unless pickup is hidden or resume restores delivery. */
 export function defaultCheckoutFulfillment(input: {
   inventoryType: InventoryType;
   pickupDisabled: boolean;
@@ -26,6 +27,6 @@ export function defaultCheckoutFulfillment(input: {
   if (hideCheckoutPickupOption(input.inventoryType, input.pickupDisabled)) {
     return "delivery";
   }
-  if (input.resumeFulfillment === "pickup") return "pickup";
-  return "delivery";
+  if (input.resumeFulfillment) return input.resumeFulfillment;
+  return "pickup";
 }

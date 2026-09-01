@@ -52,7 +52,12 @@ const dateFilterUi = read("components/admin/shared/AdminDateFilter.tsx");
 assert.match(dateFilterUi, /react-day-picker/);
 assert.match(dateFilterUi, /DayPicker/);
 assert.match(dateFilterUi, /disabled=\{\{\s*after:/);
-assert.match(dateFilterUi, /normalizeDateFilterValue/);
+assert.match(dateFilterUi, /calendarRangeDraftToFilterValue/);
+assert.match(dateFilterUi, /onSelect=\{setDraft\}/);
+assert.match(dateFilterUi, /admin\.dateFilter\.apply/);
+assert.match(dateFilterUi, /admin\.dateFilter\.cancel/);
+assert.match(dateFilterUi, /discardAndClose/);
+assert.doesNotMatch(dateFilterUi, /function applyCalendarRange/);
 assert.doesNotMatch(dateFilterUi, /clampInclusiveCalendarRangeToToday/);
 assert.doesNotMatch(dateFilterUi, /posthog/i);
 assert.doesNotMatch(dateFilterUi, /neon/i);
@@ -99,6 +104,9 @@ assert.doesNotMatch(biz, /toStartOfDay\(now\(\)\)/);
 const messages = read("lib/messages.ts");
 assert.match(messages, /Scan → Successful Purchase/);
 assert.match(messages, /admin\.dateFilter\.lastWeek/);
+assert.match(messages, /admin\.dateFilter\.allTime/);
+assert.match(messages, /admin\.dateFilter\.apply/);
+assert.match(messages, /admin\.dateFilter\.cancel/);
 assert.doesNotMatch(messages, /admin\.analytics\.last7/);
 assert.doesNotMatch(messages, /admin\.analytics\.allTime/);
 assert.match(biz, /POSTHOG_EXCLUDE_INTERNAL_DEVICES/);
@@ -110,6 +118,9 @@ assert.match(biz, /0d11277b-9b47-45a5-ad80-22cf5c1ad2ef/);
 assert.match(biz, /ef33137e-fe13-4be3-84bb-1f5b80557815/);
 assert.match(biz, /POSTHOG_EXCLUDE_TEST/);
 assert.match(biz, /POSTHOG_EXCLUDE_LOCALHOST/);
+assert.match(biz, /POSTHOG_EXCLUDE_ACCIDENTAL_SCANS/);
+assert.match(biz, /01a057e8-4ec9-78c1-b9a8-b9dfa4c6ffd7/);
+assert.match(biz, /Accidental internal incognito scan from 2026-08-31/);
 assert.match(biz, /properties\.\$host/);
 
 const routes = read("lib/routes.ts");
@@ -135,8 +146,11 @@ assert.match(
   dateFilterSrc,
   /DEFAULT_DATE_FILTER_PRESET:\s*DateFilterPresetId\s*=\s*"today"/,
 );
+assert.match(dateFilterSrc, /"all_time"/);
+assert.match(dateFilterSrc, /ALL_TIME_FILTER_FROM/);
 assert.match(dateFilterSrc, /normalizeDateFilterValue/);
 assert.match(dateFilterSrc, /defaultDateFilterValue/);
+assert.match(dateFilterSrc, /calendarRangeDraftToFilterValue/);
 assert.doesNotMatch(dateFilterSrc, /clampInclusiveCalendarRangeToToday/);
 assert.doesNotMatch(
   dateFilterSrc,
@@ -146,6 +160,8 @@ assert.doesNotMatch(
 const filterUi = read("components/admin/AdminAnalyticsFilters.tsx");
 assert.match(filterUi, /flex-row flex-wrap/);
 assert.match(filterUi, /min-w-40 flex-1/);
+assert.match(filterUi, /admin\.dateFilter\.allTime/);
+assert.match(filterUi, /all_time/);
 
 const adminIndex = read("app/admin/page.tsx");
 assert.match(adminIndex, /admin\.home\.analytics/);
@@ -170,6 +186,10 @@ assert.equal(allLastWeek.inventoryType, "all");
 assert.deepEqual(allLastWeek.dateFilter, { mode: "preset", presetId: "last_week" });
 assert.match(analyticsQueryUrl(allLastWeek), /inventoryType=all/);
 assert.match(analyticsQueryUrl(allLastWeek), /date=last_week/);
+
+const allTimeUrl = parseAnalyticsFilterState({ date: "all_time" });
+assert.deepEqual(allTimeUrl.dateFilter, { mode: "preset", presetId: "all_time" });
+assert.match(analyticsQueryUrl(allTimeUrl), /date=all_time/);
 
 const frozenNow = new Date("2026-08-31T12:00:00.000Z");
 const pastToFuture = parseAnalyticsFilterState(

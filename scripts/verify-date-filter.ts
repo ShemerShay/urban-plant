@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import {
   addCalendarDays,
+  calendarRangeDraftToFilterValue,
   calendarRangeForPreset,
   calendarRangeForValue,
   DEFAULT_DATE_FILTER_PRESET,
@@ -13,6 +14,7 @@ import {
   normalizeDateFilterValue,
   resolveDateFilterBounds,
   timeGranularityForCalendarRange,
+  zonedStartOfDay,
 } from "../lib/dateFilter";
 
 const now = new Date("2026-08-31T12:00:00.000Z");
@@ -42,6 +44,14 @@ assert.equal(weekBounds.endExclusive.toISOString(), "2026-08-31T21:00:00.000Z");
 const monthBounds = resolveDateFilterBounds({ mode: "preset", presetId: "last_month" }, now);
 assert.equal(monthBounds.startInclusive.toISOString(), "2026-08-01T21:00:00.000Z");
 assert.equal(monthBounds.endExclusive.toISOString(), "2026-08-31T21:00:00.000Z");
+
+const allTime = calendarRangeForPreset("all_time", now);
+assert.equal(allTime.from, "2020-01-01");
+assert.equal(allTime.to, "2026-08-31");
+const allTimeBounds = resolveDateFilterBounds({ mode: "preset", presetId: "all_time" }, now);
+assert.equal(allTimeBounds.startInclusive.toISOString(), "2019-12-31T22:00:00.000Z");
+assert.equal(allTimeBounds.endExclusive.toISOString(), "2026-08-31T21:00:00.000Z");
+assert.equal(timeGranularityForCalendarRange(allTime.from, allTime.to), "week");
 
 const custom = resolveDateFilterBounds(
   { mode: "range", from: "2026-08-10", to: "2026-08-15" },
@@ -103,6 +113,34 @@ assert.equal(DEFAULT_DATE_FILTER_PRESET, "today");
 assert.deepEqual(
   resolveDateFilterBounds({ mode: "preset", presetId: DEFAULT_DATE_FILTER_PRESET }, now),
   todayBounds,
+);
+
+const jerusalemNoon = new Date("2026-08-31T12:00:00.000Z");
+const dayFrom = zonedStartOfDay("2026-08-10", "Asia/Jerusalem");
+const dayTo = zonedStartOfDay("2026-08-15", "Asia/Jerusalem");
+assert.equal(calendarRangeDraftToFilterValue(undefined, dayTo, now), undefined);
+assert.deepEqual(calendarRangeDraftToFilterValue(dayFrom, undefined, now), {
+  mode: "range",
+  from: "2026-08-10",
+  to: "2026-08-10",
+});
+assert.deepEqual(calendarRangeDraftToFilterValue(dayFrom, dayTo, now), {
+  mode: "range",
+  from: "2026-08-10",
+  to: "2026-08-15",
+});
+assert.deepEqual(calendarRangeDraftToFilterValue(dayTo, dayFrom, now), {
+  mode: "range",
+  from: "2026-08-10",
+  to: "2026-08-15",
+});
+assert.deepEqual(
+  calendarRangeDraftToFilterValue(
+    zonedStartOfDay("2026-09-10", "Asia/Jerusalem"),
+    zonedStartOfDay("2026-09-12", "Asia/Jerusalem"),
+    jerusalemNoon,
+  ),
+  defaultDateFilterValue(),
 );
 
 console.log("OK: date filter bounds verified");

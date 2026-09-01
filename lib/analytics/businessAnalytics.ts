@@ -142,11 +142,21 @@ const POSTHOG_EXCLUDE_LOCALHOST = `
 position(lower(toString(properties.$host)), 'localhost') = 0
 `.trim();
 
+/** Accidental internal incognito scan from 2026-08-31 (personless; could not delete in PostHog). */
+const POSTHOG_EXCLUDE_ACCIDENTAL_DISTINCT_IDS = [
+  "01a057e8-4ec9-78c1-b9a8-b9dfa4c6ffd7",
+] as const;
+
+const POSTHOG_EXCLUDE_ACCIDENTAL_SCANS = `
+toString(distinct_id) NOT IN (${POSTHOG_EXCLUDE_ACCIDENTAL_DISTINCT_IDS.map((id) => `'${id}'`).join(", ")})
+`.trim();
+
 const POSTHOG_CUSTOMER_SCOPE = `
 ${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
 AND ${POSTHOG_INCLUDE_PARTNERS}
 AND ${POSTHOG_EXCLUDE_TEST}
 AND ${POSTHOG_EXCLUDE_LOCALHOST}
+AND ${POSTHOG_EXCLUDE_ACCIDENTAL_SCANS}
 `.trim();
 
 /**

@@ -5,10 +5,13 @@
 
 export const BUSINESS_TIME_ZONE = "Asia/Jerusalem";
 
-export const DATE_FILTER_PRESETS = ["today", "last_week", "last_month"] as const;
+export const DATE_FILTER_PRESETS = ["today", "last_week", "last_month", "all_time"] as const;
 export type DateFilterPresetId = (typeof DATE_FILTER_PRESETS)[number];
 
 export const DEFAULT_DATE_FILTER_PRESET: DateFilterPresetId = "today";
+
+/** Inclusive calendar start for the All time preset (Jerusalem). */
+export const ALL_TIME_FILTER_FROM = "2020-01-01";
 
 export type DateFilterValue =
   | { mode: "preset"; presetId: string }
@@ -28,7 +31,12 @@ export type ResolvedDateRange = {
 const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function isDateFilterPresetId(value: unknown): value is DateFilterPresetId {
-  return value === "today" || value === "last_week" || value === "last_month";
+  return (
+    value === "today" ||
+    value === "last_week" ||
+    value === "last_month" ||
+    value === "all_time"
+  );
 }
 
 export function isCalendarYmd(value: unknown): value is string {
@@ -126,11 +134,35 @@ export function calendarRangeForPreset(
       return { from: addCalendarDays(today, -6), to: today };
     case "last_month":
       return { from: addCalendarDays(today, -29), to: today };
+    case "all_time":
+      return { from: ALL_TIME_FILTER_FROM, to: today };
   }
 }
 
 export function defaultDateFilterValue(): DateFilterValue {
   return { mode: "preset", presetId: DEFAULT_DATE_FILTER_PRESET };
+}
+
+/**
+ * Calendar draft → committed custom range.
+ * A start with no end is a single day. Missing start is not committable.
+ */
+export function calendarRangeDraftToFilterValue(
+  from: Date | undefined,
+  to: Date | undefined,
+  now: Date = new Date(),
+  timeZone: string = BUSINESS_TIME_ZONE,
+): DateFilterValue | undefined {
+  if (!from) return undefined;
+  return normalizeDateFilterValue(
+    {
+      mode: "range",
+      from: calendarYmdInTimeZone(from, timeZone),
+      to: calendarYmdInTimeZone(to ?? from, timeZone),
+    },
+    now,
+    timeZone,
+  );
 }
 
 /**

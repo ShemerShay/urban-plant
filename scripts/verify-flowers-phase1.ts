@@ -131,11 +131,23 @@ assert.equal(
 );
 assert.equal(
   defaultCheckoutFulfillment({ inventoryType: "plants", pickupDisabled: false }),
+  "pickup",
+);
+assert.equal(
+  defaultCheckoutFulfillment({ inventoryType: "plants", pickupDisabled: true }),
   "delivery",
 );
 assert.equal(
   defaultCheckoutFulfillment({ inventoryType: "flowers", pickupDisabled: true }),
   "pickup",
+);
+assert.equal(
+  defaultCheckoutFulfillment({
+    inventoryType: "plants",
+    pickupDisabled: false,
+    resumeFulfillment: "delivery",
+  }),
+  "delivery",
 );
 
 assert.equal(
@@ -192,6 +204,10 @@ assert.match(successPage, /success\.returnPlant\.flowers/);
 assert.match(successPage, /inventoryTypeOrDefault\(plant\?\.inventoryType\) === "flowers"/);
 
 const messages = read("lib/messages.ts");
+assert.match(messages, /"checkout\.plant\.withPot": "\{name\} בכד"/);
+assert.match(messages, /"checkout\.fulfillment\.take": "לקחת"/);
+assert.match(messages, /"checkout\.fulfillment\.pickup": "איסוף"/);
+assert.doesNotMatch(messages, /והכד שאיתו/);
 assert.match(messages, /"success\.thanks\.title\.flowers": "Thank you for buying flowers"/);
 assert.match(messages, /"success\.returnPlant\.flowers": "Back to flowers"/);
 assert.match(messages, /"success\.thanks\.title\.flowers": "תודה שקניתם פרחים"/);
@@ -202,6 +218,11 @@ assert.match(checkoutForm, /disabled=\{deliveryDisabled/);
 assert.match(checkoutForm, /aria-disabled=\{deliveryDisabled/);
 assert.match(checkoutForm, /checkout\.submitWithPrice/);
 assert.match(checkoutForm, /checkout\.confirm\.flowersPickup/);
+assert.match(checkoutForm, /checkout\.fulfillment\.take/);
+assert.doesNotMatch(
+  checkoutForm,
+  /t\(locale, "checkout\.fulfillment\.pickup"\)/,
+);
 
 const offersHub = read("app/admin/offers/page.tsx");
 assert.match(offersHub, /offersPlants/);

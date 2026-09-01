@@ -8,12 +8,13 @@ import { adminSelectTriggerClassName } from "@/components/admin/shared/adminSele
 import { useLocale } from "@/components/locale/LocaleProvider";
 import {
   BUSINESS_TIME_ZONE,
+  calendarRangeDraftToFilterValue,
   calendarYmdInTimeZone,
-  normalizeDateFilterValue,
   type DateFilterValue,
   zonedStartOfDay,
 } from "@/lib/dateFilter";
 import { localeHtmlDir } from "@/lib/locale";
+import { t } from "@/lib/messages";
 
 export type DateFilterPreset = {
   id: string;
@@ -26,10 +27,6 @@ type AdminDateFilterProps = {
   presets: DateFilterPreset[];
   "aria-label"?: string;
 };
-
-function ymdFromPickerDate(date: Date): string {
-  return calendarYmdInTimeZone(date, BUSINESS_TIME_ZONE);
-}
 
 function pickerDateFromYmd(ymd: string): Date {
   return zonedStartOfDay(ymd, BUSINESS_TIME_ZONE);
@@ -76,15 +73,20 @@ export function AdminDateFilter({
     setDraft(selectedRange(value));
   }, [value]);
 
+  function discardAndClose() {
+    setDraft(selectedRange(value));
+    setOpen(false);
+  }
+
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        discardAndClose();
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") discardAndClose();
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKey);
@@ -92,32 +94,17 @@ export function AdminDateFilter({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, value]);
 
   function applyPreset(presetId: string) {
     onChange({ mode: "preset", presetId });
     setOpen(false);
   }
 
-  function applyCalendarRange(next: DateRange | undefined) {
-    if (!next?.from || !next.to) {
-      setDraft(next);
-      return;
-    }
-    const normalized = normalizeDateFilterValue({
-      mode: "range",
-      from: ymdFromPickerDate(next.from),
-      to: ymdFromPickerDate(next.to),
-    });
-    if (normalized.mode === "range") {
-      setDraft({
-        from: pickerDateFromYmd(normalized.from),
-        to: pickerDateFromYmd(normalized.to),
-      });
-    } else {
-      setDraft(undefined);
-    }
-    onChange(normalized);
+  function applyDraft() {
+    const next = calendarRangeDraftToFilterValue(draft?.from, draft?.to);
+    if (!next) return;
+    onChange(next);
     setOpen(false);
   }
 
@@ -130,7 +117,14 @@ export function AdminDateFilter({
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={ariaLabel}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (open) {
+            discardAndClose();
+            return;
+          }
+          setDraft(selectedRange(value));
+          setOpen(true);
+        }}
       >
         <span className="block truncate pr-1">{summaryText(value, presets)}</span>
       </button>
@@ -162,11 +156,11 @@ export function AdminDateFilter({
                 );
               })}
             </div>
-            <div dir={dir}>
+            <div className="flex flex-col gap-3" dir={dir}>
               <DayPicker
                 mode="range"
                 selected={draft}
-                onSelect={applyCalendarRange}
+                onSelect={setDraft}
                 timeZone={BUSINESS_TIME_ZONE}
                 disabled={{
                   after: pickerDateFromYmd(
@@ -177,6 +171,23 @@ export function AdminDateFilter({
                 numberOfMonths={1}
                 className="rdp-root text-sm"
               />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={discardAndClose}
+                >
+                  {t(locale, "admin.dateFilter.cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                  disabled={!draft?.from}
+                  onClick={applyDraft}
+                >
+                  {t(locale, "admin.dateFilter.apply")}
+                </button>
+              </div>
             </div>
           </div>
         </div>
