@@ -159,7 +159,7 @@ export default async function PosCheckoutPage({
             className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
             aria-labelledby="checkout-order-heading"
           >
-            <p className="text-sm text-slate-600">
+            <p className="text-body text-slate-600">
               {t(
                 locale,
                 isFlowerCheckout ? "checkout.ordering.flowers" : "checkout.ordering",
@@ -168,25 +168,25 @@ export default async function PosCheckoutPage({
             {isFlowerCheckout ? (
               <h1
                 id="checkout-order-heading"
-                className="mt-1 text-2xl font-semibold text-emerald-950"
+                className="text-heading mt-1 font-semibold text-foreground"
               >
                 {priceDisplay}
               </h1>
             ) : (
               <div className="mt-3 flex items-center gap-3">
                 {plantImages.length > 0 ? (
-                  <div className="w-28 shrink-0 sm:w-32">
+                  <div className="w-32 shrink-0 sm:w-36">
                     <PlantImageGallery compact images={plantImages} name={displayName} />
                   </div>
                 ) : null}
                 <div className="min-w-0 flex-1">
                   <h1
                     id="checkout-order-heading"
-                    className="text-xl font-semibold text-emerald-950 sm:text-2xl"
+                    className="text-heading-sm font-semibold text-foreground sm:text-heading"
                   >
                     {t(locale, "checkout.plant.withPot", { name: displayName })}
                   </h1>
-                  <p className="mt-1 text-lg font-semibold text-emerald-950">{priceDisplay}</p>
+                  <p className="text-heading-sm mt-1 font-semibold text-foreground">{priceDisplay}</p>
                 </div>
               </div>
             )}

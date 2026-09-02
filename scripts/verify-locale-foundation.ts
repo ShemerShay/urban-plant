@@ -24,7 +24,7 @@ assert.equal(localeHtmlLang("he"), "he");
 assert.equal(localeHtmlDir("he"), "rtl");
 assert.equal(LOCALE_COOKIE, "up_locale");
 assert.equal(localeDisplayFontClass("he"), "font-sans");
-assert.equal(localeDisplayFontClass("en"), "font-serif-display");
+assert.equal(localeDisplayFontClass("en"), "font-display");
 
 const root = process.cwd();
 function read(rel: string): string {
@@ -40,14 +40,15 @@ assert.match(layout, /notoSansHebrew\.variable/);
 
 const globals = read("app/globals.css");
 assert.match(globals, /font-family:\s*var\(--font-sans\)/);
-assert.match(globals, /html\[lang="he"\] \{\s*--font-sans:\s*var\(--font-noto-sans-hebrew\);\s*\}/);
-assert.match(globals, /\.font-serif-display[\s\S]*--font-cormorant/);
+assert.match(globals, /html\[lang="he"\][\s\S]*--font-sans:\s*var\(--font-noto-sans-hebrew\)/);
+assert.match(globals, /--font-display:\s*var\(--font-cormorant\)/);
+assert.match(globals, /\.font-serif-display[\s\S]*var\(--font-display\)/);
 
 const header = read("components/plant/PlantPageHeader.tsx");
 assert.match(header, /dir="ltr"/);
 assert.match(header, /flex-row-reverse/);
 assert.match(header, /items-start/);
-assert.match(header, /font-serif-display/);
+assert.match(header, /font-display/);
 assert.match(header, /UrbanPlant/);
 const switcherIdx = header.indexOf("<LanguageSwitcher");
 const locationIdx = header.indexOf("{knownPartner ?");

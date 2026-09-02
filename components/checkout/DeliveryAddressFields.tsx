@@ -6,7 +6,7 @@ import type { CheckoutFieldKey } from "@/lib/checkoutValidation";
 import { t } from "@/lib/messages";
 
 const baseInputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-body text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
 const invalidInputClass = "border-red-400 focus:border-red-500 focus:ring-red-200/60";
 
@@ -36,12 +36,12 @@ export function DeliveryAddressFields({
   const locale = useLocale();
   return (
     <fieldset className="space-y-4">
-      <legend className="text-sm font-semibold text-slate-800">
+      <legend className="text-body font-semibold text-slate-800">
         {t(locale, "checkout.address.legend")}
       </legend>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="deliveryCity">
+        <label className="text-body font-medium text-slate-700" htmlFor="deliveryCity">
           {t(locale, "checkout.address.city")}
         </label>
         <input
@@ -54,13 +54,13 @@ export function DeliveryAddressFields({
           aria-readonly="true"
           aria-describedby="deliveryCity-hint"
         />
-        <p id="deliveryCity-hint" className="text-xs leading-relaxed text-slate-600">
+        <p id="deliveryCity-hint" className="text-caption leading-relaxed text-slate-600">
           {t(locale, "checkout.address.pilotHint")}
         </p>
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="deliveryStreet">
+        <label className="text-body font-medium text-slate-700" htmlFor="deliveryStreet">
           {t(locale, "checkout.address.street")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
@@ -77,7 +77,7 @@ export function DeliveryAddressFields({
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="deliveryHouseNumber">
+        <label className="text-body font-medium text-slate-700" htmlFor="deliveryHouseNumber">
           {t(locale, "checkout.address.houseNumber")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
@@ -102,14 +102,14 @@ export function DeliveryAddressFields({
           placeholder={t(locale, "checkout.placeholder.houseNumber")}
         />
         {errors.deliveryHouseNumber ? (
-          <p id="deliveryHouseNumber-error" className="text-xs text-red-700">
+          <p id="deliveryHouseNumber-error" className="text-caption text-red-700">
             {errors.deliveryHouseNumber}
           </p>
         ) : null}
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="apartmentOrNotes">
+        <label className="text-body font-medium text-slate-700" htmlFor="apartmentOrNotes">
           {t(locale, "checkout.address.notes")}
         </label>
         <textarea

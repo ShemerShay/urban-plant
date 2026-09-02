@@ -48,9 +48,19 @@ async function main(): Promise<void> {
 
   // 2. original success layout remains
   const successSrc = read("app/success/page.tsx");
-  assert.match(successSrc, /Thank you for your order/);
-  assert.match(successSrc, /Order summary/);
-  assert.match(successSrc, /Return to plant/);
+  const messagesSrc = read("lib/messages.ts");
+  assert.match(successSrc, /success\.thanks\.title/);
+  assert.match(successSrc, /success\.summary/);
+  assert.match(successSrc, /success\.returnPlant/);
+  assert.match(messagesSrc, /"success\.thanks\.title": "Thank you for your order"/);
+  assert.match(messagesSrc, /"success\.summary": "Order summary"/);
+  assert.match(messagesSrc, /"success\.returnPlant": "Return to plant"/);
+  assert.match(messagesSrc, /"success\.thanks\.title": "איזה כיף שבחרתם בנו"/);
+  assert.match(messagesSrc, /"success\.summary": "סיכום הזמנה"/);
+  assert.match(messagesSrc, /"success\.returnPlant": "חזרה לצמח"/);
+  assert.ok(!successSrc.includes("Thank you for your order"));
+  assert.ok(!successSrc.includes("Order summary"));
+  assert.ok(!successSrc.includes("Return to plant"));
   assert.match(successSrc, /data-page="success-page"/);
   assert.match(successSrc, /CustomerRecoveryActions/);
   // Phase 0: single-order lookup (not full-table readOrders + find).
@@ -78,11 +88,15 @@ async function main(): Promise<void> {
   assert.ok(!paymentSuccessSrc.includes("Thank you for your order"));
 
   const verifyClientSrc = read("components/payment/PaymentVerificationClient.tsx");
-  assert.match(verifyClientSrc, /Verifying your payment/);
+  assert.match(verifyClientSrc, /payment\.verify\.verifyingTitle/);
+  assert.match(verifyClientSrc, /payment\.verify\.invalidTitle/);
+  assert.match(messagesSrc, /"payment\.verify\.verifyingTitle": "Verifying your payment"/);
+  assert.match(messagesSrc, /"payment\.verify\.invalidTitle": "We couldn’t verify this payment"/);
   assert.ok(!verifyClientSrc.includes("Thank you for your order"));
   assert.ok(!verifyClientSrc.includes("Order summary"));
   assert.ok(!verifyClientSrc.includes("ready to leave with you"));
-  assert.match(verifyClientSrc, /We couldn’t verify this payment/);
+  assert.ok(!verifyClientSrc.includes("Verifying your payment"));
+  assert.ok(!verifyClientSrc.includes("We couldn’t verify this payment"));
   assert.equal(parseOrderIdQueryParam(undefined), null);
   assert.equal(parseOrderIdQueryParam(""), null);
   assert.equal(parseOrderIdQueryParam("not-a-uuid"), null);
@@ -163,11 +177,20 @@ async function main(): Promise<void> {
   assert.equal(PAYMENT_STATUS_POLL_MS, 2_000);
   assert.equal(isPaymentStatusPollTimedOut(0, 59_999), false);
   assert.equal(isPaymentStatusPollTimedOut(0, 60_000), true);
-  assert.match(verifyClientSrc, /Payment verification is taking longer than expected/);
-  assert.match(verifyClientSrc, /Your payment may still be processing/);
+  assert.match(verifyClientSrc, /payment\.verify\.timeoutTitle/);
+  assert.match(verifyClientSrc, /payment\.verify\.timeoutBody/);
+  assert.match(
+    messagesSrc,
+    /"payment\.verify\.timeoutTitle": "Payment verification is taking longer than expected"/,
+  );
+  assert.match(messagesSrc, /Your payment may still be processing/);
+  assert.ok(!verifyClientSrc.includes("Payment verification is taking longer than expected"));
+  assert.ok(!verifyClientSrc.includes("Your payment may still be processing"));
 
   // 13. “Check again” restarts status checking
-  assert.match(verifyClientSrc, /Check again/);
+  assert.match(verifyClientSrc, /payment\.verify\.checkAgain/);
+  assert.match(messagesSrc, /"payment\.verify\.checkAgain": "Check again"/);
+  assert.ok(!verifyClientSrc.includes("Check again"));
   assert.match(verifyClientSrc, /setPollSession/);
   // Restarting polling uses a fresh startedAt (timeout clock resets)
   const t0 = 1_000_000;
@@ -244,14 +267,21 @@ async function main(): Promise<void> {
   );
 
   // 12-ish: success page still not claiming paid while pending
-  assert.match(successSrc, /Payment still in progress/);
+  assert.match(successSrc, /success\.pending\.title/);
+  assert.match(messagesSrc, /"success\.pending\.title": "Payment still in progress"/);
+  assert.match(messagesSrc, /"success\.pending\.title": "התשלום עדיין בתהליך"/);
+  assert.ok(!successSrc.includes("Payment still in progress"));
   assert.match(successSrc, /isVerifiedPaidOrderStatus/);
 
   // CheckoutForm: first attempt → cardcomCreate; fail/resume → cardcomRetry.
   // Never POST /api/orders or send email from the browser checkout path.
   const checkoutFormSrc = read("components/checkout/CheckoutForm.tsx");
-  assert.match(checkoutFormSrc, /PAYMENT_FAILED_CHECKOUT_MESSAGE/);
-  assert.match(checkoutFormSrc, /Complete Order/);
+  assert.match(checkoutFormSrc, /checkout\.paymentFailed/);
+  assert.match(messagesSrc, /"checkout\.paymentFailed": "Payment failed. Please try again."/);
+  assert.ok(!checkoutFormSrc.includes("Payment failed. Please try again."));
+  assert.match(checkoutFormSrc, /checkout\.submit/);
+  assert.match(messagesSrc, /"checkout\.submit": "Complete Order"/);
+  assert.ok(!checkoutFormSrc.includes("Complete Order"));
   assert.ok(!checkoutFormSrc.includes("Try payment again"));
   assert.match(checkoutFormSrc, /isResumeRetry/);
   assert.match(checkoutFormSrc, /cardcomCreate/);

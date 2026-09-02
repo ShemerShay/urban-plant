@@ -49,7 +49,7 @@ function getRememberedReturnPathSnapshot(pathname: string): string | null {
 }
 
 const actionFocusClass =
-  "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
 
 interface CustomerRecoveryActionsProps {
   whatsAppMessage?: string;
@@ -83,7 +83,7 @@ export function CustomerRecoveryActions({
       {returnHref ? (
         <Link
           href={returnHref}
-          className={`flex min-h-12 items-center justify-center rounded-2xl bg-emerald-700 px-5 py-4 text-center text-sm font-semibold text-white transition hover:bg-emerald-600 ${actionFocusClass}`}
+          className={`text-body flex min-h-12 items-center justify-center rounded-2xl bg-brand px-5 py-4 text-center font-semibold text-white transition hover:bg-brand-soft ${actionFocusClass}`}
         >
           {resolvedReturnLabel}
         </Link>
@@ -93,7 +93,7 @@ export function CustomerRecoveryActions({
           href={whatsAppHref}
           target="_blank"
           rel="noopener noreferrer"
-          className={`inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-white px-5 py-4 text-center text-sm font-semibold text-[#497863] transition hover:bg-emerald-50 ${actionFocusClass}`}
+          className={`text-body text-brand inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-brand-muted/40 bg-background px-5 py-4 text-center font-semibold transition hover:bg-brand-muted/15 ${actionFocusClass}`}
         >
           <IconWhatsApp className="size-5 shrink-0 text-[#25D366]" />
           <span>

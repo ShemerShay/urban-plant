@@ -27,6 +27,6 @@ export function localeHtmlDir(locale: Locale): "ltr" | "rtl" {
 }
 
 /** Localized display headings: Noto Sans Hebrew via `font-sans` in HE, Cormorant in EN. */
-export function localeDisplayFontClass(locale: Locale): "font-sans" | "font-serif-display" {
-  return locale === "he" ? "font-sans" : "font-serif-display";
+export function localeDisplayFontClass(locale: Locale): "font-sans" | "font-display" {
+  return locale === "he" ? "font-sans" : "font-display";
 }

@@ -10,7 +10,7 @@ interface FixedBottomCTAProps {
 }
 
 const ctaFocusClass =
-  "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
 
 export function FixedBottomCTA({
   href,
@@ -37,7 +37,7 @@ export function FixedBottomCTA({
           disabled
           aria-disabled="true"
           aria-describedby={messageBelow ? messageId : undefined}
-          className={`flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-2xl bg-neutral-300 px-5 py-4 text-center text-base font-semibold text-neutral-600 ${ctaFocusClass}`}
+          className={`text-body flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-2xl bg-neutral-300 px-5 py-4 text-center font-semibold text-neutral-600 ${ctaFocusClass}`}
         >
           {ctaText}
         </button>
@@ -45,13 +45,13 @@ export function FixedBottomCTA({
         <Link
           href={href}
           aria-describedby={messageBelow ? messageId : undefined}
-          className={`flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#497863] px-5 py-4 text-center text-base font-semibold text-white shadow-[0_10px_40px_rgba(27,67,50,0.28)] transition hover:bg-[#163529] active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 ${ctaFocusClass}`}
+          className={`text-body flex min-h-12 w-full items-center justify-center rounded-2xl bg-brand px-5 py-4 text-center font-semibold text-white shadow-[0_10px_40px_rgba(27,67,50,0.28)] transition hover:bg-brand-soft active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100 ${ctaFocusClass}`}
         >
           {ctaText}
         </Link>
       )}
       {messageBelow ? (
-        <p id={messageId} className="mt-2 text-center text-sm leading-5 text-neutral-600" role="status">
+        <p id={messageId} className="text-body mt-2 text-center leading-5 text-neutral-600" role="status">
           {messageBelow}
         </p>
       ) : null}

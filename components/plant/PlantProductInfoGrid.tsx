@@ -16,7 +16,7 @@ interface PlantProductInfoGridProps {
 
 /** Soft sage panel — keep in sync with premium plant page tone */
 const PANEL_CLASS =
-  "rounded-[28px] bg-[#7a8f7c] p-6 shadow-none outline-none sm:p-8";
+  "rounded-[28px] bg-brand-muted p-6 shadow-none outline-none sm:p-8";
 
 const QUADRANT_ICON_SIZE = 36;
 
@@ -119,7 +119,7 @@ function Quadrant({
   return (
     <div className={`${cellBase} ${borders}`}>
       {icon}
-      <p className="max-w-[11rem] text-[13px] font-medium leading-snug tracking-tight text-white sm:max-w-none sm:text-sm">
+      <p className="text-caption sm:text-body max-w-[11rem] font-medium leading-snug tracking-tight text-white sm:max-w-none">
         <span className="sr-only">{label}: </span>
         {text}
       </p>

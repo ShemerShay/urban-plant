@@ -52,13 +52,13 @@ interface PlantPageContactLinkProps {
 }
 
 const contactRowClassName =
-  "inline-flex max-w-full min-w-0 min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center text-sm font-semibold text-[#497863] underline-offset-4 transition hover:text-[#163529] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+  "text-body text-brand hover:text-brand-soft inline-flex max-w-full min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center font-semibold underline-offset-4 transition hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
 
 const socialIconLinkClassName =
-  "inline-flex size-11 shrink-0 items-center justify-center rounded-xl transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+  "inline-flex size-11 shrink-0 items-center justify-center rounded-xl transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
 
 const accessibilityLinkClassName =
-  "inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-[#6b756f] transition hover:text-[#497863] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+  "text-brand-muted hover:text-brand inline-flex size-11 shrink-0 items-center justify-center rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
 
 /** In-page utility row: WhatsApp contact + subtle accessibility entry (not in the fixed CTA bar). */
 export function PlantPageContactLink({ whatsAppMessage }: PlantPageContactLinkProps) {

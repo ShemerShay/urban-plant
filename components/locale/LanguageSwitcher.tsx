@@ -13,8 +13,8 @@ const SWITCHER_ORDER: Locale[] = ["he", "en"];
 
 const localeButtonClass = (active: boolean) =>
   active
-    ? "text-[11px] font-semibold tracking-[0.08em] text-emerald-950"
-    : "text-[11px] font-medium tracking-[0.08em] text-slate-400 hover:text-slate-600";
+    ? "text-caption font-semibold tracking-[0.08em] text-foreground"
+    : "text-caption font-medium tracking-[0.08em] text-slate-400 hover:text-slate-600";
 
 export function LanguageSwitcher() {
   const locale = useLocale();
@@ -53,7 +53,7 @@ export function LanguageSwitcher() {
         return (
           <span key={code} className="inline-flex items-center gap-1.5">
             {index > 0 ? (
-              <span className="text-[11px] font-medium text-slate-300" aria-hidden>
+              <span className="text-caption font-medium text-slate-300" aria-hidden>
                 |
               </span>
             ) : null}
@@ -64,7 +64,7 @@ export function LanguageSwitcher() {
               aria-current={active ? "true" : undefined}
               disabled={pending || busy}
               onClick={() => void selectLocale(code)}
-              className={`${localeButtonClass(active)} rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 disabled:opacity-60`}
+              className={`${localeButtonClass(active)} rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 disabled:opacity-60`}
             >
               {label}
             </button>

@@ -154,34 +154,40 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
           className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
           aria-labelledby="success-page-heading"
         >
-          <p className="font-serif-display text-xl font-medium tracking-tight text-neutral-900">
+          <p className="font-display text-heading-sm font-medium tracking-tight text-foreground">
             UrbanPlant
           </p>
           {isPendingPayment ? (
             <>
-              <h1 id="success-page-heading" className="mt-3 text-3xl font-semibold text-emerald-950">
+              <h1
+                id="success-page-heading"
+                className="text-display mt-3 font-semibold text-foreground"
+              >
                 {t(locale, "success.pending.title")}
               </h1>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
+              <p className="text-body mt-3 leading-6 text-slate-600">
                 {t(locale, "success.pending.body")}
               </p>
             </>
           ) : showCompletedPurchase ? (
             <>
-              <h1 id="success-page-heading" className="mt-3 text-3xl font-semibold text-emerald-950">
+              <h1
+                id="success-page-heading"
+                className="text-display mt-3 font-semibold text-foreground"
+              >
                 {t(
                   locale,
                   isFlowerOrder ? "success.thanks.title.flowers" : "success.thanks.title",
                 )}
               </h1>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
+              <p className="text-body mt-3 leading-6 text-slate-600">
                 {isPickup
                   ? t(locale, "success.thanks.pickup")
                   : t(locale, "success.thanks.delivery")}
               </p>
               {emailFailed ? (
                 <p
-                  className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+                  className="text-body mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950"
                   role="alert"
                 >
                   {t(locale, "success.emailFailed")}
@@ -190,10 +196,13 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
             </>
           ) : (
             <>
-              <h1 id="success-page-heading" className="mt-3 text-3xl font-semibold text-emerald-950">
+              <h1
+                id="success-page-heading"
+                className="text-display mt-3 font-semibold text-foreground"
+              >
                 {t(locale, "success.update.title")}
               </h1>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
+              <p className="text-body mt-3 leading-6 text-slate-600">
                 {t(locale, "success.update.body")}
               </p>
             </>
@@ -201,10 +210,10 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
         </section>
 
         <section
-          className="rounded-3xl bg-emerald-50 p-5"
+          className="rounded-3xl bg-background p-5 ring-1 ring-brand-muted/40"
           aria-labelledby="order-summary-heading"
         >
-          <h2 id="order-summary-heading" className="text-sm font-medium text-slate-700">
+          <h2 id="order-summary-heading" className="text-body font-medium text-slate-700">
             {t(locale, "success.summary")}
           </h2>
           {plantImage ? (
@@ -218,7 +227,7 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
               />
             </div>
           ) : null}
-          <p className="mt-3 text-base font-semibold text-emerald-900">
+          <p className="text-body text-brand-soft mt-3 font-semibold">
             {isFlowerOrder
               ? t(locale, "success.line.flowers")
               : t(locale, isPickup ? "success.line.pickup" : "success.line.delivery", {

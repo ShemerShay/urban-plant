@@ -6,7 +6,7 @@ import { useLocale } from "@/components/locale/LocaleProvider";
 import { t } from "@/lib/messages";
 
 const baseInputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-body text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
 const invalidInputClass = "border-red-400 focus:border-red-500 focus:ring-red-200/60";
 
@@ -38,7 +38,7 @@ export function CheckoutCustomerFields({
   return (
     <>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="fullName">
+        <label className="text-body font-medium text-slate-700" htmlFor="fullName">
           {t(locale, "checkout.field.fullName")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
@@ -61,13 +61,13 @@ export function CheckoutCustomerFields({
           placeholder={t(locale, "checkout.placeholder.fullName")}
         />
         {errors.fullName ? (
-          <p id="fullName-error" className="text-xs text-red-700">
+          <p id="fullName-error" className="text-caption text-red-700">
             {errors.fullName}
           </p>
         ) : null}
       </div>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="email">
+        <label className="text-body font-medium text-slate-700" htmlFor="email">
           {t(locale, "checkout.field.email")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
@@ -90,13 +90,13 @@ export function CheckoutCustomerFields({
           placeholder={t(locale, "checkout.placeholder.email")}
         />
         {errors.email ? (
-          <p id="email-error" className="text-xs text-red-700">
+          <p id="email-error" className="text-caption text-red-700">
             {errors.email}
           </p>
         ) : null}
       </div>
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-700" htmlFor="phone">
+        <label className="text-body font-medium text-slate-700" htmlFor="phone">
           {t(locale, "checkout.field.phone")}
           <span aria-hidden="true" className="text-red-700">
             {" "}
@@ -123,7 +123,7 @@ export function CheckoutCustomerFields({
           maxLength={10}
         />
         {errors.phone ? (
-          <p id="phone-error" className="text-xs text-red-700">
+          <p id="phone-error" className="text-caption text-red-700">
             {errors.phone}
           </p>
         ) : null}

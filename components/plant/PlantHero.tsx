@@ -1,4 +1,4 @@
-import { localeDisplayFontClass, type Locale } from "@/lib/locale";
+import type { Locale } from "@/lib/locale";
 
 interface PlantHeroProps {
   locale: Locale;
@@ -6,15 +6,15 @@ interface PlantHeroProps {
   subtitle: string;
 }
 
-export function PlantHero({ locale, name, subtitle }: PlantHeroProps) {
+export function PlantHero({ name, subtitle }: PlantHeroProps) {
   return (
     <section id="plant-hero" className="w-full space-y-3 text-center">
       <h1
-        className={`${localeDisplayFontClass(locale)} text-[2.125rem] font-medium leading-[1.12] tracking-tight text-neutral-900 sm:text-[2.375rem]`}
+        className="text-display font-medium leading-[1.12] tracking-tight text-foreground sm:text-hero"
       >
         {name}
       </h1>
-      <p className="text-[15px] leading-relaxed text-neutral-500">{subtitle}</p>
+      <p className="text-body leading-relaxed text-neutral-500">{subtitle}</p>
     </section>
   );
 }

@@ -214,8 +214,12 @@ assert.match(messages, /"success\.thanks\.title\.flowers": "תודה שקנית�
 assert.match(messages, /"success\.returnPlant\.flowers": "חזרה לפרחים"/);
 
 const checkoutForm = read("components/checkout/CheckoutForm.tsx");
-assert.match(checkoutForm, /disabled=\{deliveryDisabled/);
-assert.match(checkoutForm, /aria-disabled=\{deliveryDisabled/);
+assert.match(checkoutForm, /function FulfillmentOption/);
+assert.match(checkoutForm, /disabled=\{disabled \|\| undefined\}/);
+assert.match(checkoutForm, /aria-disabled=\{disabled \|\| undefined\}/);
+assert.match(checkoutForm, /disabled=\{deliveryDisabled\}/);
+assert.match(checkoutForm, /value="delivery"/);
+assert.match(checkoutForm, /value="pickup"/);
 assert.match(checkoutForm, /checkout\.submitWithPrice/);
 assert.match(checkoutForm, /checkout\.confirm\.flowersPickup/);
 assert.match(checkoutForm, /checkout\.fulfillment\.take/);

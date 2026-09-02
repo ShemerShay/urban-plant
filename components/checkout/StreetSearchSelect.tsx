@@ -7,7 +7,7 @@ import { useLocale } from "@/components/locale/LocaleProvider";
 import { t } from "@/lib/messages";
 
 const baseInputClass =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
+  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-body text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60";
 
 const invalidInputClass = "border-red-400 focus:border-red-500 focus:ring-red-200/60";
 
@@ -144,8 +144,8 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
               <button
                 type="button"
                 tabIndex={-1}
-                className={`w-full min-h-11 px-4 py-2.5 text-start text-sm text-slate-800 transition hover:bg-emerald-50 focus:outline-none focus-visible:bg-emerald-50 ${
-                  index === safeHighlight ? "bg-emerald-50" : ""
+                className={`text-body w-full min-h-11 px-4 py-2.5 text-start text-slate-800 transition hover:bg-brand-muted/15 focus:outline-none focus-visible:bg-brand-muted/15 ${
+                  index === safeHighlight ? "bg-brand-muted/15" : ""
                 }`}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => selectStreet(suggestion.value)}
@@ -160,7 +160,7 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
 
       {isOpen && query.trim() && results.length === 0 ? (
         <p
-          className="absolute z-20 mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-lg"
+          className="text-body absolute z-20 mt-1 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-600 shadow-lg"
           role="status"
         >
           {t(locale, "checkout.street.none")}
@@ -168,7 +168,7 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
       ) : null}
 
       {error ? (
-        <p id={errorId} className="mt-2 text-xs text-red-700">
+        <p id={errorId} className="text-caption mt-2 text-red-700">
           {error}
         </p>
       ) : null}

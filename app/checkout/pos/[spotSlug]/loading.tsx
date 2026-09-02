@@ -23,8 +23,8 @@ export default async function CheckoutLoading() {
             from 0deg,
             rgb(255 255 255 / 0) 0%,
             rgb(255 255 255 / 0.45) 38%,
-            #6a9a82 72%,
-            #497863 100%
+            var(--brand-muted) 72%,
+            var(--brand) 100%
           );
           -webkit-mask: radial-gradient(
             farthest-side,

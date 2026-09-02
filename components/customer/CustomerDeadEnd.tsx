@@ -28,13 +28,16 @@ export function CustomerDeadEnd({
           className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
           aria-labelledby="customer-dead-end-title"
         >
-          <p className="font-serif-display text-xl font-medium tracking-tight text-neutral-900">
+          <p className="font-display text-heading-sm font-medium tracking-tight text-foreground">
             UrbanPlant
           </p>
-          <h1 id="customer-dead-end-title" className="mt-3 text-3xl font-semibold text-emerald-950">
+          <h1
+            id="customer-dead-end-title"
+            className="text-display mt-3 font-semibold text-foreground"
+          >
             {title}
           </h1>
-          <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
+          <p className="text-body mt-3 leading-6 text-slate-600">{description}</p>
           <CustomerRecoveryActions
             className="mt-6"
             whatsAppMessage={whatsAppMessage}

@@ -21,9 +21,6 @@ import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
 import { shouldShowHeldForPaymentProductMessage } from "@/lib/posSpotHold";
 import { posSpotCheckoutPath } from "@/lib/routes";
 
-/** Near-black / warm grey — stronger than body, not CTA green. */
-const LANDING_HEADLINE_CLASS = "text-[#2a302c]";
-const LANDING_AVAILABILITY_PRIMARY_CLASS = "text-[#343a36]";
 /** Neutral-600 (~4.7:1 on page background) — WCAG AA for small text */
 const LANDING_CARE_CLASS = "text-neutral-600";
 
@@ -105,7 +102,7 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
         </div>
 
         <p
-          className={`mt-10 w-full text-[16px] font-semibold leading-snug sm:text-[17px] ${LANDING_HEADLINE_CLASS} ${
+          className={`text-heading-sm mt-10 w-full font-semibold leading-snug text-foreground ${
             locale === "he" ? "" : "tracking-[0.02em]"
           }`}
         >
@@ -129,21 +126,21 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
         </div>
 
         <div
-          className="mx-auto mt-12 w-full max-w-[20rem] space-y-2 rounded-2xl bg-[#f0efe7] px-5 py-4 sm:max-w-[22rem] sm:px-6 sm:py-[1.125rem]"
+          className="mx-auto mt-12 w-full max-w-[20rem] space-y-2 rounded-2xl bg-background px-5 py-4 ring-1 ring-brand-muted/40 sm:max-w-[22rem] sm:px-6 sm:py-[1.125rem]"
           role="note"
           aria-label={t(locale, "plant.availability.aria")}
         >
           <div
-            className={`flex items-center justify-center gap-2.5 text-[15px] font-semibold leading-snug ${LANDING_AVAILABILITY_PRIMARY_CLASS}`}
+            className="text-body flex items-center justify-center gap-2.5 font-semibold leading-snug text-foreground"
           >
             <p>{t(locale, "plant.availability.line1")}</p>
           </div>
-          <p className="text-[13px] leading-relaxed text-neutral-600">
+          <p className="text-caption leading-relaxed text-neutral-600">
             {t(locale, "plant.availability.line2")}
           </p>
         </div>
 
-        <p className={`mt-10 w-full text-[13px] leading-6 ${LANDING_CARE_CLASS}`}>
+        <p className={`text-body mt-10 w-full leading-6 ${LANDING_CARE_CLASS}`}>
           {t(locale, "plant.careReassurance")}
         </p>
       </div>

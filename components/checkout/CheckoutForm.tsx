@@ -95,7 +95,47 @@ const FIELD_ELEMENT_IDS: Record<CheckoutFieldKey, string> = {
 };
 
 const buttonFocusClass =
-  "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2";
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
+
+const fulfillmentOptionBaseClass = `text-body min-h-12 rounded-2xl border px-4 py-3 font-semibold transition ${buttonFocusClass}`;
+const fulfillmentOptionSelectedClass = "border-emerald-700 bg-emerald-50 text-emerald-900";
+const fulfillmentOptionUnselectedClass =
+  "border-slate-200 bg-white text-slate-700 hover:border-slate-300";
+const fulfillmentOptionDisabledClass =
+  "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400";
+
+function FulfillmentOption({
+  label,
+  value,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  label: string;
+  value: FulfillmentMethod;
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: (value: FulfillmentMethod) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled || undefined}
+      aria-disabled={disabled || undefined}
+      onClick={() => onSelect(value)}
+      className={`${fulfillmentOptionBaseClass} ${
+        disabled
+          ? fulfillmentOptionDisabledClass
+          : selected
+            ? fulfillmentOptionSelectedClass
+            : fulfillmentOptionUnselectedClass
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
 
 export function CheckoutForm({
   plantId,
@@ -343,7 +383,7 @@ export function CheckoutForm({
       aria-busy={isSubmitting || undefined}
       noValidate
     >
-      <h2 id={formHeadingId} className="text-xl font-semibold text-emerald-950">
+      <h2 id={formHeadingId} className="text-heading-sm font-semibold text-foreground">
         {fulfillmentMethod === "delivery"
           ? t(locale, "checkout.details.delivery")
           : t(locale, "checkout.details.pickup")}
@@ -352,35 +392,20 @@ export function CheckoutForm({
       <fieldset className="space-y-2">
         <legend className="sr-only">{t(locale, "checkout.fulfillment.legend")}</legend>
         <div className={hidePickup ? "" : "grid grid-cols-2 gap-2"} role="group">
-          <button
-            type="button"
-            aria-pressed={fulfillmentMethod === "delivery"}
-            disabled={deliveryDisabled || undefined}
-            aria-disabled={deliveryDisabled || undefined}
-            onClick={() => handleFulfillmentChange("delivery")}
-            className={`min-h-12 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${buttonFocusClass} ${
-              deliveryDisabled
-                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                : fulfillmentMethod === "delivery"
-                  ? "border-emerald-700 bg-emerald-50 text-emerald-900"
-                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-            }`}
-          >
-            {t(locale, "checkout.fulfillment.delivery")}
-          </button>
+          <FulfillmentOption
+            label={t(locale, "checkout.fulfillment.delivery")}
+            value="delivery"
+            selected={fulfillmentMethod === "delivery"}
+            disabled={deliveryDisabled}
+            onSelect={handleFulfillmentChange}
+          />
           {!hidePickup ? (
-            <button
-              type="button"
-              aria-pressed={fulfillmentMethod === "pickup"}
-              onClick={() => handleFulfillmentChange("pickup")}
-              className={`min-h-12 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${buttonFocusClass} ${
-                fulfillmentMethod === "pickup"
-                  ? "border-emerald-700 bg-emerald-50 text-emerald-900"
-                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-              }`}
-            >
-              {t(locale, "checkout.fulfillment.take")}
-            </button>
+            <FulfillmentOption
+              label={t(locale, "checkout.fulfillment.take")}
+              value="pickup"
+              selected={fulfillmentMethod === "pickup"}
+              onSelect={handleFulfillmentChange}
+            />
           ) : null}
         </div>
       </fieldset>
@@ -414,7 +439,7 @@ export function CheckoutForm({
       ) : null}
 
       <div className="rounded-2xl bg-emerald-50/80 p-4">
-        <p className="text-sm text-emerald-900">
+        <p className="text-body text-emerald-900">
           {deliveryDisabled ? (
             t(locale, "checkout.confirm.flowersPickup")
           ) : (
@@ -437,18 +462,18 @@ export function CheckoutForm({
         aria-atomic="true"
       >
         {paymentFailedMessage ? (
-          <p className="text-sm font-medium text-red-800">{paymentFailedMessage}</p>
+          <p className="text-body font-medium text-red-800">{paymentFailedMessage}</p>
         ) : null}
         {validationSummary ? (
-          <p className="text-sm font-medium text-red-800">{validationSummary}</p>
+          <p className="text-body font-medium text-red-800">{validationSummary}</p>
         ) : null}
-        {submitError ? <p className="text-sm text-red-700">{submitError}</p> : null}
-        {prepMessage ? <p className="text-sm text-emerald-800">{prepMessage}</p> : null}
+        {submitError ? <p className="text-body text-red-700">{submitError}</p> : null}
+        {prepMessage ? <p className="text-body text-brand-soft">{prepMessage}</p> : null}
       </div>
 
       <div>
         {showHeldCheckoutMessage ? (
-          <p className="mb-3 text-sm leading-5 text-amber-950" role="status">
+          <p className="text-body mb-3 leading-5 text-amber-950" role="status">
             {t(locale, "plant.held.checkout")}
           </p>
         ) : null}
@@ -456,7 +481,7 @@ export function CheckoutForm({
           type="submit"
           disabled={isSubmitDisabled}
           aria-disabled={isSubmitDisabled || undefined}
-          className={`min-h-12 w-full rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition enabled:hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:opacity-60 ${buttonFocusClass}`}
+          className={`text-body min-h-12 w-full rounded-2xl bg-brand px-5 py-4 font-semibold text-white transition enabled:hover:bg-brand-soft disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 disabled:opacity-60 ${buttonFocusClass}`}
         >
           {isSubmitting
             ? t(locale, "checkout.processing")

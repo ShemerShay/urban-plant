@@ -13,15 +13,15 @@ export function PlantPageHeader({ knownPartner }: PlantPageHeaderProps) {
   const locale = useLocale();
   return (
     <header className="mb-8 flex flex-row-reverse items-end justify-between gap-3" dir="ltr">
-      <p className="font-serif-display text-xl font-medium tracking-tight text-neutral-900">
+      <p className="font-display text-heading-sm font-medium tracking-tight text-foreground">
         UrbanPlant
       </p>
       <div className="flex max-w-[55%] flex-col items-start gap-1.5">
         <LanguageSwitcher />
         {knownPartner ? (
-          <div className="flex items-start text-[13px] font-medium tracking-[0.04em] text-[#4f6358]">
+          <div className="text-caption text-brand-soft flex items-start font-medium tracking-[0.04em]">
             <svg
-              className="mt-0.5 size-4 shrink-0 text-[#4f6358]"
+              className="text-brand-soft mt-0.5 size-4 shrink-0"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"

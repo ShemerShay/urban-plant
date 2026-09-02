@@ -155,19 +155,19 @@ export function PaymentVerificationClient({
           className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
           aria-labelledby={titleId}
         >
-          <p className="font-serif-display text-xl font-medium tracking-tight text-neutral-900">
+          <p className="font-display text-heading-sm font-medium tracking-tight text-foreground">
             UrbanPlant
           </p>
           <h1
             id={titleId}
             ref={headingRef}
             tabIndex={-1}
-            className="mt-3 text-3xl font-semibold text-emerald-950 outline-none"
+            className="text-display mt-3 font-semibold text-foreground outline-none"
           >
             {title}
           </h1>
           <p
-            className="mt-3 text-sm leading-6 text-slate-600"
+            className="text-body mt-3 leading-6 text-slate-600"
             role={mode === "verifying" ? "status" : undefined}
             aria-live={mode === "verifying" ? "polite" : undefined}
           >
@@ -177,7 +177,7 @@ export function PaymentVerificationClient({
             <button
               type="button"
               onClick={checkAgain}
-              className="mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-emerald-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55 focus-visible:ring-offset-2"
+              className="text-body mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-brand px-5 py-4 font-semibold text-white transition hover:bg-brand-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2"
             >
               {t(locale, "payment.verify.checkAgain")}
             </button>
