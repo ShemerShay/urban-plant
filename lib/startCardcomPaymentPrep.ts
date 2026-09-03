@@ -270,30 +270,53 @@ export async function startCardcomPaymentPrep(
   const fulfillmentMethod: FulfillmentMethod =
     input.fulfillmentMethod === "pickup" ? "pickup" : "delivery";
 
-  if (!nameStr) {
-    return { ok: false, code: "validation", error: "fullName is required", httpStatus: 400 };
-  }
-  if (!emailTrim || !isValidEmail(emailTrim)) {
-    return {
-      ok: false,
-      code: "validation",
-      error: "customerEmail is required and must be a valid email",
-      httpStatus: 400,
-    };
-  }
-  if (!phoneStr || !isValidIsraeliMobilePhone(phoneStr)) {
-    return {
-      ok: false,
-      code: "validation",
-      error: "Please enter a valid 10-digit Israeli phone number.",
-      httpStatus: 400,
-    };
-  }
   if (!spotSlug) {
     return { ok: false, code: "validation", error: "spotSlug is required", httpStatus: 400 };
   }
   if (!plantId) {
     return { ok: false, code: "validation", error: "plantId is required", httpStatus: 400 };
+  }
+
+  const catalogPlant = await getPlantById(plantId);
+  if (!catalogPlant) {
+    return {
+      ok: false,
+      code: "validation",
+      error: "plantId must match a catalog plant",
+      httpStatus: 400,
+    };
+  }
+  const inventoryType = inventoryTypeOrDefault(catalogPlant.inventoryType);
+
+  if (inventoryType !== "flowers") {
+    if (!nameStr) {
+      return { ok: false, code: "validation", error: "fullName is required", httpStatus: 400 };
+    }
+    if (!emailTrim || !isValidEmail(emailTrim)) {
+      return {
+        ok: false,
+        code: "validation",
+        error: "customerEmail is required and must be a valid email",
+        httpStatus: 400,
+      };
+    }
+    if (!phoneStr || !isValidIsraeliMobilePhone(phoneStr)) {
+      return {
+        ok: false,
+        code: "validation",
+        error: "Please enter a valid 10-digit Israeli phone number.",
+        httpStatus: 400,
+      };
+    }
+  }
+
+  if (inventoryType === "flowers" && fulfillmentMethod === "delivery") {
+    return {
+      ok: false,
+      code: "validation",
+      error: "Flower orders must be picked up; delivery is not available.",
+      httpStatus: 400,
+    };
   }
 
   let addressStr = "";
@@ -310,25 +333,6 @@ export async function startCardcomPaymentPrep(
     addressStr = resolved.address;
     notesStr =
       typeof input.apartmentOrNotes === "string" ? input.apartmentOrNotes.trim() : "";
-  }
-
-  const catalogPlant = await getPlantById(plantId);
-  if (!catalogPlant) {
-    return {
-      ok: false,
-      code: "validation",
-      error: "plantId must match a catalog plant",
-      httpStatus: 400,
-    };
-  }
-  const inventoryType = inventoryTypeOrDefault(catalogPlant.inventoryType);
-  if (inventoryType === "flowers" && fulfillmentMethod === "delivery") {
-    return {
-      ok: false,
-      code: "validation",
-      error: "Flower orders must be picked up; delivery is not available.",
-      httpStatus: 400,
-    };
   }
 
   let posSpot = await getPosSpotBySpotSlug(spotSlug);

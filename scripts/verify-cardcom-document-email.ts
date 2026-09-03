@@ -680,6 +680,74 @@ async function main(): Promise<void> {
       assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
     }
 
+    // Flower order without customer email skips document + Urban Plant email.
+    {
+      const { createPlant, deletePlant, getPlantByIdAsync } = await import(
+        "../lib/plantStorage"
+      );
+      const sample = await getPlantByIdAsync(offer.productId);
+      assert.ok(sample, "need a catalog plant to clone a flower");
+      const flowerId = randomUUID();
+      await createPlant({
+        ...sample,
+        id: flowerId,
+        name: "Verify Flower No Email",
+        inventoryType: "flowers",
+        createdAt: new Date().toISOString(),
+      });
+      const orderId = randomUUID();
+      try {
+        await appendOrder({
+          orderId,
+          checkoutSessionId: `lp-flower-no-email-${randomUUID()}`,
+          cardcomEnv: "test",
+          posSpotId: available.id,
+          offerId: offer.id,
+          plantId: flowerId,
+          plantName: "Verify Flower No Email",
+          locationId: available.partnerLocationId,
+          locationName: "Verify Partner",
+          locationAddress: null,
+          price: offer.consumerPrice,
+          fullName: "",
+          customerEmail: "",
+          phone: "",
+          address: "",
+          apartmentOrNotes: "",
+          fulfillmentMethod: "pickup",
+          createdAt: new Date().toISOString(),
+          orderStatus: "picked_up",
+          pickedUpAt: new Date().toISOString(),
+          source: "online",
+          snapshot: {
+            productId: flowerId,
+            productName: "Verify Flower No Email",
+            offerId: offer.id,
+            consumerPrice: offer.consumerPrice,
+            posSpotId: available.id,
+            spotSlug: available.spotSlug,
+            fulfillmentType: "pickup",
+          },
+          cardcomTransactionId: 209413394,
+        });
+        createdOrderIds.push(orderId);
+        const result = await processOrderDocumentAndEmail(orderId, {
+          createDocument: async () => {
+            throw new Error("must not create document for flower without email");
+          },
+          sendEmail: async () => {
+            throw new Error("must not email flower without email");
+          },
+        });
+        assert.equal(result.outcome, "skipped");
+        assert.equal(result.error, "flower_no_customer_email");
+        const after = await getOrderById(orderId);
+        assert.notEqual(after?.purchaseEmailStatus, "failed");
+      } finally {
+        await deletePlant(flowerId);
+      }
+    }
+
     // 9: CreateDocument request uses IsSendByEmail false in live builder path
     {
       const auth = { ApiName: "n", ApiPassword: "p" };

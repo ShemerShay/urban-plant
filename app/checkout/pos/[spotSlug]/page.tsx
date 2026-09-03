@@ -4,6 +4,8 @@ import { TrackCheckoutStarted } from "@/components/analytics/TrackCheckoutStarte
 import { TrackPosScan } from "@/components/analytics/TrackPosScan";
 import { RememberCustomerPath } from "@/components/customer/RememberCustomerPath";
 import { CheckoutForm } from "@/components/checkout/CheckoutForm";
+import { FlowerPaymentStartError } from "@/components/checkout/FlowerPaymentStartError";
+import { FlowerPosScanRedirect } from "@/components/checkout/FlowerPosScanRedirect";
 import { PlantImageGallery } from "@/components/plant/PlantImageGallery";
 import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
 import { getLocale } from "@/lib/getLocale";
@@ -17,6 +19,7 @@ import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
 import { getPosLandingDetails } from "@/lib/posLandingRead";
 import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
+import { startCardcomPaymentPrep } from "@/lib/startCardcomPaymentPrep";
 
 interface PosCheckoutPageProps {
   params: Promise<{ spotSlug: string }>;
@@ -67,6 +70,30 @@ export default async function PosCheckoutPage({
     pocket_name: pocket?.name,
     amount: offer.consumerPrice,
   };
+
+  if (isFlowerCheckout) {
+    const result = await startCardcomPaymentPrep({
+      plantId: plant.id,
+      spotSlug: posSpot.spotSlug,
+      fullName: "",
+      customerEmail: "",
+      phone: "",
+      fulfillmentMethod: "pickup",
+    });
+    if (!result.ok) {
+      return (
+        <FlowerPaymentStartError
+          error={result.error}
+          partnerName={partner?.name ?? ""}
+          locale={locale}
+          analyticsContext={analyticsContext}
+        />
+      );
+    }
+    return (
+      <FlowerPosScanRedirect url={result.paymentUrl} {...analyticsContext} />
+    );
+  }
 
   const orderId = parseOrderIdQueryParam(readParam(sp.orderId));
   const resumeToken = readParam(sp.resume);

@@ -146,6 +146,16 @@ export async function processOrderDocumentAndEmail(
     return { outcome: "already_sent" };
   }
 
+  const catalogPlant = before.plantId
+    ? await getPlantById(before.plantId)
+    : undefined;
+  if (
+    inventoryTypeOrDefault(catalogPlant?.inventoryType) === "flowers" &&
+    !before.customerEmail?.trim()
+  ) {
+    return { outcome: "skipped", error: "flower_no_customer_email" };
+  }
+
   await ensurePurchaseEmailPending(trimmedId);
 
   const claimed = await claimPurchaseEmailProcessing(trimmedId);

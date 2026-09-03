@@ -125,4 +125,17 @@ const withoutOwner = buildCardcomLowProfileCreateRequest("test-api-name", {
 });
 assert.equal(withoutOwner.UIDefinition, undefined);
 
+const emptyOwner = buildCardcomLowProfileCreateRequest("test-api-name", {
+  amount: 10,
+  returnValue: "order-1",
+  productName: "פרחים",
+  successRedirectUrl: "https://example.com/payment/success",
+  failedRedirectUrl: "https://example.com/payment/failed",
+  webHookUrl: "https://example.com/api/payments/cardcom/webhook",
+  cardOwnerName: "",
+  cardOwnerPhone: "",
+  cardOwnerEmail: "",
+});
+assert.equal(emptyOwner.UIDefinition, undefined);
+
 console.log("verify-cardcom-low-profile: ok (no Cardcom network call)");

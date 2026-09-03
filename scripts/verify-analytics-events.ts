@@ -32,6 +32,27 @@ assert.match(checkoutPage, /TrackPosScan/);
 assert.match(checkoutPage, /TrackCheckoutStarted/);
 assert.match(checkoutPage, /analyticsContext/);
 assert.match(checkoutPage, /inventory_type/);
+assert.match(checkoutPage, /FlowerPosScanRedirect/);
+const flowerHandoff = checkoutPage.slice(
+  checkoutPage.indexOf("if (isFlowerCheckout)"),
+  checkoutPage.indexOf("const orderId"),
+);
+assert.match(flowerHandoff, /FlowerPosScanRedirect/);
+assert.doesNotMatch(flowerHandoff, /TrackPosScan/);
+assert.doesNotMatch(flowerHandoff, /RedirectToExternalUrl/);
+assert.doesNotMatch(flowerHandoff, /TrackCheckoutStarted/);
+
+const flowerRedirect = read("components/checkout/FlowerPosScanRedirect.tsx");
+assert.match(flowerRedirect, /captureOncePerSession/);
+assert.match(flowerRedirect, /ANALYTICS_EVENTS\.posScan/);
+assert.match(flowerRedirect, /window\.location\.assign/);
+assert.match(flowerRedirect, /MAX_WAIT_MS = 400/);
+assert.match(flowerRedirect, /window\.location\.assign\(url\)/);
+assert.ok(
+  flowerRedirect.indexOf("captureOncePerSession") <
+    flowerRedirect.indexOf("window.location.assign(url)"),
+  "pos_scan must be attempted before Cardcom navigation",
+);
 
 const checkoutForm = read("components/checkout/CheckoutForm.tsx");
 assert.match(checkoutForm, /ANALYTICS_EVENTS\.paymentStarted/);

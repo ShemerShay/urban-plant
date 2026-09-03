@@ -197,6 +197,27 @@ assert.match(checkoutPage, /data-inventory-type/);
 assert.match(checkoutPage, /PlantImageGallery/);
 assert.doesNotMatch(checkoutPage, /posSpotPath\(/);
 assert.doesNotMatch(checkoutPage, /checkout\.back/);
+assert.match(checkoutPage, /startCardcomPaymentPrep/);
+assert.match(checkoutPage, /FlowerPosScanRedirect/);
+assert.match(checkoutPage, /FlowerPaymentStartError/);
+const flowerHandoff = checkoutPage.slice(
+  checkoutPage.indexOf("if (isFlowerCheckout)"),
+  checkoutPage.indexOf("const orderId"),
+);
+assert.match(flowerHandoff, /FlowerPosScanRedirect/);
+assert.doesNotMatch(flowerHandoff, /TrackPosScan/);
+assert.doesNotMatch(flowerHandoff, /RedirectToExternalUrl/);
+assert.match(flowerHandoff, /fullName: ""/);
+assert.match(flowerHandoff, /customerEmail: ""/);
+assert.match(flowerHandoff, /phone: ""/);
+assert.match(flowerHandoff, /fulfillmentMethod: "pickup"/);
+assert.doesNotMatch(flowerHandoff, /TrackCheckoutStarted/);
+assert.doesNotMatch(flowerHandoff, /CheckoutForm/);
+
+const flowerRedirect = read("components/checkout/FlowerPosScanRedirect.tsx");
+assert.match(flowerRedirect, /captureOncePerSession/);
+assert.match(flowerRedirect, /window\.location\.assign/);
+assert.match(flowerRedirect, /MAX_WAIT_MS = 400/);
 
 const successPage = read("app/success/page.tsx");
 assert.match(successPage, /success\.thanks\.title\.flowers/);
@@ -243,6 +264,10 @@ const prep = read("lib/startCardcomPaymentPrep.ts");
 assert.match(prep, /Flower orders must be picked up/);
 assert.match(prep, /posRequiresPaymentHold/);
 assert.match(prep, /cardcomLineItemName/);
+assert.match(prep, /inventoryType !== "flowers"/);
+
+const documentEmail = read("lib/processOrderDocumentAndEmail.ts");
+assert.match(documentEmail, /flower_no_customer_email/);
 
 const attemptStorage = read("lib/paymentAttemptStorage.ts");
 assert.match(attemptStorage, /inventory_type <> 'flowers'/);

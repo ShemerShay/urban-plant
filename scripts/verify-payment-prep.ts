@@ -80,6 +80,21 @@ async function main(): Promise<void> {
   const eventCountBefore = (await readEvents()).length;
 
   try {
+    const { getPlantById } = await import("../lib/plantCatalog");
+    const { inventoryTypeOrDefault } = await import("../lib/inventoryType");
+    const availablePlant = await getPlantById(offer.productId);
+    if (inventoryTypeOrDefault(availablePlant?.inventoryType) !== "flowers") {
+      const emptyPlant = await startCardcomPaymentPrep(
+        { ...baseInput, fullName: "", customerEmail: "", phone: "" },
+        mockCreate(),
+      );
+      assert.equal(emptyPlant.ok, false);
+      if (!emptyPlant.ok) {
+        assert.equal(emptyPlant.code, "validation");
+        assert.equal(emptyPlant.error, "fullName is required");
+      }
+    }
+
     const first = await startCardcomPaymentPrep(baseInput, mockCreate());
     assert.equal(first.ok, true, "first prep should succeed");
     if (!first.ok) return;
@@ -169,6 +184,62 @@ async function main(): Promise<void> {
 
     assert.equal((await readEvents()).length, eventCountBefore);
     assert.notEqual((await getPosSpotById(available.id))?.status, "sold");
+
+    const latestSpots = await readPosSpots();
+    let flowerSpot: (typeof latestSpots)[number] | undefined;
+    let flowerOffer: NonNullable<Awaited<ReturnType<typeof getOfferById>>> | undefined;
+    for (const spot of latestSpots) {
+      if (spot.status !== "available") continue;
+      const candidateOffer = await getOfferById(spot.currentOfferId);
+      if (
+        !candidateOffer ||
+        candidateOffer.status !== "active" ||
+        candidateOffer.consumerPrice <= 0
+      ) {
+        continue;
+      }
+      const candidatePlant = await getPlantById(candidateOffer.productId);
+      if (inventoryTypeOrDefault(candidatePlant?.inventoryType) === "flowers") {
+        flowerSpot = spot;
+        flowerOffer = candidateOffer;
+        break;
+      }
+    }
+    if (!flowerSpot || !flowerOffer) {
+      console.log("verify-payment-prep: skip flower empty-fields (no available flower POS)");
+    } else {
+      const flowerPrep = await startCardcomPaymentPrep(
+        {
+          plantId: flowerOffer.productId,
+          spotSlug: flowerSpot.spotSlug,
+          fullName: "",
+          customerEmail: "",
+          phone: "",
+          fulfillmentMethod: "pickup",
+        },
+        mockCreate(),
+      );
+      assert.equal(
+        flowerPrep.ok,
+        true,
+        "flower prep with empty customer fields should succeed",
+      );
+      if (flowerPrep.ok) createdAttemptIds.push(flowerPrep.attemptId);
+      const flowerAttempt = await getPaymentAttemptById(
+        flowerPrep.ok ? flowerPrep.attemptId : "",
+      );
+      assert.ok(flowerAttempt);
+      assert.equal(flowerAttempt!.fullName, "");
+      assert.equal(flowerAttempt!.customerEmail, "");
+      assert.equal(flowerAttempt!.phone, "");
+      assert.equal(flowerAttempt!.fulfillmentMethod, "pickup");
+      assert.equal((await getPosSpotById(flowerSpot.id))?.status, "available");
+      await compensatePaymentPrepFailure(
+        flowerAttempt!,
+        flowerSpot.id,
+        CANCEL_REASON_PAYMENT_PREP_FAILED,
+      );
+    }
 
     console.log("verify-payment-prep: ok (Cardcom mocked)");
   } finally {

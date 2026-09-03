@@ -28,8 +28,17 @@ export type AnalyticsCommerceProps = {
   order_id?: string;
 };
 
+export type AnalyticsCaptureOptions = {
+  send_instantly?: boolean;
+  transport?: "XHR" | "fetch" | "sendBeacon";
+};
+
 export type AnalyticsCaptureClient = {
-  capture: (event: string, properties?: Record<string, unknown>) => void;
+  capture: (
+    event: string,
+    properties?: Record<string, unknown>,
+    options?: AnalyticsCaptureOptions,
+  ) => void;
 };
 
 /**
@@ -81,6 +90,7 @@ export function captureOncePerSession(
   event: string,
   dedupeId: string,
   props: AnalyticsCommerceProps,
+  options?: AnalyticsCaptureOptions,
 ): boolean {
   if (!shouldCaptureBusinessAnalytics()) return false;
   if (!dedupeId) return false;
@@ -97,7 +107,7 @@ export function captureOncePerSession(
   } catch {
     // sessionStorage unavailable — still capture; caller should also guard with a ref if needed.
   }
-  posthog.capture(event, cleanAnalyticsProps(props));
+  posthog.capture(event, cleanAnalyticsProps(props), options);
   return true;
 }
 
