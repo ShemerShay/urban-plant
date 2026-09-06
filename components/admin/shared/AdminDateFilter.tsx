@@ -25,6 +25,7 @@ type AdminDateFilterProps = {
   value: DateFilterValue;
   onChange: (value: DateFilterValue) => void;
   presets: DateFilterPreset[];
+  disabled?: boolean;
   "aria-label"?: string;
 };
 
@@ -60,6 +61,7 @@ export function AdminDateFilter({
   value,
   onChange,
   presets,
+  disabled = false,
   "aria-label": ariaLabel,
 }: AdminDateFilterProps) {
   const locale = useLocale();
@@ -72,6 +74,12 @@ export function AdminDateFilter({
   useEffect(() => {
     setDraft(selectedRange(value));
   }, [value]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    setDraft(selectedRange(value));
+    setOpen(false);
+  }, [disabled, value]);
 
   function discardAndClose() {
     setDraft(selectedRange(value));
@@ -112,12 +120,14 @@ export function AdminDateFilter({
     <div className="relative min-w-0" ref={rootRef}>
       <button
         type="button"
-        className={`${adminSelectTriggerClassName} cursor-pointer text-left`}
+        className={`${adminSelectTriggerClassName} cursor-pointer text-left disabled:cursor-not-allowed disabled:bg-slate-50`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={ariaLabel}
+        disabled={disabled}
         onClick={() => {
+          if (disabled) return;
           if (open) {
             discardAndClose();
             return;

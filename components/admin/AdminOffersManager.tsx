@@ -591,12 +591,6 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
         </div>
       </div>
 
-      <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        {t(
-          locale,
-          inventoryType === "flowers" ? "admin.offers.flowersIntro" : "admin.offers.plantsIntro",
-        )}
-      </p>
 
       {showCreate ? (
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">

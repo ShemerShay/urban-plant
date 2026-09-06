@@ -554,12 +554,7 @@ const en = {
   "admin.offers.flowersTitle": "Flower offers",
   "admin.offers.plantsDesc": "Offers linked to plant catalog items.",
   "admin.offers.flowersDesc": "Offers linked to flower catalog items.",
-  "admin.offers.plantsIntro":
-    "Sale offers linked to catalog plants. Images and currency come from the selected plant; each offer sets its own consumer price.",
-  "admin.offers.flowersIntro":
-    "Sale offers linked to catalog flowers. Each offer sets its own consumer price.",
-  "admin.offers.intro":
-    "Sale offers linked to catalog plants. Images and currency come from the selected plant; each offer sets its own consumer price.",
+ 
   "admin.offers.new": "New offer",
   "admin.offers.create": "Create offer",
   "admin.offers.createAria": "Create offer",
@@ -616,7 +611,6 @@ const en = {
   "admin.analytics.subtitle": "Scans from PostHog. Purchases from verified successful orders.",
   "admin.analytics.dateRange": "Date range",
   "admin.analytics.inventoryType": "Inventory type",
-  "admin.analytics.purchaseUnavailable": "Purchase metrics unavailable: {error}",
   "admin.analytics.totalScans": "Total scans",
   "admin.analytics.uniqueScanners": "Unique scanners",
   "admin.analytics.uniqueDevices": "Unique browsers/devices",
@@ -1035,12 +1029,6 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.offers.flowersTitle": "הצעות פרחים",
   "admin.offers.plantsDesc": "הצעות המקושרות לפריטי קטלוג של צמחים.",
   "admin.offers.flowersDesc": "הצעות המקושרות לפריטי קטלוג של פרחים.",
-  "admin.offers.plantsIntro":
-    "הצעות מכירה המקושרות לצמחי הקטלוג. תמונות ומטבע מגיעים מהצמח שנבחר; כל הצעה מגדירה מחיר לצרכן משלה.",
-  "admin.offers.flowersIntro":
-    "הצעות מכירה המקושרות לפרחי הקטלוג. כל הצעה מגדירה מחיר לצרכן משלה.",
-  "admin.offers.intro":
-    "הצעות מכירה המקושרות לצמחי הקטלוג. תמונות ומטבע מגיעים מהצמח שנבחר; כל הצעה מגדירה מחיר לצרכן משלה.",
   "admin.offers.new": "הצעה חדשה",
   "admin.offers.create": "יצירת הצעה",
   "admin.offers.createAria": "יצירת הצעה",
@@ -1289,7 +1277,6 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.analytics.subtitle": "סריקות מ־PostHog. רכישות מהזמנות מאומתות שהושלמו.",
   "admin.analytics.dateRange": "טווח תאריכים",
   "admin.analytics.inventoryType": "סוג מלאי",
-  "admin.analytics.purchaseUnavailable": "מדדי רכישות אינם זמינים: {error}",
   "admin.analytics.totalScans": "סה״כ סריקות",
   "admin.analytics.uniqueScanners": "סורקים ייחודיים",
   "admin.analytics.uniqueDevices": "דפדפנים/מכשירים ייחודיים",

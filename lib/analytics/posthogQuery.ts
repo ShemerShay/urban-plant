@@ -15,7 +15,7 @@ export type HogQLQueryResult = {
 export type PostHogQueryError = {
   ok: false;
   error: string;
-  code: "not_configured" | "http_error" | "invalid_response";
+  code: "not_configured" | "http_error" | "invalid_response" | "timeout";
 };
 
 export type PostHogQuerySuccess = {
@@ -25,8 +25,21 @@ export type PostHogQuerySuccess = {
 
 export type PostHogQueryOutcome = PostHogQuerySuccess | PostHogQueryError;
 
+/** Per-request client abort so a hung HogQL call cannot stall the analytics RSC forever. */
+export const POSTHOG_QUERY_TIMEOUT_MS = 30_000;
+
 function trimEnv(value: string | undefined): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isTimeoutError(err: unknown): boolean {
+  if (err instanceof DOMException) {
+    return err.name === "AbortError" || err.name === "TimeoutError";
+  }
+  if (err instanceof Error) {
+    return err.name === "AbortError" || err.name === "TimeoutError";
+  }
+  return false;
 }
 
 /** API host for `/api/projects/.../query` (not the ingest `*.i.posthog.com` host). */
@@ -90,8 +103,16 @@ export async function runHogQLQuery(
         refresh: "blocking",
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(POSTHOG_QUERY_TIMEOUT_MS),
     });
   } catch (err) {
+    if (isTimeoutError(err)) {
+      return {
+        ok: false,
+        error: `PostHog query timed out after ${POSTHOG_QUERY_TIMEOUT_MS / 1000}s (${name})`,
+        code: "timeout",
+      };
+    }
     const message = err instanceof Error ? err.message : "Network error calling PostHog";
     return { ok: false, error: message, code: "http_error" };
   }

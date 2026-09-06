@@ -18,6 +18,7 @@ import {
   hogqlRowNumber,
   hogqlRowString,
   runHogQLQuery,
+  type PostHogQueryOutcome,
 } from "@/lib/analytics/posthogQuery";
 
 export type AnalyticsNamedCount = {
@@ -106,14 +107,72 @@ function hogqlInventoryPredicate(
  * Window matches a fixed lower bound so a recent tag still excludes
  * older scans when the dashboard range is shorter.
  */
-const POSTHOG_EXCLUDE_INTERNAL_DEVICES = `
-distinct_id NOT IN (
-  SELECT DISTINCT distinct_id
-  FROM events
-  WHERE timestamp >= toDateTime('2020-01-01 00:00:00')
-    AND ifNull(toString(properties.is_internal), '') IN ('true', '1')
-)
+const INTERNAL_IDS_SINCE = "2020-01-01 00:00:00";
+const INTERNAL_IDS_TTL_MS = 60_000;
+const INTERNAL_IDS_QUERY_LIMIT = 5000;
+
+type InternalIdsOutcome =
+  | { ok: true; ids: string[] }
+  | { ok: false; error: string };
+
+let internalIdsCache: { expiresAt: number; value: Extract<InternalIdsOutcome, { ok: true }> } | null =
+  null;
+let internalIdsInflight: Promise<InternalIdsOutcome> | null = null;
+
+async function fetchInternalDistinctIds(): Promise<InternalIdsOutcome> {
+  const sql = `
+SELECT DISTINCT toString(distinct_id) AS id
+FROM events
+WHERE timestamp >= toDateTime('${INTERNAL_IDS_SINCE}')
+  AND ifNull(toString(properties.is_internal), '') IN ('true', '1')
+LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
 `.trim();
+  const result = await runHogQLQuery(sql, "admin_analytics_internal_ids");
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+  const ids = result.data.results
+    .map((row) => hogqlRowString(row, 0).trim())
+    .filter((id) => id !== "");
+  if (ids.length >= INTERNAL_IDS_QUERY_LIMIT) {
+    return {
+      ok: false,
+      error: `Internal distinct_id list hit limit ${INTERNAL_IDS_QUERY_LIMIT}`,
+    };
+  }
+  return { ok: true, ids };
+}
+
+/**
+ * Resolve internal distinct_ids once (short TTL) and reuse across HogQL scans.
+ * Failures are not cached so a later request can recover.
+ */
+async function listInternalDistinctIds(): Promise<InternalIdsOutcome> {
+  const now = Date.now();
+  if (internalIdsCache && internalIdsCache.expiresAt > now) {
+    return internalIdsCache.value;
+  }
+  if (internalIdsInflight) return internalIdsInflight;
+  internalIdsInflight = fetchInternalDistinctIds()
+    .then((value) => {
+      if (value.ok) {
+        internalIdsCache = { expiresAt: Date.now() + INTERNAL_IDS_TTL_MS, value };
+      }
+      return value;
+    })
+    .finally(() => {
+      internalIdsInflight = null;
+    });
+  return internalIdsInflight;
+}
+
+function hogqlExcludeInternalDevices(internalDistinctIds: string[]): string {
+  const quoted = internalDistinctIds
+    .filter((id) => id.trim() !== "")
+    .map((id) => hogqlQuote(id));
+  if (quoted.length === 0) return "1 = 1";
+  return `distinct_id NOT IN (${quoted.join(", ")})`;
+}
 
 /** Add partner IDs / name needles here to widen the dashboard without rewriting queries. */
 const ANALYTICS_PARTNER_NAME_NEEDLE = "alon shabo";
@@ -151,36 +210,164 @@ const POSTHOG_EXCLUDE_ACCIDENTAL_SCANS = `
 toString(distinct_id) NOT IN (${POSTHOG_EXCLUDE_ACCIDENTAL_DISTINCT_IDS.map((id) => `'${id}'`).join(", ")})
 `.trim();
 
-const POSTHOG_CUSTOMER_SCOPE = `
-${POSTHOG_EXCLUDE_INTERNAL_DEVICES}
+function posthogCustomerScope(internalDistinctIds: string[]): string {
+  return `
+${hogqlExcludeInternalDevices(internalDistinctIds)}
 AND ${POSTHOG_INCLUDE_PARTNERS}
 AND ${POSTHOG_EXCLUDE_TEST}
 AND ${POSTHOG_EXCLUDE_LOCALHOST}
 AND ${POSTHOG_EXCLUDE_ACCIDENTAL_SCANS}
 `.trim();
+}
+
+function topNamedCounts(
+  buckets: Map<string, number>,
+  limit: number,
+): AnalyticsNamedCount[] {
+  return [...buckets.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, limit);
+}
+
+function logAnalyticsError(source: string, error: string | null): void {
+  if (!error) return;
+  console.error(`[admin-analytics] ${source}: ${error}`);
+}
+
+function emptySnapshot(
+  filters: AnalyticsFilterState,
+  timeGranularity: TimeGranularity,
+  errors: { posthogError: string | null; neonError: string | null },
+): BusinessAnalyticsSnapshot {
+  logAnalyticsError("posthog", errors.posthogError);
+  logAnalyticsError("neon", errors.neonError);
+  return {
+    inventoryType: filters.inventoryType,
+    dateFilter: filters.dateFilter,
+    totalScans: null,
+    uniqueScanners: null,
+    purchases: null,
+    purchasesPlants: null,
+    purchasesFlowers: null,
+    purchasesMissingCatalog: null,
+    inventoryTypeFallback: "plants",
+    scanToCheckoutPercent: null,
+    scansOverTime: [],
+    topPlantsByScans: [],
+    topPlantsByPurchases: [],
+    scansByPartner: [],
+    purchasesByPartner: [],
+    scansByPocket: [],
+    posthogError: errors.posthogError,
+    neonError: errors.neonError,
+    timeGranularity,
+  };
+}
 
 /**
  * Load admin business analytics for inventory type + resolved date bounds.
- * Three parallel PostHog HogQL queries + one Neon purchase aggregate.
+ * Internal distinct_ids are resolved once, then three parallel PostHog HogQL
+ * queries plus Neon purchase aggregates.
  */
 export async function loadBusinessAnalytics(
   filters: AnalyticsFilterState,
 ): Promise<BusinessAnalyticsSnapshot> {
   const bounds = resolveDateFilterBounds(filters.dateFilter);
-  const timeFilter = `timestamp >= ${hogqlDateTime(bounds.startInclusive)} AND timestamp < ${hogqlDateTime(bounds.endExclusive)}`;
   const granularity = timeGranularityForCalendarRange(bounds.from, bounds.to);
+  try {
+    return await loadBusinessAnalyticsInner(filters, bounds, granularity);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Analytics load failed";
+    return emptySnapshot(filters, granularity, {
+      posthogError: message,
+      neonError: message,
+    });
+  }
+}
+
+async function loadBusinessAnalyticsInner(
+  filters: AnalyticsFilterState,
+  bounds: ReturnType<typeof resolveDateFilterBounds>,
+  granularity: TimeGranularity,
+): Promise<BusinessAnalyticsSnapshot> {
+  const timeFilter = `timestamp >= ${hogqlDateTime(bounds.startInclusive)} AND timestamp < ${hogqlDateTime(bounds.endExclusive)}`;
   const bucketExpr = hogqlTimeBucketExpr(granularity);
   const scan = ANALYTICS_EVENTS.posScan;
   const purchase = ANALYTICS_EVENTS.purchaseCompleted;
 
-  const plantIds =
+  const plantIdsPromise =
     filters.inventoryType === "all"
-      ? []
-      : await listPlantIdsByInventoryType(filters.inventoryType);
+      ? Promise.resolve({ ok: true as const, ids: [] as string[] })
+      : listPlantIdsByInventoryType(filters.inventoryType)
+          .then((ids) => ({ ok: true as const, ids }))
+          .catch((err: unknown) => ({
+            ok: false as const,
+            error: err instanceof Error ? err.message : "Catalog lookup failed",
+          }));
+
+  const neonPromise = getNeonPurchaseAnalytics({
+    startInclusive: bounds.startInclusive,
+    endExclusive: bounds.endExclusive,
+    inventoryType: filters.inventoryType,
+  })
+    .then((data) => ({ ok: true as const, data }))
+    .catch((err: unknown) => ({
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Neon purchase query failed",
+    }));
+
+  const [internalIdsResult, plantIdsResult, neonResult] = await Promise.all([
+    listInternalDistinctIds(),
+    plantIdsPromise,
+    neonPromise,
+  ]);
+
+  const neonError = neonResult.ok ? null : neonResult.error;
+  const purchases = neonResult.ok ? neonResult.data.purchases : null;
+  const purchasesPlants = neonResult.ok ? neonResult.data.purchasesPlants : null;
+  const purchasesFlowers = neonResult.ok ? neonResult.data.purchasesFlowers : null;
+  const purchasesMissingCatalog = neonResult.ok
+    ? neonResult.data.purchasesMissingCatalog
+    : null;
+  const topPlantsByPurchases = neonResult.ok ? neonResult.data.topPlants : [];
+  const purchasesByPartner = neonResult.ok ? neonResult.data.byPartner : [];
+
+  if (!internalIdsResult.ok) {
+    return {
+      ...emptySnapshot(filters, granularity, {
+        posthogError: internalIdsResult.error,
+        neonError,
+      }),
+      purchases,
+      purchasesPlants,
+      purchasesFlowers,
+      purchasesMissingCatalog,
+      topPlantsByPurchases,
+      purchasesByPartner,
+    };
+  }
+
+  if (!plantIdsResult.ok) {
+    return {
+      ...emptySnapshot(filters, granularity, {
+        posthogError: plantIdsResult.error,
+        neonError,
+      }),
+      purchases,
+      purchasesPlants,
+      purchasesFlowers,
+      purchasesMissingCatalog,
+      topPlantsByPurchases,
+      purchasesByPartner,
+    };
+  }
+
   const inventoryPredicate =
     filters.inventoryType === "all"
       ? "1 = 1"
-      : hogqlInventoryPredicate(filters.inventoryType, plantIds);
+      : hogqlInventoryPredicate(filters.inventoryType, plantIdsResult.ids);
+  const customerScope = posthogCustomerScope(internalIdsResult.ids);
 
   // Scan-level: a pos_scan converts if a purchase_completed exists in the same
   // $session_id + pos_spot_id with timestamp >= the scan.
@@ -199,7 +386,7 @@ FROM (
     ) AS max_purchase_ts
   FROM events
   WHERE ${timeFilter}
-    AND ${POSTHOG_CUSTOMER_SCOPE}
+    AND ${customerScope}
     AND ${inventoryPredicate}
     AND event IN ('${scan}', '${purchase}')
 )
@@ -212,7 +399,7 @@ SELECT
   count() AS scans
 FROM events
 WHERE ${timeFilter}
-  AND ${POSTHOG_CUSTOMER_SCOPE}
+  AND ${customerScope}
   AND ${inventoryPredicate}
   AND event = '${scan}'
 GROUP BY period
@@ -221,81 +408,45 @@ LIMIT 200
 `.trim();
 
   const breakdownsSql = `
-SELECT dim, name, scans FROM (
-  SELECT
-    'plant' AS dim,
-    if(
-      empty(trim(toString(properties.plant_name))),
-      '(Missing plant_name)',
-      trim(toString(properties.plant_name))
-    ) AS name,
-    count() AS scans
-  FROM events
-  WHERE ${timeFilter}
-    AND ${POSTHOG_CUSTOMER_SCOPE}
-    AND ${inventoryPredicate}
-    AND event = '${scan}'
-  GROUP BY name
-
-  UNION ALL
-
-  SELECT
-    'partner' AS dim,
-    if(
-      empty(trim(toString(properties.partner_name))),
-      '(Missing partner_name)',
-      trim(toString(properties.partner_name))
-    ) AS name,
-    count() AS scans
-  FROM events
-  WHERE ${timeFilter}
-    AND ${POSTHOG_CUSTOMER_SCOPE}
-    AND ${inventoryPredicate}
-    AND event = '${scan}'
-  GROUP BY name
-
-  UNION ALL
-
-  SELECT
-    'pocket' AS dim,
-    if(
-      empty(trim(toString(properties.pocket_name))),
-      '(Missing pocket_name)',
-      trim(toString(properties.pocket_name))
-    ) AS name,
-    count() AS scans
-  FROM events
-  WHERE ${timeFilter}
-    AND ${POSTHOG_CUSTOMER_SCOPE}
-    AND ${inventoryPredicate}
-    AND event = '${scan}'
-  GROUP BY name
-)
-ORDER BY dim ASC, scans DESC
-LIMIT 100
+SELECT
+  if(
+    empty(trim(toString(properties.plant_name))),
+    '(Missing plant_name)',
+    trim(toString(properties.plant_name))
+  ) AS plant_name,
+  if(
+    empty(trim(toString(properties.partner_name))),
+    '(Missing partner_name)',
+    trim(toString(properties.partner_name))
+  ) AS partner_name,
+  if(
+    empty(trim(toString(properties.pocket_name))),
+    '(Missing pocket_name)',
+    trim(toString(properties.pocket_name))
+  ) AS pocket_name,
+  count() AS scans
+FROM events
+WHERE ${timeFilter}
+  AND ${customerScope}
+  AND ${inventoryPredicate}
+  AND event = '${scan}'
+GROUP BY plant_name, partner_name, pocket_name
+LIMIT 5000
 `.trim();
 
-  const [kpis, series, breakdowns, neonResult] = await Promise.all([
+  const [kpis, series, breakdowns] = await Promise.all([
     runHogQLQuery(kpisSql, `admin_analytics_kpis`),
     runHogQLQuery(seriesSql, `admin_analytics_series`),
     runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`),
-    getNeonPurchaseAnalytics({
-      startInclusive: bounds.startInclusive,
-      endExclusive: bounds.endExclusive,
-      inventoryType: filters.inventoryType,
-    })
-      .then((data) => ({ ok: true as const, data }))
-      .catch((err: unknown) => ({
-        ok: false as const,
-        error: err instanceof Error ? err.message : "Neon purchase query failed",
-      })),
   ]);
 
   const posthogErrors = [kpis, series, breakdowns]
-    .filter((r) => !r.ok)
-    .map((r) => (!r.ok ? r.error : ""));
+    .filter((r): r is Extract<PostHogQueryOutcome, { ok: false }> => !r.ok)
+    .map((r) => r.error);
   const posthogError =
     posthogErrors.length > 0 ? [...new Set(posthogErrors)].join(" · ") : null;
+  logAnalyticsError("posthog", posthogError);
+  logAnalyticsError("neon", neonError);
 
   let totalScans: number | null = null;
   let uniqueScanners: number | null = null;
@@ -316,19 +467,18 @@ LIMIT 100
       }))
     : [];
 
-  const topPlantsByScans: AnalyticsNamedCount[] = [];
-  const scansByPartner: AnalyticsNamedCount[] = [];
-  const scansByPocket: AnalyticsNamedCount[] = [];
+  const plantBuckets = new Map<string, number>();
+  const partnerBuckets = new Map<string, number>();
+  const pocketBuckets = new Map<string, number>();
   if (breakdowns.ok) {
     for (const row of breakdowns.data.results) {
-      const dim = hogqlRowString(row, 0);
-      const entry = {
-        name: displayName(hogqlRowString(row, 1), "(Unknown)"),
-        count: hogqlRowNumber(row, 2),
-      };
-      if (dim === "plant" && topPlantsByScans.length < 20) topPlantsByScans.push(entry);
-      else if (dim === "partner" && scansByPartner.length < 20) scansByPartner.push(entry);
-      else if (dim === "pocket" && scansByPocket.length < 20) scansByPocket.push(entry);
+      const plantName = displayName(hogqlRowString(row, 0), "(Unknown)");
+      const partnerName = displayName(hogqlRowString(row, 1), "(Unknown)");
+      const pocketName = displayName(hogqlRowString(row, 2), "(Unknown)");
+      const scans = hogqlRowNumber(row, 3);
+      plantBuckets.set(plantName, (plantBuckets.get(plantName) ?? 0) + scans);
+      partnerBuckets.set(partnerName, (partnerBuckets.get(partnerName) ?? 0) + scans);
+      pocketBuckets.set(pocketName, (pocketBuckets.get(pocketName) ?? 0) + scans);
     }
   }
 
@@ -337,22 +487,20 @@ LIMIT 100
     dateFilter: filters.dateFilter,
     totalScans,
     uniqueScanners,
-    purchases: neonResult.ok ? neonResult.data.purchases : null,
-    purchasesPlants: neonResult.ok ? neonResult.data.purchasesPlants : null,
-    purchasesFlowers: neonResult.ok ? neonResult.data.purchasesFlowers : null,
-    purchasesMissingCatalog: neonResult.ok
-      ? neonResult.data.purchasesMissingCatalog
-      : null,
+    purchases,
+    purchasesPlants,
+    purchasesFlowers,
+    purchasesMissingCatalog,
     inventoryTypeFallback: "plants",
     scanToCheckoutPercent,
     scansOverTime,
-    topPlantsByScans,
-    topPlantsByPurchases: neonResult.ok ? neonResult.data.topPlants : [],
-    scansByPartner,
-    purchasesByPartner: neonResult.ok ? neonResult.data.byPartner : [],
-    scansByPocket,
+    topPlantsByScans: topNamedCounts(plantBuckets, 20),
+    topPlantsByPurchases,
+    scansByPartner: topNamedCounts(partnerBuckets, 20),
+    purchasesByPartner,
+    scansByPocket: topNamedCounts(pocketBuckets, 20),
     posthogError,
-    neonError: neonResult.ok ? null : neonResult.error,
+    neonError,
     timeGranularity: granularity,
   };
 }

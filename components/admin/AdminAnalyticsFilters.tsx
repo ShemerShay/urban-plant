@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { AdminDateFilter } from "@/components/admin/shared/AdminDateFilter";
@@ -33,23 +34,39 @@ export function AdminAnalyticsFilters({
 }: AnalyticsFilterState) {
   const locale = useLocale();
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [optimisticInventoryType, setOptimisticInventoryType] =
+    useState<AnalyticsInventoryFilter>(inventoryType);
+
+  useEffect(() => {
+    setOptimisticInventoryType(inventoryType);
+  }, [inventoryType]);
 
   function navigate(next: AnalyticsFilterState) {
-    router.push(analyticsQueryUrl(next));
+    if (isPending) return;
+    const href = analyticsQueryUrl(next);
+    startTransition(() => {
+      router.push(href);
+    });
   }
 
   return (
-    <div className="mb-6 flex flex-row flex-wrap items-end gap-2 sm:gap-3">
+    <div
+      className="mb-6 flex flex-row flex-wrap items-end gap-2 sm:gap-3"
+      aria-busy={isPending}
+    >
       <label className="flex min-w-40 flex-1 flex-col gap-1.5">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           {t(locale, "admin.analytics.inventoryType")}
         </span>
         <select
-          className={adminSelectTriggerClassName}
-          value={inventoryType}
+          className={`${adminSelectTriggerClassName} disabled:cursor-not-allowed disabled:bg-slate-50`}
+          value={optimisticInventoryType}
+          disabled={isPending}
           aria-label={t(locale, "admin.analytics.inventoryType")}
           onChange={(e) => {
             const value = e.target.value as AnalyticsInventoryFilter;
+            setOptimisticInventoryType(value);
             navigate({ inventoryType: value, dateFilter });
           }}
         >
@@ -68,16 +85,22 @@ export function AdminAnalyticsFilters({
         </span>
         <AdminDateFilter
           value={dateFilter}
+          disabled={isPending}
           aria-label={t(locale, "admin.analytics.dateRange")}
           presets={DATE_FILTER_PRESETS.map((id) => ({
             id,
             label: t(locale, DATE_PRESET_LABEL_KEY[id]),
           }))}
           onChange={(next: DateFilterValue) =>
-            navigate({ inventoryType, dateFilter: next })
+            navigate({ inventoryType: optimisticInventoryType, dateFilter: next })
           }
         />
       </label>
+      {isPending ? (
+        <p className="w-full text-xs text-slate-500" role="status">
+          {t(locale, "admin.common.loading")}
+        </p>
+      ) : null}
     </div>
   );
 }

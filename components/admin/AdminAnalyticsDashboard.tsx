@@ -212,14 +212,6 @@ export function AdminAnalyticsDashboard({
         inventoryType={data.inventoryType}
         dateFilter={data.dateFilter}
       />
-      {data.neonError ? (
-        <div
-          className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-          role="status"
-        >
-          {t(locale, "admin.analytics.purchaseUnavailable", { error: data.neonError })}
-        </div>
-      ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
