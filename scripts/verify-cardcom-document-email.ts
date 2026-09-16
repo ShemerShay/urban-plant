@@ -30,8 +30,10 @@ async function main(): Promise<void> {
   } = await import("../lib/cardcomDocuments");
   const { parseCardcomLowProfileResult } = await import("../lib/cardcom");
   const {
+    buildInternalOrderNotificationHtml,
     buildPurchaseEmailHtml,
     PURCHASE_EMAIL_SUBJECT,
+    URBAN_PLANT_NOTIFICATION_TO,
   } = await import("../lib/purchaseEmail");
   const {
     claimPurchaseEmailProcessing,
@@ -136,6 +138,7 @@ async function main(): Promise<void> {
       "utf8",
     );
     assert.ok(routeSrc.includes("sendPurchaseEmail"));
+    assert.ok(routeSrc.includes("sendInternalOrderNotificationEmail"));
     assert.ok(!routeSrc.includes("buildEmailHtml"));
 
     const htmlPickup = buildPurchaseEmailHtml({
@@ -186,6 +189,44 @@ async function main(): Promise<void> {
         "Thank you for your purchase from Urban Plant. Your order was received.",
       ),
     );
+    assert.ok(helperSrc.includes("to: customerEmail"));
+    assert.ok(helperSrc.includes("const to = URBAN_PLANT_NOTIFICATION_TO"));
+    assert.equal(URBAN_PLANT_NOTIFICATION_TO, "beherha@gmail.com");
+    assert.ok(!/\bcc\s*:/.test(helperSrc));
+    assert.ok(!/\bbcc\s*:/.test(helperSrc));
+    assert.ok(helperSrc.includes("customer_send_failed"));
+    assert.ok(helperSrc.includes("urban_plant_send_failed"));
+
+    const processSrc = readFileSync(
+      path.join(root, "lib/processOrderDocumentAndEmail.ts"),
+      "utf8",
+    );
+    assert.ok(processSrc.includes("sendInternalNotification"));
+    assert.ok(processSrc.includes("sendEmail(customerPayload)"));
+    assert.ok(processSrc.includes("sendInternal(internalPayload)"));
+
+    const htmlInternal = buildInternalOrderNotificationHtml({
+      customerEmail: "buyer@example.com",
+      fullName: "Ada Lovelace",
+      plantName: "Monstera",
+      priceDisplay: "₪89",
+      fulfillmentMethod: "delivery",
+      phone: "0546605603",
+      address: "Dizengoff 10",
+      apartmentOrNotes: "floor 2",
+      locationName: "Cafe Partner",
+      orderId: "order-verify-1",
+    });
+    assert.ok(htmlInternal.includes("buyer@example.com"));
+    assert.ok(htmlInternal.includes("Ada Lovelace"));
+    assert.ok(htmlInternal.includes("Monstera"));
+    assert.ok(htmlInternal.includes("0546605603"));
+    assert.ok(htmlInternal.includes("Dizengoff 10"));
+    assert.ok(htmlInternal.includes("floor 2"));
+    assert.ok(htmlInternal.includes("Cafe Partner"));
+    assert.ok(htmlInternal.includes("order-verify-1"));
+    assert.ok(htmlInternal.includes("The customer was not copied"));
+    assert.ok(!htmlInternal.includes("Thank you for your purchase from Urban Plant"));
   }
 
   // --- DB integration ---
@@ -294,6 +335,7 @@ async function main(): Promise<void> {
 
       let createCalls = 0;
       let emailCalls = 0;
+      let internalCalls = 0;
       const result = await processCardcomWebhook(
         { LowProfileId: lp },
         {
@@ -319,9 +361,19 @@ async function main(): Promise<void> {
               bytes: pdfBytes,
               filename: "urban-plant-800001.pdf",
             }),
-            sendEmail: async () => {
+            sendEmail: async (params) => {
               emailCalls += 1;
+              assert.equal(params.customerEmail, "doc-tx@example.com");
+              assert.ok(!("cc" in params));
+              assert.ok(!("bcc" in params));
               return { messageId: "mock-1" };
+            },
+            sendInternalNotification: async (params) => {
+              internalCalls += 1;
+              assert.equal(params.customerEmail, "doc-tx@example.com");
+              assert.equal(params.phone, "0546605603");
+              assert.ok(params.orderId);
+              return { messageId: "internal-1" };
             },
           },
         },
@@ -341,6 +393,7 @@ async function main(): Promise<void> {
       assert.equal(order?.cardcomDocumentNumber, 800001);
       assert.equal(createCalls, 1);
       assert.equal(emailCalls, 1);
+      assert.equal(internalCalls, 1);
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
       await setPosSpotStatus(available.id, "available");
     }
@@ -356,6 +409,7 @@ async function main(): Promise<void> {
       });
       let createCalls = 0;
       let emailCalls = 0;
+      let internalCalls = 0;
       const deps = {
         getLpResult: mockLp({
           lowProfileId: lp,
@@ -379,6 +433,10 @@ async function main(): Promise<void> {
             emailCalls += 1;
             return { messageId: "mock-dup" };
           },
+          sendInternalNotification: async () => {
+            internalCalls += 1;
+            return { messageId: "internal-dup" };
+          },
         },
       };
       const first = await processCardcomWebhook({ LowProfileId: lp }, deps);
@@ -387,6 +445,7 @@ async function main(): Promise<void> {
       assert.equal(second.outcome, "already_finalized");
       assert.equal(createCalls, 1);
       assert.equal(emailCalls, 1);
+      assert.equal(internalCalls, 1);
       const attempt = await getPaymentAttemptById(attemptId);
       assert.ok(attempt?.finalizedOrderId);
       createdOrderIds.push(attempt!.finalizedOrderId!);
@@ -450,6 +509,7 @@ async function main(): Promise<void> {
       });
       let createCalls = 0;
       let emailCalls = 0;
+      let internalCalls = 0;
       await processCardcomWebhook(
         { LowProfileId: lp },
         {
@@ -490,10 +550,15 @@ async function main(): Promise<void> {
           emailCalls += 1;
           return { messageId: "reuse" };
         },
+        sendInternalNotification: async () => {
+          internalCalls += 1;
+          return { messageId: "internal-reuse" };
+        },
       });
       assert.equal(result.outcome, "sent");
       assert.equal(createCalls, 0);
       assert.equal(emailCalls, 1);
+      assert.equal(internalCalls, 1);
       assert.equal((await getOrderById(orderId))?.purchaseEmailStatus, "sent");
       await setPosSpotStatus(available.id, "available");
     }
@@ -508,6 +573,7 @@ async function main(): Promise<void> {
         lowProfileId: lp,
       });
       let emailCalls = 0;
+      let internalCalls = 0;
       await processCardcomWebhook(
         { LowProfileId: lp },
         {
@@ -529,6 +595,10 @@ async function main(): Promise<void> {
               emailCalls += 1;
               return { messageId: "should-not" };
             },
+            sendInternalNotification: async () => {
+              internalCalls += 1;
+              return { messageId: "internal-should-not" };
+            },
           },
         },
       );
@@ -541,6 +611,7 @@ async function main(): Promise<void> {
       assert.equal(order?.purchaseEmailStatus, "failed");
       assert.ok(order?.purchaseEmailLastError?.includes("PDF"));
       assert.equal(emailCalls, 0);
+      assert.equal(internalCalls, 0);
       assert.equal(order?.purchaseEmailSentAt, undefined);
       await setPosSpotStatus(available.id, "available");
     }
@@ -556,6 +627,7 @@ async function main(): Promise<void> {
       });
       let createCalls = 0;
       let emailCalls = 0;
+      let internalCalls = 0;
       let failOnce = true;
 
       await processCardcomWebhook(
@@ -589,6 +661,10 @@ async function main(): Promise<void> {
               assert.ok(isPdfBuffer(params.attachments![0]!.content));
               return { messageId: "retry-ok" };
             },
+            sendInternalNotification: async () => {
+              internalCalls += 1;
+              return { messageId: "internal-retry" };
+            },
           },
         },
       );
@@ -602,6 +678,7 @@ async function main(): Promise<void> {
       assert.equal(order?.purchaseEmailStatus, "failed");
       assert.equal(createCalls, 1);
       assert.equal(emailCalls, 0);
+      assert.equal(internalCalls, 0);
 
       const retry = await processOrderDocumentAndEmail(orderId, {
         createDocument: async () => {
@@ -619,6 +696,10 @@ async function main(): Promise<void> {
           emailCalls += 1;
           return { messageId: "retry-ok" };
         },
+        sendInternalNotification: async () => {
+          internalCalls += 1;
+          return { messageId: "internal-retry" };
+        },
       });
       assert.equal(retry.outcome, "sent");
       order = await getOrderById(orderId);
@@ -628,6 +709,7 @@ async function main(): Promise<void> {
       assert.equal(order?.purchaseEmailLastError, undefined);
       assert.equal(createCalls, 2);
       assert.equal(emailCalls, 1);
+      assert.equal(internalCalls, 1);
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
       await setPosSpotStatus(available.id, "available");
     }
@@ -674,6 +756,9 @@ async function main(): Promise<void> {
         },
         sendEmail: async () => {
           throw new Error("must not email before paid");
+        },
+        sendInternalNotification: async () => {
+          throw new Error("must not notify before paid");
         },
       });
       assert.equal(result.outcome, "skipped");
@@ -738,6 +823,9 @@ async function main(): Promise<void> {
           sendEmail: async () => {
             throw new Error("must not email flower without email");
           },
+          sendInternalNotification: async () => {
+            throw new Error("must not notify flower without email");
+          },
         });
         assert.equal(result.outcome, "skipped");
         assert.equal(result.error, "flower_no_customer_email");
@@ -746,6 +834,113 @@ async function main(): Promise<void> {
       } finally {
         await deletePlant(flowerId);
       }
+    }
+
+    // Independent sends: customer failure still notifies Urban Plant.
+    {
+      const lp = `lp-doc-custfail-${randomUUID()}`;
+      const txId = 700000007;
+      const { attemptId, price } = await seedAttempt({
+        email: "doc-custfail@example.com",
+        fulfillment: "delivery",
+        lowProfileId: lp,
+      });
+      let emailCalls = 0;
+      let internalCalls = 0;
+      await processCardcomWebhook(
+        { LowProfileId: lp },
+        {
+          getLpResult: mockLp({
+            lowProfileId: lp,
+            returnValue: attemptId,
+            amount: price,
+            transactionId: txId,
+          }),
+          documentEmailDeps: {
+            createDocument: async () => ({
+              documentType: "TaxInvoiceAndReceipt",
+              documentNumber: 800007,
+            }),
+            fetchPdf: async () => ({
+              bytes: pdfBytes,
+              filename: "custfail.pdf",
+            }),
+            sendEmail: async () => {
+              emailCalls += 1;
+              throw new Error("customer SMTP failed");
+            },
+            sendInternalNotification: async (params) => {
+              internalCalls += 1;
+              assert.equal(params.customerEmail, "doc-custfail@example.com");
+              assert.ok(!("cc" in params));
+              assert.ok(!("bcc" in params));
+              return { messageId: "internal-custfail" };
+            },
+          },
+        },
+      );
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
+      assert.equal(order?.orderStatus, "sold");
+      assert.equal(order?.purchaseEmailStatus, "failed");
+      assert.ok(order?.purchaseEmailLastError?.includes("customer SMTP failed"));
+      assert.equal(emailCalls, 1);
+      assert.equal(internalCalls, 1);
+      await setPosSpotStatus(available.id, "available");
+    }
+
+    // Independent sends: Urban Plant failure does not block customer confirmation.
+    {
+      const lp = `lp-doc-stafffail-${randomUUID()}`;
+      const txId = 700000008;
+      const { attemptId, price } = await seedAttempt({
+        email: "doc-stafffail@example.com",
+        fulfillment: "pickup",
+        lowProfileId: lp,
+      });
+      let emailCalls = 0;
+      let internalCalls = 0;
+      await processCardcomWebhook(
+        { LowProfileId: lp },
+        {
+          getLpResult: mockLp({
+            lowProfileId: lp,
+            returnValue: attemptId,
+            amount: price,
+            transactionId: txId,
+          }),
+          documentEmailDeps: {
+            createDocument: async () => ({
+              documentType: "TaxInvoiceAndReceipt",
+              documentNumber: 800008,
+            }),
+            fetchPdf: async () => ({
+              bytes: pdfBytes,
+              filename: "stafffail.pdf",
+            }),
+            sendEmail: async () => {
+              emailCalls += 1;
+              return { messageId: "customer-ok" };
+            },
+            sendInternalNotification: async () => {
+              internalCalls += 1;
+              throw new Error("urban plant SMTP failed");
+            },
+          },
+        },
+      );
+      const attempt = await getPaymentAttemptById(attemptId);
+      assert.ok(attempt?.finalizedOrderId);
+      createdOrderIds.push(attempt!.finalizedOrderId!);
+      const order = await getOrderById(attempt!.finalizedOrderId!);
+      assert.equal(order?.orderStatus, "picked_up");
+      assert.equal(order?.purchaseEmailStatus, "sent");
+      assert.ok(order?.purchaseEmailSentAt);
+      assert.equal(emailCalls, 1);
+      assert.equal(internalCalls, 1);
+      await setPosSpotStatus(available.id, "available");
     }
 
     // 9: CreateDocument request uses IsSendByEmail false in live builder path
