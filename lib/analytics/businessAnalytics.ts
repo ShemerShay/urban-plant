@@ -49,6 +49,8 @@ export type BusinessAnalyticsSnapshot = {
   /** Scan-level: pos_scan events with a later-or-equal purchase_completed in the same session and spot. */
   scanToCheckoutPercent: number | null;
   scansOverTime: AnalyticsTimePoint[];
+  /** Set when the series HogQL query failed — not the same as zero scans. */
+  scansOverTimeError: string | null;
   topPlantsByScans: AnalyticsNamedCount[];
   topPlantsByPurchases: AnalyticsNamedCount[];
   scansByPartner: AnalyticsNamedCount[];
@@ -73,14 +75,14 @@ function hogqlQuote(value: string): string {
 }
 
 function hogqlTimeBucketExpr(granularity: TimeGranularity): string {
-  const tz = hogqlQuote(BUSINESS_TIME_ZONE);
+  const zoned = `toTimeZone(timestamp, ${hogqlQuote(BUSINESS_TIME_ZONE)})`;
   switch (granularity) {
     case "hour":
-      return `toStartOfHour(timestamp, ${tz})`;
+      return `toStartOfHour(${zoned})`;
     case "day":
-      return `toStartOfDay(timestamp, ${tz})`;
+      return `toStartOfDay(${zoned})`;
     case "week":
-      return `toStartOfWeek(timestamp, 0, ${tz})`;
+      return `toStartOfWeek(${zoned}, 0)`;
   }
 }
 
@@ -282,6 +284,7 @@ function emptySnapshot(
     inventoryTypeFallback: "plants",
     scanToCheckoutPercent: null,
     scansOverTime: [],
+    scansOverTimeError: errors.posthogError,
     topPlantsByScans: [],
     topPlantsByPurchases: [],
     scansByPartner: [],
@@ -603,6 +606,7 @@ LIMIT 5000
         scans: hogqlRowNumber(row, 1),
       }))
     : [];
+  const scansOverTimeError = series.ok ? null : series.error;
 
   const plantBuckets = new Map<string, number>();
   const partnerBuckets = new Map<string, number>();
@@ -631,6 +635,7 @@ LIMIT 5000
     inventoryTypeFallback: "plants",
     scanToCheckoutPercent,
     scansOverTime,
+    scansOverTimeError,
     topPlantsByScans: topNamedCounts(plantBuckets, 20),
     topPlantsByPurchases,
     scansByPartner: topNamedCounts(partnerBuckets, 20),
