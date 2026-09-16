@@ -18,6 +18,7 @@ import {
   hogqlRowNumber,
   hogqlRowString,
   runHogQLQuery,
+  type PostHogQueryError,
   type PostHogQueryOutcome,
 } from "@/lib/analytics/posthogQuery";
 
@@ -113,7 +114,11 @@ const INTERNAL_IDS_QUERY_LIMIT = 5000;
 
 type InternalIdsOutcome =
   | { ok: true; ids: string[] }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code: PostHogQueryError["code"] | "limit" };
+
+type InternalIdsCacheStatus = "hit" | "miss" | "wait";
+
+type InternalIdsLookup = InternalIdsOutcome & { cache: InternalIdsCacheStatus };
 
 let internalIdsCache: { expiresAt: number; value: Extract<InternalIdsOutcome, { ok: true }> } | null =
   null;
@@ -129,7 +134,7 @@ LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
 `.trim();
   const result = await runHogQLQuery(sql, "admin_analytics_internal_ids");
   if (!result.ok) {
-    return { ok: false, error: result.error };
+    return { ok: false, error: result.error, code: result.code };
   }
   const ids = result.data.results
     .map((row) => hogqlRowString(row, 0).trim())
@@ -138,6 +143,7 @@ LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
     return {
       ok: false,
       error: `Internal distinct_id list hit limit ${INTERNAL_IDS_QUERY_LIMIT}`,
+      code: "limit",
     };
   }
   return { ok: true, ids };
@@ -147,13 +153,16 @@ LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
  * Resolve internal distinct_ids once (short TTL) and reuse across HogQL scans.
  * Failures are not cached so a later request can recover.
  */
-async function listInternalDistinctIds(): Promise<InternalIdsOutcome> {
+async function listInternalDistinctIds(): Promise<InternalIdsLookup> {
   const now = Date.now();
   if (internalIdsCache && internalIdsCache.expiresAt > now) {
-    return internalIdsCache.value;
+    return { ...internalIdsCache.value, cache: "hit" };
   }
-  if (internalIdsInflight) return internalIdsInflight;
-  internalIdsInflight = fetchInternalDistinctIds()
+  if (internalIdsInflight) {
+    const value = await internalIdsInflight;
+    return { ...value, cache: "wait" };
+  }
+  const pending = fetchInternalDistinctIds()
     .then((value) => {
       if (value.ok) {
         internalIdsCache = { expiresAt: Date.now() + INTERNAL_IDS_TTL_MS, value };
@@ -163,7 +172,9 @@ async function listInternalDistinctIds(): Promise<InternalIdsOutcome> {
     .finally(() => {
       internalIdsInflight = null;
     });
-  return internalIdsInflight;
+  internalIdsInflight = pending;
+  const value = await pending;
+  return { ...value, cache: "miss" };
 }
 
 function hogqlExcludeInternalDevices(internalDistinctIds: string[]): string {
@@ -230,9 +241,25 @@ function topNamedCounts(
     .slice(0, limit);
 }
 
-function logAnalyticsError(source: string, error: string | null): void {
-  if (!error) return;
-  console.error(`[admin-analytics] ${source}: ${error}`);
+type AnalyticsLogFields = Record<string, string | number | boolean | null>;
+
+function logAnalyticsEvent(loadId: string, event: string, fields: AnalyticsLogFields = {}): void {
+  console.info(`[admin-analytics] ${event}`, { loadId, ...fields });
+}
+
+function looksLikeTimeout(error: string): boolean {
+  return /timeout|timed out|aborted/i.test(error);
+}
+
+function hogqlLogFields(outcome: PostHogQueryOutcome): AnalyticsLogFields {
+  if (outcome.ok) return { ok: true, code: null, timeout: false };
+  return { ok: false, code: outcome.code, timeout: outcome.code === "timeout" };
+}
+
+async function withDuration<T>(work: Promise<T>): Promise<{ value: T; ms: number }> {
+  const started = Date.now();
+  const value = await work;
+  return { value, ms: Date.now() - started };
 }
 
 function emptySnapshot(
@@ -240,8 +267,6 @@ function emptySnapshot(
   timeGranularity: TimeGranularity,
   errors: { posthogError: string | null; neonError: string | null },
 ): BusinessAnalyticsSnapshot {
-  logAnalyticsError("posthog", errors.posthogError);
-  logAnalyticsError("neon", errors.neonError);
   return {
     inventoryType: filters.inventoryType,
     dateFilter: filters.dateFilter,
@@ -273,12 +298,28 @@ function emptySnapshot(
 export async function loadBusinessAnalytics(
   filters: AnalyticsFilterState,
 ): Promise<BusinessAnalyticsSnapshot> {
+  const loadId = crypto.randomUUID();
+  const started = Date.now();
+  logAnalyticsEvent(loadId, "load_start");
   const bounds = resolveDateFilterBounds(filters.dateFilter);
   const granularity = timeGranularityForCalendarRange(bounds.from, bounds.to);
   try {
-    return await loadBusinessAnalyticsInner(filters, bounds, granularity);
+    const snapshot = await loadBusinessAnalyticsInner(filters, bounds, granularity, loadId);
+    logAnalyticsEvent(loadId, "load_finish", {
+      ms: Date.now() - started,
+      thrown: false,
+      posthogFailed: snapshot.posthogError != null,
+      neonFailed: snapshot.neonError != null,
+    });
+    return snapshot;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Analytics load failed";
+    logAnalyticsEvent(loadId, "load_finish", {
+      ms: Date.now() - started,
+      thrown: true,
+      errorName: err instanceof Error ? err.name : "unknown",
+      timeout: looksLikeTimeout(message),
+    });
     return emptySnapshot(filters, granularity, {
       posthogError: message,
       neonError: message,
@@ -290,6 +331,7 @@ async function loadBusinessAnalyticsInner(
   filters: AnalyticsFilterState,
   bounds: ReturnType<typeof resolveDateFilterBounds>,
   granularity: TimeGranularity,
+  loadId: string,
 ): Promise<BusinessAnalyticsSnapshot> {
   const timeFilter = `timestamp >= ${hogqlDateTime(bounds.startInclusive)} AND timestamp < ${hogqlDateTime(bounds.endExclusive)}`;
   const bucketExpr = hogqlTimeBucketExpr(granularity);
@@ -317,11 +359,29 @@ async function loadBusinessAnalyticsInner(
       error: err instanceof Error ? err.message : "Neon purchase query failed",
     }));
 
-  const [internalIdsResult, plantIdsResult, neonResult] = await Promise.all([
-    listInternalDistinctIds(),
+  const [internalTimed, plantIdsResult, neonTimed] = await Promise.all([
+    withDuration(listInternalDistinctIds()),
     plantIdsPromise,
-    neonPromise,
+    withDuration(neonPromise),
   ]);
+  const internalIdsResult = internalTimed.value;
+  const neonResult = neonTimed.value;
+
+  logAnalyticsEvent(loadId, "op", {
+    op: "internal_ids",
+    ms: internalTimed.ms,
+    ok: internalIdsResult.ok,
+    cache: internalIdsResult.cache,
+    timeout: internalIdsResult.ok ? false : internalIdsResult.code === "timeout",
+    code: internalIdsResult.ok ? null : internalIdsResult.code,
+  });
+  logAnalyticsEvent(loadId, "op", {
+    op: "neon",
+    ms: neonTimed.ms,
+    ok: neonResult.ok,
+    timeout: neonResult.ok ? false : looksLikeTimeout(neonResult.error),
+    code: neonResult.ok ? null : "neon_failed",
+  });
 
   const neonError = neonResult.ok ? null : neonResult.error;
   const purchases = neonResult.ok ? neonResult.data.purchases : null;
@@ -434,19 +494,36 @@ GROUP BY plant_name, partner_name, pocket_name
 LIMIT 5000
 `.trim();
 
-  const [kpis, series, breakdowns] = await Promise.all([
-    runHogQLQuery(kpisSql, `admin_analytics_kpis`),
-    runHogQLQuery(seriesSql, `admin_analytics_series`),
-    runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`),
+  const [kpisTimed, seriesTimed, breakdownsTimed] = await Promise.all([
+    withDuration(runHogQLQuery(kpisSql, `admin_analytics_kpis`)),
+    withDuration(runHogQLQuery(seriesSql, `admin_analytics_series`)),
+    withDuration(runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`)),
   ]);
+  const kpis = kpisTimed.value;
+  const series = seriesTimed.value;
+  const breakdowns = breakdownsTimed.value;
+
+  logAnalyticsEvent(loadId, "op", {
+    op: "kpis",
+    ms: kpisTimed.ms,
+    ...hogqlLogFields(kpis),
+  });
+  logAnalyticsEvent(loadId, "op", {
+    op: "series",
+    ms: seriesTimed.ms,
+    ...hogqlLogFields(series),
+  });
+  logAnalyticsEvent(loadId, "op", {
+    op: "breakdowns",
+    ms: breakdownsTimed.ms,
+    ...hogqlLogFields(breakdowns),
+  });
 
   const posthogErrors = [kpis, series, breakdowns]
     .filter((r): r is Extract<PostHogQueryOutcome, { ok: false }> => !r.ok)
     .map((r) => r.error);
   const posthogError =
     posthogErrors.length > 0 ? [...new Set(posthogErrors)].join(" · ") : null;
-  logAnalyticsError("posthog", posthogError);
-  logAnalyticsError("neon", neonError);
 
   let totalScans: number | null = null;
   let uniqueScanners: number | null = null;
