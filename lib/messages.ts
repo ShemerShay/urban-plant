@@ -607,6 +607,7 @@ const en = {
   "admin.image.unprocessable":
     "This image could not be processed. Please choose a different JPEG, PNG, WebP, or GIF image.",
   "admin.analytics.empty": "No data in this range.",
+  "admin.analytics.scansOverTimeUnavailable": "Couldn't load scans over time.",
   "admin.analytics.title": "Analytics",
   "admin.analytics.subtitle": "Scans from PostHog. Purchases from verified successful orders.",
   "admin.analytics.dateRange": "Date range",
@@ -1273,6 +1274,7 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.qr.downloadQrSvg": "הורדת QR (SVG)",
   "admin.qr.backPartners": "חזרה לשותפים",
   "admin.analytics.empty": "אין נתונים בטווח זה.",
+  "admin.analytics.scansOverTimeUnavailable": "לא ניתן לטעון סריקות לאורך זמן.",
   "admin.analytics.title": "אנליטיקה",
   "admin.analytics.subtitle": "סריקות מ־PostHog. רכישות מהזמנות מאומתות שהושלמו.",
   "admin.analytics.dateRange": "טווח תאריכים",

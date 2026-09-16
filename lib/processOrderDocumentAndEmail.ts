@@ -26,13 +26,18 @@ import {
   saveCardcomDocumentOnOrder,
 } from "@/lib/ordersStorage";
 import { getPlantById } from "@/lib/plantCatalog";
-import { sendPurchaseEmail } from "@/lib/purchaseEmail";
+import {
+  sendInternalOrderNotificationEmail,
+  sendPurchaseEmail,
+  URBAN_PLANT_NOTIFICATION_TO,
+} from "@/lib/purchaseEmail";
 import { isVerifiedPaidOrderStatus } from "@/lib/status";
 
 export type ProcessOrderDocumentAndEmailDeps = {
   createDocument?: typeof createCardcomDocument;
   fetchPdf?: typeof fetchCardcomDocumentPdf;
   sendEmail?: typeof sendPurchaseEmail;
+  sendInternalNotification?: typeof sendInternalOrderNotificationEmail;
 };
 
 export type ProcessOrderDocumentAndEmailResult = {
@@ -205,11 +210,14 @@ export async function processOrderDocumentAndEmail(
     }
 
     const sendEmail = deps.sendEmail ?? sendPurchaseEmail;
-    await sendEmail({
+    const sendInternal =
+      deps.sendInternalNotification ?? sendInternalOrderNotificationEmail;
+    const priceDisplay = formatPrice(order.price, "ILS");
+    const customerPayload = {
       customerEmail,
       fullName: order.fullName,
       plantName: publicPlantName,
-      priceDisplay: formatPrice(order.price, "ILS"),
+      priceDisplay,
       fulfillmentMethod: order.fulfillmentMethod,
       ...(careInstructions.length > 0 ? { careInstructions } : {}),
       attachments: [
@@ -219,7 +227,59 @@ export async function processOrderDocumentAndEmail(
           contentType: "application/pdf",
         },
       ],
-    });
+      logOrderId: order.orderId,
+    };
+    const internalPayload = {
+      customerEmail,
+      fullName: order.fullName,
+      plantName: publicPlantName,
+      priceDisplay,
+      fulfillmentMethod: order.fulfillmentMethod,
+      phone: order.phone,
+      address: order.address,
+      apartmentOrNotes: order.apartmentOrNotes,
+      locationName: order.locationName ?? undefined,
+      locationAddress: order.locationAddress ?? undefined,
+      orderId: order.orderId,
+    };
+
+    let customerSendError: string | undefined;
+    try {
+      await sendEmail(customerPayload);
+      console.info("[purchase-email] customer_send_ok", {
+        role: "customer",
+        orderId: order.orderId,
+        to: customerEmail,
+      });
+    } catch (error) {
+      customerSendError = safeErrorMessage(error);
+      console.error("[purchase-email] customer_send_failed", {
+        role: "customer",
+        orderId: order.orderId,
+        to: customerEmail,
+        error: customerSendError,
+      });
+    }
+
+    try {
+      await sendInternal(internalPayload);
+      console.info("[purchase-email] urban_plant_send_ok", {
+        role: "urban_plant",
+        orderId: order.orderId,
+        to: URBAN_PLANT_NOTIFICATION_TO,
+      });
+    } catch (error) {
+      console.error("[purchase-email] urban_plant_send_failed", {
+        role: "urban_plant",
+        orderId: order.orderId,
+        to: URBAN_PLANT_NOTIFICATION_TO,
+        error: safeErrorMessage(error),
+      });
+    }
+
+    if (customerSendError) {
+      throw new Error(customerSendError);
+    }
 
     const marked = await markPurchaseEmailSent(order.orderId);
     if (!marked) {
