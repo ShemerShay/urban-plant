@@ -73,14 +73,6 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
           aria-orientation="vertical"
         >
           <Link
-            href={routes.admin.index()}
-            role="menuitem"
-            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-            onClick={() => setOpen(false)}
-          >
-            {t(locale, "admin.orders.adminRoutes")}
-          </Link>
-          <Link
             href={routes.admin.ordersNew()}
             role="menuitem"
             className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"

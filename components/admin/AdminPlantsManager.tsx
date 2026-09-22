@@ -1020,12 +1020,6 @@ export function AdminPlantsManager({
           >
             {t(locale, "admin.inventoryTypes.title")}
           </Link>
-           <Link
-            href={routes.admin.index()}
-            className="text-sm font-medium text-emerald-700 underline underline-offset-2"
-          >
-            {t(locale, "admin.common.admin")}
-          </Link>
           <button
             type="button"
             onClick={() => {

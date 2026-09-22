@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AdminAnalyticsFilters } from "@/components/admin/AdminAnalyticsFilters";
@@ -6,7 +5,6 @@ import type { BusinessAnalyticsSnapshot } from "@/lib/analytics/businessAnalytic
 import { formatInstantInBusinessTimeZone } from "@/lib/dateFilter";
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { routes } from "@/lib/routes";
 
 function intlLocale(locale: Locale): string {
   return locale === "he" ? "he-IL" : "en-US";
@@ -190,13 +188,7 @@ export function AdminAnalyticsDashboard({
     >
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link
-            href={routes.admin.index()}
-            className="text-sm font-medium text-emerald-800 underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/55"
-          >
-            {t(locale, "admin.common.backAdmin")}
-          </Link>
-          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
             {t(locale, "admin.brand")}
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
