@@ -18,8 +18,12 @@ import {
   hogqlRowNumber,
   hogqlRowString,
   runHogQLQuery,
+  type PostHogQueryError,
   type PostHogQueryOutcome,
 } from "@/lib/analytics/posthogQuery";
+
+/** Outer load deadline so Analytics RSC always returns well before Netlify's 60s cap. */
+export const ANALYTICS_LOAD_BUDGET_MS = 25_000;
 
 export type AnalyticsNamedCount = {
   name: string;
@@ -45,6 +49,8 @@ export type BusinessAnalyticsSnapshot = {
   /** Scan-level: pos_scan events with a later-or-equal purchase_completed in the same session and spot. */
   scanToCheckoutPercent: number | null;
   scansOverTime: AnalyticsTimePoint[];
+  /** Set when the series HogQL query failed — not the same as zero scans. */
+  scansOverTimeError: string | null;
   topPlantsByScans: AnalyticsNamedCount[];
   topPlantsByPurchases: AnalyticsNamedCount[];
   scansByPartner: AnalyticsNamedCount[];
@@ -69,14 +75,14 @@ function hogqlQuote(value: string): string {
 }
 
 function hogqlTimeBucketExpr(granularity: TimeGranularity): string {
-  const tz = hogqlQuote(BUSINESS_TIME_ZONE);
+  const zoned = `toTimeZone(timestamp, ${hogqlQuote(BUSINESS_TIME_ZONE)})`;
   switch (granularity) {
     case "hour":
-      return `toStartOfHour(timestamp, ${tz})`;
+      return `toStartOfHour(${zoned})`;
     case "day":
-      return `toStartOfDay(timestamp, ${tz})`;
+      return `toStartOfDay(${zoned})`;
     case "week":
-      return `toStartOfWeek(timestamp, 0, ${tz})`;
+      return `toStartOfWeek(${zoned}, 0)`;
   }
 }
 
@@ -113,13 +119,17 @@ const INTERNAL_IDS_QUERY_LIMIT = 5000;
 
 type InternalIdsOutcome =
   | { ok: true; ids: string[] }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code: PostHogQueryError["code"] | "limit" };
+
+type InternalIdsCacheStatus = "hit" | "miss" | "wait";
+
+type InternalIdsLookup = InternalIdsOutcome & { cache: InternalIdsCacheStatus };
 
 let internalIdsCache: { expiresAt: number; value: Extract<InternalIdsOutcome, { ok: true }> } | null =
   null;
 let internalIdsInflight: Promise<InternalIdsOutcome> | null = null;
 
-async function fetchInternalDistinctIds(): Promise<InternalIdsOutcome> {
+async function fetchInternalDistinctIds(signal?: AbortSignal): Promise<InternalIdsOutcome> {
   const sql = `
 SELECT DISTINCT toString(distinct_id) AS id
 FROM events
@@ -127,9 +137,9 @@ WHERE timestamp >= toDateTime('${INTERNAL_IDS_SINCE}')
   AND ifNull(toString(properties.is_internal), '') IN ('true', '1')
 LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
 `.trim();
-  const result = await runHogQLQuery(sql, "admin_analytics_internal_ids");
+  const result = await runHogQLQuery(sql, "admin_analytics_internal_ids", { signal });
   if (!result.ok) {
-    return { ok: false, error: result.error };
+    return { ok: false, error: result.error, code: result.code };
   }
   const ids = result.data.results
     .map((row) => hogqlRowString(row, 0).trim())
@@ -138,6 +148,7 @@ LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
     return {
       ok: false,
       error: `Internal distinct_id list hit limit ${INTERNAL_IDS_QUERY_LIMIT}`,
+      code: "limit",
     };
   }
   return { ok: true, ids };
@@ -147,13 +158,16 @@ LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
  * Resolve internal distinct_ids once (short TTL) and reuse across HogQL scans.
  * Failures are not cached so a later request can recover.
  */
-async function listInternalDistinctIds(): Promise<InternalIdsOutcome> {
+async function listInternalDistinctIds(signal?: AbortSignal): Promise<InternalIdsLookup> {
   const now = Date.now();
   if (internalIdsCache && internalIdsCache.expiresAt > now) {
-    return internalIdsCache.value;
+    return { ...internalIdsCache.value, cache: "hit" };
   }
-  if (internalIdsInflight) return internalIdsInflight;
-  internalIdsInflight = fetchInternalDistinctIds()
+  if (internalIdsInflight) {
+    const value = await internalIdsInflight;
+    return { ...value, cache: "wait" };
+  }
+  const pending = fetchInternalDistinctIds(signal)
     .then((value) => {
       if (value.ok) {
         internalIdsCache = { expiresAt: Date.now() + INTERNAL_IDS_TTL_MS, value };
@@ -163,7 +177,9 @@ async function listInternalDistinctIds(): Promise<InternalIdsOutcome> {
     .finally(() => {
       internalIdsInflight = null;
     });
-  return internalIdsInflight;
+  internalIdsInflight = pending;
+  const value = await pending;
+  return { ...value, cache: "miss" };
 }
 
 function hogqlExcludeInternalDevices(internalDistinctIds: string[]): string {
@@ -230,9 +246,25 @@ function topNamedCounts(
     .slice(0, limit);
 }
 
-function logAnalyticsError(source: string, error: string | null): void {
-  if (!error) return;
-  console.error(`[admin-analytics] ${source}: ${error}`);
+type AnalyticsLogFields = Record<string, string | number | boolean | null>;
+
+function logAnalyticsEvent(loadId: string, event: string, fields: AnalyticsLogFields = {}): void {
+  console.info(`[admin-analytics] ${event}`, { loadId, ...fields });
+}
+
+function looksLikeTimeout(error: string): boolean {
+  return /timeout|timed out|aborted/i.test(error);
+}
+
+function hogqlLogFields(outcome: PostHogQueryOutcome): AnalyticsLogFields {
+  if (outcome.ok) return { ok: true, code: null, timeout: false };
+  return { ok: false, code: outcome.code, timeout: outcome.code === "timeout" };
+}
+
+async function withDuration<T>(work: Promise<T>): Promise<{ value: T; ms: number }> {
+  const started = Date.now();
+  const value = await work;
+  return { value, ms: Date.now() - started };
 }
 
 function emptySnapshot(
@@ -240,8 +272,6 @@ function emptySnapshot(
   timeGranularity: TimeGranularity,
   errors: { posthogError: string | null; neonError: string | null },
 ): BusinessAnalyticsSnapshot {
-  logAnalyticsError("posthog", errors.posthogError);
-  logAnalyticsError("neon", errors.neonError);
   return {
     inventoryType: filters.inventoryType,
     dateFilter: filters.dateFilter,
@@ -254,6 +284,7 @@ function emptySnapshot(
     inventoryTypeFallback: "plants",
     scanToCheckoutPercent: null,
     scansOverTime: [],
+    scansOverTimeError: errors.posthogError,
     topPlantsByScans: [],
     topPlantsByPurchases: [],
     scansByPartner: [],
@@ -273,16 +304,64 @@ function emptySnapshot(
 export async function loadBusinessAnalytics(
   filters: AnalyticsFilterState,
 ): Promise<BusinessAnalyticsSnapshot> {
+  const loadId = crypto.randomUUID();
+  const started = Date.now();
+  logAnalyticsEvent(loadId, "load_start");
   const bounds = resolveDateFilterBounds(filters.dateFilter);
   const granularity = timeGranularityForCalendarRange(bounds.from, bounds.to);
+  const loadAbort = new AbortController();
+  let budgetExceeded = false;
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const budgetFallback = emptySnapshot(filters, granularity, {
+    posthogError: `Analytics load timed out after ${ANALYTICS_LOAD_BUDGET_MS / 1000}s`,
+    neonError: null,
+  });
+  const budget = new Promise<BusinessAnalyticsSnapshot>((resolve) => {
+    budgetTimer = setTimeout(() => {
+      budgetExceeded = true;
+      if (!loadAbort.signal.aborted) loadAbort.abort();
+      resolve(budgetFallback);
+    }, ANALYTICS_LOAD_BUDGET_MS);
+  });
   try {
-    return await loadBusinessAnalyticsInner(filters, bounds, granularity);
+    const inner = loadBusinessAnalyticsInner(
+      filters,
+      bounds,
+      granularity,
+      loadId,
+      loadAbort.signal,
+    ).then((snapshot) => {
+      if (budgetTimer !== undefined) {
+        clearTimeout(budgetTimer);
+        budgetTimer = undefined;
+      }
+      return snapshot;
+    });
+    const snapshot = await Promise.race([inner, budget]);
+    logAnalyticsEvent(loadId, "load_finish", {
+      ms: Date.now() - started,
+      thrown: false,
+      budgetExceeded,
+      posthogFailed: snapshot.posthogError != null,
+      neonFailed: snapshot.neonError != null,
+    });
+    return snapshot;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Analytics load failed";
+    if (!loadAbort.signal.aborted) loadAbort.abort();
+    logAnalyticsEvent(loadId, "load_finish", {
+      ms: Date.now() - started,
+      thrown: true,
+      budgetExceeded,
+      errorName: err instanceof Error ? err.name : "unknown",
+      timeout: looksLikeTimeout(message),
+    });
     return emptySnapshot(filters, granularity, {
       posthogError: message,
       neonError: message,
     });
+  } finally {
+    if (budgetTimer !== undefined) clearTimeout(budgetTimer);
   }
 }
 
@@ -290,6 +369,8 @@ async function loadBusinessAnalyticsInner(
   filters: AnalyticsFilterState,
   bounds: ReturnType<typeof resolveDateFilterBounds>,
   granularity: TimeGranularity,
+  loadId: string,
+  signal: AbortSignal,
 ): Promise<BusinessAnalyticsSnapshot> {
   const timeFilter = `timestamp >= ${hogqlDateTime(bounds.startInclusive)} AND timestamp < ${hogqlDateTime(bounds.endExclusive)}`;
   const bucketExpr = hogqlTimeBucketExpr(granularity);
@@ -317,11 +398,36 @@ async function loadBusinessAnalyticsInner(
       error: err instanceof Error ? err.message : "Neon purchase query failed",
     }));
 
-  const [internalIdsResult, plantIdsResult, neonResult] = await Promise.all([
-    listInternalDistinctIds(),
+  logAnalyticsEvent(loadId, "op_start", { op: "internal_ids" });
+  logAnalyticsEvent(loadId, "op_start", { op: "neon" });
+  const internalP = withDuration(listInternalDistinctIds(signal)).then((timed) => {
+    logAnalyticsEvent(loadId, "op", {
+      op: "internal_ids",
+      ms: timed.ms,
+      ok: timed.value.ok,
+      cache: timed.value.cache,
+      timeout: timed.value.ok ? false : timed.value.code === "timeout",
+      code: timed.value.ok ? null : timed.value.code,
+    });
+    return timed;
+  });
+  const neonP = withDuration(neonPromise).then((timed) => {
+    logAnalyticsEvent(loadId, "op", {
+      op: "neon",
+      ms: timed.ms,
+      ok: timed.value.ok,
+      timeout: timed.value.ok ? false : looksLikeTimeout(timed.value.error),
+      code: timed.value.ok ? null : "neon_failed",
+    });
+    return timed;
+  });
+  const [internalTimed, plantIdsResult, neonTimed] = await Promise.all([
+    internalP,
     plantIdsPromise,
-    neonPromise,
+    neonP,
   ]);
+  const internalIdsResult = internalTimed.value;
+  const neonResult = neonTimed.value;
 
   const neonError = neonResult.ok ? null : neonResult.error;
   const purchases = neonResult.ok ? neonResult.data.purchases : null;
@@ -434,19 +540,53 @@ GROUP BY plant_name, partner_name, pocket_name
 LIMIT 5000
 `.trim();
 
-  const [kpis, series, breakdowns] = await Promise.all([
-    runHogQLQuery(kpisSql, `admin_analytics_kpis`),
-    runHogQLQuery(seriesSql, `admin_analytics_series`),
-    runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`),
+  logAnalyticsEvent(loadId, "op_start", { op: "kpis" });
+  logAnalyticsEvent(loadId, "op_start", { op: "series" });
+  logAnalyticsEvent(loadId, "op_start", { op: "breakdowns" });
+  const kpisP = withDuration(
+    runHogQLQuery(kpisSql, `admin_analytics_kpis`, { signal }),
+  ).then((timed) => {
+    logAnalyticsEvent(loadId, "op", {
+      op: "kpis",
+      ms: timed.ms,
+      ...hogqlLogFields(timed.value),
+    });
+    return timed;
+  });
+  const seriesP = withDuration(
+    runHogQLQuery(seriesSql, `admin_analytics_series`, { signal }),
+  ).then((timed) => {
+    logAnalyticsEvent(loadId, "op", {
+      op: "series",
+      ms: timed.ms,
+      ...hogqlLogFields(timed.value),
+    });
+    return timed;
+  });
+  const breakdownsP = withDuration(
+    runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`, { signal }),
+  ).then((timed) => {
+    logAnalyticsEvent(loadId, "op", {
+      op: "breakdowns",
+      ms: timed.ms,
+      ...hogqlLogFields(timed.value),
+    });
+    return timed;
+  });
+  const [kpisTimed, seriesTimed, breakdownsTimed] = await Promise.all([
+    kpisP,
+    seriesP,
+    breakdownsP,
   ]);
+  const kpis = kpisTimed.value;
+  const series = seriesTimed.value;
+  const breakdowns = breakdownsTimed.value;
 
   const posthogErrors = [kpis, series, breakdowns]
     .filter((r): r is Extract<PostHogQueryOutcome, { ok: false }> => !r.ok)
     .map((r) => r.error);
   const posthogError =
     posthogErrors.length > 0 ? [...new Set(posthogErrors)].join(" · ") : null;
-  logAnalyticsError("posthog", posthogError);
-  logAnalyticsError("neon", neonError);
 
   let totalScans: number | null = null;
   let uniqueScanners: number | null = null;
@@ -466,6 +606,7 @@ LIMIT 5000
         scans: hogqlRowNumber(row, 1),
       }))
     : [];
+  const scansOverTimeError = series.ok ? null : series.error;
 
   const plantBuckets = new Map<string, number>();
   const partnerBuckets = new Map<string, number>();
@@ -494,6 +635,7 @@ LIMIT 5000
     inventoryTypeFallback: "plants",
     scanToCheckoutPercent,
     scansOverTime,
+    scansOverTimeError,
     topPlantsByScans: topNamedCounts(plantBuckets, 20),
     topPlantsByPurchases,
     scansByPartner: topNamedCounts(partnerBuckets, 20),

@@ -257,8 +257,12 @@ export function AdminAnalyticsDashboard({
       <div className="mt-6 space-y-4">
         <SectionCard
           title={t(locale, "admin.analytics.scansOverTime")}
-          empty={data.scansOverTime.length === 0}
-          emptyMessage={emptyMessage}
+          empty={data.scansOverTimeError != null || data.scansOverTime.length === 0}
+          emptyMessage={
+            data.scansOverTimeError != null
+              ? t(locale, "admin.analytics.scansOverTimeUnavailable")
+              : emptyMessage
+          }
         >
           <ScansOverTimeChart
             points={data.scansOverTime}

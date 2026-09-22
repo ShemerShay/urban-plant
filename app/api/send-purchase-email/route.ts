@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   isValidPurchaseEmailAddress,
+  sendInternalOrderNotificationEmail,
   sendPurchaseEmail,
+  URBAN_PLANT_NOTIFICATION_TO,
 } from "@/lib/purchaseEmail";
 
 export async function POST(request: NextRequest) {
@@ -57,20 +59,43 @@ export async function POST(request: NextRequest) {
   const fulfillmentMethod =
     fulfillmentMethodRaw === "pickup" ? "pickup" : "delivery";
 
-  try {
-    const info = await sendPurchaseEmail({
-      customerEmail,
-      fullName,
-      plantName,
-      priceDisplay,
-      fulfillmentMethod,
-    });
+  const sharedFields = {
+    customerEmail,
+    fullName,
+    plantName,
+    priceDisplay,
+    fulfillmentMethod: fulfillmentMethod as "pickup" | "delivery",
+  };
 
-    return NextResponse.json({ ok: true, id: info.messageId ?? null });
+  let customerMessageId: string | null = null;
+  let customerError: unknown;
+  try {
+    const info = await sendPurchaseEmail(sharedFields);
+    customerMessageId = info.messageId ?? null;
+    console.info("[purchase-email] customer_send_ok", {
+      role: "customer",
+      to: customerEmail,
+    });
   } catch (error) {
-    console.error("[send-purchase-email]", error);
+    customerError = error;
+    console.error("[send-purchase-email] customer_send_failed", error);
+  }
+
+  try {
+    await sendInternalOrderNotificationEmail(sharedFields);
+    console.info("[purchase-email] urban_plant_send_ok", {
+      role: "urban_plant",
+      to: URBAN_PLANT_NOTIFICATION_TO,
+    });
+  } catch (error) {
+    console.error("[send-purchase-email] urban_plant_send_failed", error);
+  }
+
+  if (customerError) {
     const message =
-      error instanceof Error ? error.message : "Failed to send confirmation email";
+      customerError instanceof Error
+        ? customerError.message
+        : "Failed to send confirmation email";
     if (
       message === "Email service is not configured" ||
       message === "Email sender is not configured"
@@ -82,4 +107,6 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: message }, { status: 502 });
   }
+
+  return NextResponse.json({ ok: true, id: customerMessageId });
 }
