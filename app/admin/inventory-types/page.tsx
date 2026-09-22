@@ -58,14 +58,6 @@ export default async function AdminInventoryTypesPage() {
         ))}
       </ul>
 
-      <p className="mt-6">
-        <Link
-          href={routes.admin.index()}
-          className="text-sm font-medium text-emerald-700 underline underline-offset-2"
-        >
-          {t(locale, "admin.common.admin")}
-        </Link>
-      </p>
     </main>
   );
 }

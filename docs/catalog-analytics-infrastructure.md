@@ -26,6 +26,13 @@ Parent branch: `catalog-analytics-infrastructure-changes`
 16. Admin moves to a reusable shell; Analytics is the default admin home.
 17. Place on POS may transfer 1 from central in the same confirm; refuse if that would invent stock. Bulk/no-POS moves stay on Inventory transfers.
 18. Catalog QR attribution uses `partner_locations.public_slug` (`/shop?src=alon-shabo-chlenov`), stored as `source_partner_id`.
+19. Extend the current partner / pocket / POS structure; do not create a parallel partner source of truth.
+20. Partner monthly revenue is a manual field in V1.
+21. Partner notes are one editable text field, not a note history. The visit checklist remains fixed, read-only copy: watering; shelf cleaning when needed and dry-leaf removal; fertilizing and plant-health check; inventory count.
+22. Partner plant count is the count of active, non-sold plant POS spots under that partner, using the existing POS status rules.
+23. Each pocket shows its active plant total. Opening a pocket groups active POS spots by plant type; each plant-type row shows its count and opens a nested accordion containing those POS spots.
+24. The POS records remain the source displayed inside partner pockets; grouping and counts are derived presentation, not a second inventory store.
+25. Do not implement new Analytics behavior yet. Revisit Catalog / Inventory / Partner analytics together from the dedicated analytics document.
 
 ---
 
