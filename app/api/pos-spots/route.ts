@@ -6,6 +6,7 @@ import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
 import { isPosAssignableOffer } from "@/lib/offerTypes";
+import { resolveSpotOffers, type PartnerPlantProduct } from "@/lib/partnerPlantSummary";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPocketById } from "@/lib/pocketStorage";
 import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";
@@ -50,18 +51,34 @@ export async function GET(request: NextRequest) {
     ? allSpots.filter((spot) => spot.partnerLocationId === partnerId)
     : allSpots;
   const posOffers = offers.filter(isPosAssignableOffer);
-  const enrichedOffers = await Promise.all(
-    posOffers.map(async (offer) => {
-      const product = await getPlantById(offer.productId);
-      return {
-        ...offer,
-        productName: product?.name ?? offer.productId,
-        currency: product?.currency ?? "ILS",
-      };
-    }),
+  const referencedOfferIds = new Set(posSpots.map((spot) => spot.currentOfferId));
+  const productIds = new Set(
+    offers
+      .filter((offer) => isPosAssignableOffer(offer) || referencedOfferIds.has(offer.id))
+      .map((offer) => offer.productId),
   );
+  const productEntries = await Promise.all(
+    Array.from(productIds).map(async (id) => [id, await getPlantById(id)] as const),
+  );
+  const productById = new Map(productEntries);
+
+  const enrichedOffers = posOffers.map((offer) => {
+    const product = productById.get(offer.productId);
+    return {
+      ...offer,
+      productName: product?.name ?? offer.productId,
+      currency: product?.currency ?? "ILS",
+    };
+  });
+  const catalogById = new Map<string, PartnerPlantProduct>();
+  for (const [id, product] of productById) {
+    if (product) catalogById.set(id, { name: product.name, inventoryType: product.inventoryType });
+  }
+
   return NextResponse.json({
     offers: enrichedOffers,
+    /** Plant metadata for every offer referenced by `posSpots`, regardless of offer status. */
+    spotOffers: resolveSpotOffers(posSpots, offers, catalogById),
     locations,
     posSpots,
   });

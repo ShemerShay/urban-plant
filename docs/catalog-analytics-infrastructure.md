@@ -34,6 +34,28 @@ Parent branch: `catalog-analytics-infrastructure-changes`
 24. The POS records remain the source displayed inside partner pockets; grouping and counts are derived presentation, not a second inventory store.
 25. Do not implement new Analytics behavior yet. Revisit Catalog / Inventory / Partner analytics together from the dedicated analytics document.
 
+### Dedicated analytics document — data-structure impact
+
+The document [MVP אנליטיקות אחרי שמר אחרי אסף](https://docs.google.com/document/d/1hVBGaWC60sCqt2GEBMl-cJSpQRM-1mjyhjpCMiXL1ag/edit) now informs the future schema even though its dashboards and calculations are not part of the current partner-page slice.
+
+- Verified Neon orders remain the sales/money source of truth; PostHog remains the scans/unique-scanners source of truth.
+- Historical calculations must use snapshots. A future placement record needs partner, pocket, spot, plant/variant, offer, consumer price, `supplier_price`, `unit_cost`, start/end timestamps, end reason, and initial-vs-restock classification.
+- A verified order needs the equivalent product/location snapshots plus the partner commission rate that applied at sale time and the PostHog distinct/session ids when available.
+- Partner commission is configurable per partner, but changing it must never rewrite historical sales. Add the live partner field together with the order snapshot in the same focused data-model slice.
+- Partner financial movements need dated, categorized rows that distinguish partner expense, general expense, and partner contribution. Placement `unit_cost` must not also be entered as an expense.
+- Reliability dates for scans, purchases, costs, and placements must be explicit metadata; missing data is unknown, not zero.
+- `partner_locations.monthly_revenue` remains the locked manual profile value. It is not a substitute for verified gross sales and will not feed the future financial analytics unless that meaning is explicitly changed.
+- `partner_locations.notes` is one current editable text value. The visit checklist is fixed UI copy and is not persisted per partner.
+- `partner_locations.setup_cost` is a manual profile value shown on the Location page. Like `monthly_revenue`, it is not a substitute for the initial-placement cost that the analytics model derives from placement snapshots.
+
+Open analytics decisions before the data-model slice:
+
+- Whether manual monthly revenue is a reported actual, a forecast, or a target.
+- Where general Urban Plant expenses are managed; the current document questions whether they belong in this application.
+- The first date from which placement and cost data can be labelled complete.
+- Whether MVP `unit_cost` is entered manually or imported from Notion.
+- The minimum PostHog linkage coverage required before conversion is shown as reliable rather than estimated.
+
 ---
 
 ## Open decisions

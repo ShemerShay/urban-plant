@@ -47,6 +47,9 @@ type PartnerDraft = {
   type: string;
   pickupDisabled: boolean;
   payments: PaymentDraft[];
+  monthlyRevenue: number;
+  setupCost: number;
+  notes: string;
 };
 
 function emptyPaymentDraft(): PaymentDraft {
@@ -66,6 +69,9 @@ function normalizePartner(partner: PartnerLocation): PartnerLocation {
     ...partner,
     pickupDisabled: Boolean(partner.pickupDisabled),
     payments: Array.isArray(partner.payments) ? partner.payments : [],
+    monthlyRevenue: Number.isFinite(partner.monthlyRevenue) ? partner.monthlyRevenue : 0,
+    setupCost: Number.isFinite(partner.setupCost) ? partner.setupCost : 0,
+    notes: partner.notes ?? "",
   };
 }
 
@@ -77,6 +83,9 @@ function normalizeDraft(draft: PartnerDraft): PartnerDraft {
     type: draft.type ?? "",
     pickupDisabled: Boolean(draft.pickupDisabled),
     payments: Array.isArray(draft.payments) ? draft.payments : [],
+    monthlyRevenue: Number.isFinite(draft.monthlyRevenue) ? draft.monthlyRevenue : 0,
+    setupCost: Number.isFinite(draft.setupCost) ? draft.setupCost : 0,
+    notes: draft.notes ?? "",
   };
 }
 
@@ -90,6 +99,9 @@ function partnerToDraft(partner: PartnerLocation): PartnerDraft {
     type: normalized.type,
     pickupDisabled: normalized.pickupDisabled,
     payments: normalized.payments.map(paymentToDraft),
+    monthlyRevenue: normalized.monthlyRevenue,
+    setupCost: normalized.setupCost,
+    notes: normalized.notes,
   };
 }
 
@@ -101,6 +113,9 @@ function emptyDraft(): PartnerDraft {
     type: "",
     pickupDisabled: false,
     payments: [],
+    monthlyRevenue: 0,
+    setupCost: 0,
+    notes: "",
   };
 }
 
@@ -175,6 +190,9 @@ function draftToPayload(
       type: normalized.type.trim(),
       pickupDisabled: normalized.pickupDisabled,
       payments,
+      monthlyRevenue: normalized.monthlyRevenue,
+      setupCost: normalized.setupCost,
+      notes: normalized.notes,
     },
   };
 }
@@ -594,7 +612,7 @@ function AdminPartnerCard({
         {!isEditing ? (
           <div className="flex shrink-0">
             <Link
-              href={routes.admin.partner(partner.id)}
+              href={routes.admin.partnerLocation(partner.partnerId, partner.id)}
               className="flex items-center px-3 text-xs font-semibold text-emerald-700 transition hover:bg-slate-50"
               onClick={(e) => e.stopPropagation()}
             >
@@ -668,7 +686,8 @@ function IconChevron({ className, open }: { className?: string; open: boolean })
   );
 }
 
-export function AdminPartnersManager() {
+/** Locations (physical branches) that belong to one partner. */
+export function AdminPartnersManager({ partnerId }: { partnerId: string }) {
   const locale = useLocale();
   const [partners, setPartners] = useState<PartnerLocation[]>([]);
   const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
@@ -725,8 +744,14 @@ export function AdminPartnersManager() {
         setPosSpots([]);
         return;
       }
-      setPartners((partnersData.partners ?? []).map(normalizePartner));
-      setPosSpots(spotsData.posSpots ?? []);
+      const locations = (partnersData.partners ?? []).filter(
+        (location) => location.partnerId === partnerId,
+      );
+      const locationIds = new Set(locations.map((location) => location.id));
+      setPartners(locations.map(normalizePartner));
+      setPosSpots(
+        (spotsData.posSpots ?? []).filter((spot) => locationIds.has(spot.partnerLocationId)),
+      );
     } catch {
       if (signal?.aborted) return;
       setLoadError(t(locale, "admin.partners.networkLoad"));
@@ -735,7 +760,7 @@ export function AdminPartnersManager() {
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, [locale]);
+  }, [locale, partnerId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -756,7 +781,7 @@ export function AdminPartnersManager() {
       const res = await fetch(routes.api.partners(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(result.payload),
+        body: JSON.stringify({ ...result.payload, partnerId }),
       });
       const data = (await res.json().catch(() => ({}))) as PartnersApiResponse;
       if (!res.ok) {
@@ -775,15 +800,10 @@ export function AdminPartnersManager() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            {t(locale, "admin.brand")}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">
-            {t(locale, "admin.partners.title")}
-          </h1>
-        </div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-emerald-950">
+          {t(locale, "admin.partners.locations.title")}
+        </h2>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -805,15 +825,11 @@ export function AdminPartnersManager() {
         </div>
       </div>
 
-      <p className="mb-6 text-sm leading-relaxed text-slate-600">
-        {t(locale, "admin.partners.intro")}
-      </p>
-
       {showCreate ? (
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <h2 className="mb-4 text-base font-semibold text-emerald-950">
-            {t(locale, "admin.partners.new")}
-          </h2>
+          <h3 className="mb-4 text-base font-semibold text-emerald-950">
+            {t(locale, "admin.partners.locations.new")}
+          </h3>
           <PartnerFieldsForm draft={createDraft} onChange={setCreateDraft} />
           {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">
@@ -825,7 +841,7 @@ export function AdminPartnersManager() {
             >
               {isCreating
                 ? t(locale, "admin.common.creating")
-                : t(locale, "admin.partners.create")}
+                : t(locale, "admin.partners.locations.create")}
             </button>
             <button
               type="button"
@@ -862,7 +878,7 @@ export function AdminPartnersManager() {
         <p className="text-sm text-red-700">{loadError}</p>
       ) : partners.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          {t(locale, "admin.partners.empty")}
+          {t(locale, "admin.partners.locations.empty")}
         </p>
       ) : filteredPartners.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">

@@ -12,6 +12,7 @@ import {
 } from "react";
 import QRCode from "react-qr-code";
 
+import { PartnerLogo } from "@/components/admin/AdminPartnerBrands";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { AdminEmptyState } from "@/components/admin/shared/AdminEmptyState";
 import { AdminEntityList } from "@/components/admin/shared/AdminEntityList";
@@ -27,6 +28,14 @@ import {
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
+import {
+  countPlantSpots,
+  groupPlantSpotsByType,
+  isCountedPlantSpot,
+  type PartnerPlantOffer,
+  type PlantCounts,
+} from "@/lib/partnerPlantSummary";
+import type { Partner } from "@/lib/partnerStorage";
 import type { Pocket } from "@/lib/pocketTypes";
 import { resolvePosSpotPocketLabel } from "@/lib/posSpotPocket";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
@@ -47,7 +56,10 @@ type OfferOption = {
 };
 
 type AdminPartnerDetailProps = {
+  /** Partner location id. */
   partnerId: string;
+  /** Partner brand that owns the location. */
+  partner: Partner;
 };
 
 function subscribeToNothing(): () => void {
@@ -153,12 +165,76 @@ function PocketSpotRow({
   );
 }
 
+function formatIls(locale: Locale, value: number): string {
+  return new Intl.NumberFormat(locale === "he" ? "he-IL" : "en-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function plantCountLabel({ active, total }: PlantCounts): string {
+  return `${active}/${total}`;
+}
+
+function PlantTypeGroup({
+  locale,
+  name,
+  spots,
+  offerNameById,
+  onEditSpot,
+  onArchiveSpot,
+}: {
+  locale: Locale;
+  name: string;
+  spots: PosSpot[];
+  offerNameById: Map<string, string>;
+  onEditSpot: (spot: PosSpot) => void | Promise<void>;
+  onArchiveSpot: (spot: PosSpot) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <li className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-slate-50"
+        aria-expanded={isOpen}
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-emerald-950">
+          {name}
+        </span>
+        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+          {plantCountLabel(countPlantSpots(spots))}
+        </span>
+        <IconChevron className="h-4 w-4 shrink-0 text-slate-500" open={isOpen} />
+      </button>
+      {isOpen ? (
+        <ul className="space-y-2 border-t border-slate-100 p-3">
+          {spots.map((spot) => (
+            <PocketSpotRow
+              key={spot.id}
+              locale={locale}
+              spot={spot}
+              offerName={offerNameById.get(spot.currentOfferId) ?? name}
+              onEdit={() => onEditSpot(spot)}
+              onArchive={() => onArchiveSpot(spot)}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
 function ExpandablePocketCard({
   locale,
   title,
   subtitle,
   spots,
   offerNameById,
+  offerById,
   actions,
   onEditSpot,
   onArchiveSpot,
@@ -168,11 +244,16 @@ function ExpandablePocketCard({
   subtitle: string;
   spots: PosSpot[];
   offerNameById: Map<string, string>;
+  offerById: Map<string, PartnerPlantOffer>;
   actions?: ReactNode;
   onEditSpot: (spot: PosSpot) => void | Promise<void>;
   onArchiveSpot: (spot: PosSpot) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const groups = useMemo(
+    () => groupPlantSpotsByType(spots, offerById),
+    [offerById, spots],
+  );
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-100 bg-slate-50/40">
@@ -198,18 +279,19 @@ function ExpandablePocketCard({
         <div className="border-t border-slate-100 px-3 pb-3 pt-3">
           {spots.length === 0 ? (
             <p className="text-sm text-slate-500">
-              {t(locale, "admin.partners.detail.noPocketsInPocket")}
+              {t(locale, "admin.partners.detail.noActivePlantsInPocket")}
             </p>
           ) : (
             <ul className="space-y-2">
-              {spots.map((spot) => (
-                <PocketSpotRow
-                  key={spot.id}
+              {groups.map((group) => (
+                <PlantTypeGroup
+                  key={group.id}
                   locale={locale}
-                  spot={spot}
-                  offerName={offerNameById.get(spot.currentOfferId) ?? "—"}
-                  onEdit={() => onEditSpot(spot)}
-                  onArchive={() => onArchiveSpot(spot)}
+                  name={group.name}
+                  spots={group.spots}
+                  offerNameById={offerNameById}
+                  onEditSpot={onEditSpot}
+                  onArchiveSpot={onArchiveSpot}
                 />
               ))}
             </ul>
@@ -220,7 +302,7 @@ function ExpandablePocketCard({
   );
 }
 
-export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
+export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDetailProps) {
   const locale = useLocale();
   const origin = useClientOrigin();
   const qrHostRef = useRef<HTMLDivElement>(null);
@@ -229,6 +311,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   const [pockets, setPockets] = useState<Pocket[]>([]);
   const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
   const [offers, setOffers] = useState<OfferOption[]>([]);
+  const [spotOffers, setSpotOffers] = useState<PartnerPlantOffer[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -255,6 +338,12 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [copyHint, setCopyHint] = useState<string | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [monthlyRevenueDraft, setMonthlyRevenueDraft] = useState("0");
+  const [setupCostDraft, setSetupCostDraft] = useState("0");
+  const [notesDraft, setNotesDraft] = useState("");
 
   const pocketNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -265,8 +354,16 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   const offerNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const offer of offers) map.set(offer.id, offer.productName);
+    for (const offer of spotOffers) map.set(offer.id, offer.productName);
     return map;
-  }, [offers]);
+  }, [offers, spotOffers]);
+
+  /** Per-row plant metadata for counting/grouping; independent of offer status. */
+  const offerById = useMemo(() => {
+    const map = new Map<string, PartnerPlantOffer>();
+    for (const offer of spotOffers) map.set(offer.id, offer);
+    return map;
+  }, [spotOffers]);
 
   const activeOffers = useMemo(
     () => offers.filter((offer) => offer.status === "active"),
@@ -311,6 +408,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       const spotsData = (await spotsRes.json()) as {
         posSpots?: PosSpot[];
         offers?: OfferOption[];
+        spotOffers?: PartnerPlantOffer[];
       };
 
       const found = (partnersData.partners ?? []).find((p) => p.id === partnerId) ?? null;
@@ -324,6 +422,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       setPockets(pocketsData.pockets ?? []);
       setPosSpots(spotsData.posSpots ?? []);
       setOffers(spotsData.offers ?? []);
+      setSpotOffers(spotsData.spotOffers ?? []);
     } catch {
       setLoadError(displayApiError(locale, undefined, "admin.partners.detail.loadFailed"));
     } finally {
@@ -344,26 +443,32 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     return counts;
   }, [posSpots]);
 
+  const countedPlantSpots = useMemo(
+    () =>
+      posSpots.filter((spot) => isCountedPlantSpot(spot, offerById.get(spot.currentOfferId))),
+    [offerById, posSpots],
+  );
+
+  const locationCounts = useMemo(() => countPlantSpots(countedPlantSpots), [countedPlantSpots]);
+
   const spotsByPocketId = useMemo(() => {
     const map = new Map<string, PosSpot[]>();
-    for (const spot of posSpots) {
+    for (const spot of countedPlantSpots) {
       if (!spot.pocketId) continue;
       const list = map.get(spot.pocketId) ?? [];
       list.push(spot);
       map.set(spot.pocketId, list);
     }
     return map;
-  }, [posSpots]);
+  }, [countedPlantSpots]);
 
   const unassignedSpots = useMemo(
-    () => posSpots.filter((spot) => !spot.pocketId),
-    [posSpots],
+    () => countedPlantSpots.filter((spot) => !spot.pocketId),
+    [countedPlantSpots],
   );
 
-  function spotCountSubtitle(count: number): string {
-    return count === 1
-      ? t(locale, "admin.partners.detail.spotCountOne")
-      : t(locale, "admin.partners.detail.spotCountMany", { count });
+  function spotCountSubtitle(spots: PosSpot[]): string {
+    return t(locale, "admin.partners.detail.activeOfTotalPlants", countPlantSpots(spots));
   }
 
   function openCreatePocket() {
@@ -371,6 +476,62 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     setPocketNameDraft("");
     setPocketError(null);
     setPocketModal("create");
+  }
+
+  function openProfile() {
+    if (!partner) return;
+    setMonthlyRevenueDraft(String(partner.monthlyRevenue));
+    setSetupCostDraft(String(partner.setupCost));
+    setNotesDraft(partner.notes);
+    setProfileError(null);
+    setProfileOpen(true);
+  }
+
+  async function saveProfile() {
+    if (!partner) return;
+    const monthlyRevenue = Number(monthlyRevenueDraft);
+    if (!Number.isFinite(monthlyRevenue) || monthlyRevenue < 0) {
+      setProfileError(t(locale, "admin.partners.detail.monthlyRevenueInvalid"));
+      return;
+    }
+    const setupCost = Number(setupCostDraft);
+    if (!Number.isFinite(setupCost) || setupCost < 0) {
+      setProfileError(t(locale, "admin.partners.detail.setupCostInvalid"));
+      return;
+    }
+    setProfileBusy(true);
+    setProfileError(null);
+    try {
+      const res = await fetch(routes.api.partner(partner.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: partner.name,
+          address: partner.address,
+          type: partner.type,
+          payments: partner.payments,
+          pickupDisabled: partner.pickupDisabled,
+          monthlyRevenue,
+          setupCost,
+          notes: notesDraft,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        partner?: PartnerLocation;
+        error?: string;
+      };
+      if (!res.ok) {
+        setProfileError(displayApiError(locale, data.error, "admin.partners.saveFailed"));
+        return;
+      }
+      if (data.partner) setPartner(data.partner);
+      else setPartner({ ...partner, monthlyRevenue, setupCost, notes: notesDraft });
+      setProfileOpen(false);
+    } catch {
+      setProfileError(displayApiError(locale, undefined, "admin.partners.saveFailed"));
+    } finally {
+      setProfileBusy(false);
+    }
   }
 
   function openEditPocket(pocket: Pocket) {
@@ -655,10 +816,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
           {loadError ?? t(locale, "admin.partners.detail.notFound")}
         </p>
         <Link
-          href={routes.admin.partners()}
+          href={routes.admin.partner(brand.id)}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          {t(locale, "admin.partners.detail.back")}
+          {t(locale, "admin.partners.detail.backToPartner", { name: brand.name })}
         </Link>
       </div>
     );
@@ -667,42 +828,97 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            {t(locale, "admin.common.partner")}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">{partner.name}</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {formatStoredDeliveryAddressDisplay(partner.address, locale)}
-          </p>
-          <p className="mt-0.5 text-sm text-slate-500">{partner.type}</p>
+        <div className="flex items-center gap-3">
+          <PartnerLogo name={brand.name} image={brand.image} />
+          <div>
+            <h1 className="text-2xl font-semibold text-emerald-950">{partner.name}</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+            </p>
+            <p className="mt-0.5 text-sm text-slate-500">{partner.type}</p>
+          </div>
         </div>
         <Link
-          href={routes.admin.partners()}
+          href={routes.admin.partner(brand.id)}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          {t(locale, "admin.partners.detail.allPartners")}
+          {t(locale, "admin.partners.detail.backToPartner", { name: brand.name })}
         </Link>
       </div>
 
       {loadError ? <p className="text-sm text-red-700">{loadError}</p> : null}
 
-      <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-        <p className="text-sm text-slate-600">
-          {t(locale, "admin.partners.detail.editHintBefore")}
-          <Link
-            href={routes.admin.partners()}
-            className="font-medium text-emerald-700 underline underline-offset-2"
-          >
-            {t(locale, "admin.partners.detail.editHintLink")}
-          </Link>
-          {t(locale, "admin.partners.detail.editHintAfter")}
-          <span className="font-semibold text-emerald-950">{partner.name}</span>.
-        </p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {t(locale, "admin.partners.detail.monthlyRevenue")}
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-emerald-950">
+            {formatIls(locale, partner.monthlyRevenue)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {t(locale, "admin.partners.detail.manualValue")}
+          </p>
+        </div>
+        <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {t(locale, "admin.partners.detail.setupCost")}
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-emerald-950">
+            {formatIls(locale, partner.setupCost)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {t(locale, "admin.partners.detail.manualValue")}
+          </p>
+        </div>
+        <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {t(locale, "admin.partners.detail.activePlants")}
+          </p>
+          <p className="mt-2 text-2xl font-semibold text-emerald-950">
+            {plantCountLabel(locationCounts)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {t(locale, "admin.partners.detail.activePlantsHint")}
+          </p>
+        </div>
       </div>
 
       <AdminManagementSection
+        id="notes"
+        title={t(locale, "admin.partners.detail.notes")}
+        collapsible
+        defaultOpen={false}
+        actions={
+          <button
+            type="button"
+            onClick={openProfile}
+            className="text-sm font-medium text-emerald-700 underline underline-offset-2"
+          >
+            {t(locale, "admin.common.edit")}
+          </button>
+        }
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          {t(locale, "admin.partners.detail.visitChecklist")}
+        </p>
+        <ul className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+          <li>• {t(locale, "admin.partners.detail.checklistWatering")}</li>
+          <li>• {t(locale, "admin.partners.detail.checklistCleaning")}</li>
+          <li>• {t(locale, "admin.partners.detail.checklistHealth")}</li>
+          <li>• {t(locale, "admin.partners.detail.checklistInventory")}</li>
+        </ul>
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <p className="whitespace-pre-wrap text-sm text-slate-700">
+            {partner.notes || t(locale, "admin.partners.detail.noNotes")}
+          </p>
+        </div>
+      </AdminManagementSection>
+
+      <AdminManagementSection
         id="pockets"
+        collapsible
+        defaultOpen={false}
         title={t(locale, "admin.partners.detail.pockets")}
         description={t(locale, "admin.partners.detail.pocketsDesc", { name: partner.name })}
         actions={
@@ -739,9 +955,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                   <ExpandablePocketCard
                     locale={locale}
                     title={pocket.name}
-                    subtitle={spotCountSubtitle(spots.length)}
+                    subtitle={spotCountSubtitle(spots)}
                     spots={spots}
                     offerNameById={offerNameById}
+                    offerById={offerById}
                     onEditSpot={openEditSpot}
                     onArchiveSpot={(spot) => {
                       setArchiveError(null);
@@ -777,9 +994,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                 <ExpandablePocketCard
                   locale={locale}
                   title={t(locale, "admin.partners.detail.unassigned")}
-                  subtitle={spotCountSubtitle(unassignedSpots.length)}
+                  subtitle={spotCountSubtitle(unassignedSpots)}
                   spots={unassignedSpots}
                   offerNameById={offerNameById}
+                  offerById={offerById}
                   onEditSpot={openEditSpot}
                   onArchiveSpot={(spot) => {
                     setArchiveError(null);
@@ -792,8 +1010,57 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         )}
       </AdminManagementSection>
 
+      <AdminFormModal
+        open={profileOpen}
+        title={t(locale, "admin.partners.detail.editProfile")}
+        onCancel={() => setProfileOpen(false)}
+        onSubmit={() => void saveProfile()}
+        busy={profileBusy}
+        error={profileError}
+      >
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-slate-700">
+            {t(locale, "admin.partners.detail.monthlyRevenue")}
+          </span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={monthlyRevenueDraft}
+            onChange={(event) => setMonthlyRevenueDraft(event.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-slate-700">
+            {t(locale, "admin.partners.detail.setupCost")}
+          </span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={setupCostDraft}
+            onChange={(event) => setSetupCostDraft(event.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-slate-700">
+            {t(locale, "admin.partners.detail.notes")}
+          </span>
+          <textarea
+            rows={6}
+            value={notesDraft}
+            onChange={(event) => setNotesDraft(event.target.value)}
+            className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+          />
+        </label>
+      </AdminFormModal>
+
       <AdminManagementSection
         id="pos-spots"
+        collapsible
+        defaultOpen={false}
         title={t(locale, "admin.partners.detail.posSpots")}
         description={t(locale, "admin.partners.detail.posSpotsDesc", { name: partner.name })}
         actions={

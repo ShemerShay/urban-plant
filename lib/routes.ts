@@ -38,8 +38,11 @@ export const routes = {
       const qs = query.replace(/^\?/, "");
       return qs ? `/admin/analytics?${qs}` : "/admin/analytics";
     },
+    /** Partner page; legacy location ids redirect to their location page. */
     partner: (partnerId: string) =>
       `/admin/partners/${encodeURIComponent(partnerId.trim())}`,
+    partnerLocation: (partnerId: string, locationId: string) =>
+      `/admin/partners/${encodeURIComponent(partnerId.trim())}/locations/${encodeURIComponent(locationId.trim())}`,
     partnerPockets: (partnerId: string) =>
       `/admin/partners/${encodeURIComponent(partnerId.trim())}#pockets`,
     partnerPosSpots: (partnerId: string) =>
@@ -103,6 +106,9 @@ export const routes = {
     plantImages: () => "/api/plant-images",
     offers: () => "/api/offers",
     offer: (offerId: string) => `/api/offers/${encodeURIComponent(offerId.trim())}`,
+    partnerBrands: () => "/api/partner-brands",
+    partnerBrand: (brandId: string) =>
+      `/api/partner-brands/${encodeURIComponent(brandId.trim())}`,
     partners: () => "/api/partners",
     partner: (partnerId: string) =>
       `/api/partners/${encodeURIComponent(partnerId.trim())}`,

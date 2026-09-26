@@ -4,6 +4,7 @@ import {
   getPartnerLocationById,
   updatePartnerLocation,
 } from "@/lib/partnerLocationStorage";
+import { withExistingPartnerProfileFields } from "@/lib/partnerProfileValidation";
 import { parsePartnerBody } from "@/lib/partnerValidation";
 
 interface RouteParams {
@@ -31,7 +32,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   const record = body as Record<string, unknown>;
   const parsed = parsePartnerBody(
-    { ...record, id: partnerId },
+    withExistingPartnerProfileFields({ ...record, id: partnerId }, existing),
     { requireId: false, existingId: partnerId },
   );
   if (!parsed.ok) {
@@ -41,6 +42,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const partner = await updatePartnerLocation(partnerId, {
       ...parsed.partner,
+      partnerId: existing.partnerId,
       ...(existing.createdAt ? { createdAt: existing.createdAt } : {}),
     });
     if (!partner) {
