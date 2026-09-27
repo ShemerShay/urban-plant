@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { seedDefaultZeroCommissionTier } from "@/lib/partnerCommissionStorage";
 import { toIsoString } from "@/lib/storageUtils";
 
 /** Business/brand that owns one or more partner_locations. */
@@ -61,7 +62,9 @@ export async function createPartner(partner: {
   `;
   const row = (rows as PartnerRow[])[0];
   if (!row) throw new Error("Could not create partner");
-  return mapPartnerRow(row);
+  const created = mapPartnerRow(row);
+  await seedDefaultZeroCommissionTier(created.id);
+  return created;
 }
 
 export async function updatePartner(

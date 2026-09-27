@@ -40,7 +40,9 @@
     "db:migrate:plants-inventory-type": "node scripts/apply-sql-file.mjs db/migrations/029_plants_inventory_type.sql",
     "db:migrate:partner-profile": "node scripts/apply-sql-file.mjs db/migrations/031_partner_profile_fields.sql",
     "db:migrate:partners": "node scripts/apply-sql-file.mjs db/migrations/032_partners.sql",
-    "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs"
+    "db:migrate:commission-tiers": "node scripts/apply-sql-file.mjs db/migrations/034_partner_commission.sql",
+    "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
+    "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

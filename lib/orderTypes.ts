@@ -65,6 +65,11 @@ export interface SavedOrder {
   channel?: "partner" | "catalog";
   /** Top-level Partner for Partner sales; null for Catalog. */
   partnerId?: string | null;
+  /**
+   * Assigned Partner-plant commission for this order's calendar month.
+   * Flowers and Catalog are null. 0 is an explicit 0% deal.
+   */
+  commissionRate?: number | null;
   cancelledAt?: string;
   cancelledBy?: string;
   cancellationReason?: string;

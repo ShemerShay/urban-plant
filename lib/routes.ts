@@ -107,6 +107,8 @@ export const routes = {
     partnerBrands: () => "/api/partner-brands",
     partnerBrand: (brandId: string) =>
       `/api/partner-brands/${encodeURIComponent(brandId.trim())}`,
+    partnerBrandCommissionTiers: (brandId: string) =>
+      `/api/partner-brands/${encodeURIComponent(brandId.trim())}/commission-tiers`,
     partners: () => "/api/partners",
     partner: (partnerId: string) =>
       `/api/partners/${encodeURIComponent(partnerId.trim())}`,

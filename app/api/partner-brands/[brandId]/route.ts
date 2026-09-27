@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { parsePartnerBrandBody } from "@/lib/partnerBrandValidation";
+import { readPartnerCommissionTiers } from "@/lib/partnerCommissionStorage";
 import { getPartnerById, updatePartner } from "@/lib/partnerStorage";
 
 interface RouteParams {
@@ -13,7 +14,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   if (!partner) {
     return NextResponse.json({ error: "Partner not found" }, { status: 404 });
   }
-  return NextResponse.json({ partner });
+  const commissionTiers = await readPartnerCommissionTiers(partner.id);
+  return NextResponse.json({ partner: { ...partner, commissionTiers } });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {

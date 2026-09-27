@@ -2,11 +2,18 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 import { parsePartnerBrandBody } from "@/lib/partnerBrandValidation";
+import { readPartnerCommissionTiers } from "@/lib/partnerCommissionStorage";
 import { createPartner, readPartners } from "@/lib/partnerStorage";
 
 export async function GET() {
   const partners = await readPartners();
-  return NextResponse.json({ partners });
+  const withTiers = await Promise.all(
+    partners.map(async (partner) => ({
+      ...partner,
+      commissionTiers: await readPartnerCommissionTiers(partner.id),
+    })),
+  );
+  return NextResponse.json({ partners: withTiers });
 }
 
 export async function POST(request: NextRequest) {
@@ -27,7 +34,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const partner = await createPartner({ id: randomUUID(), ...parsed.value });
-    return NextResponse.json({ partner }, { status: 201 });
+    const commissionTiers = await readPartnerCommissionTiers(partner.id);
+    return NextResponse.json({ partner: { ...partner, commissionTiers } }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create partner";
     return NextResponse.json({ error: message }, { status: 500 });

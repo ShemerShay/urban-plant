@@ -9,6 +9,10 @@ import { sql } from "@/lib/db";
 import { paymentResumeTokensEqual } from "@/lib/paymentResume";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
+import {
+  parseOptionalCommissionRate,
+  syncOpenMonthPlantCommission,
+} from "@/lib/orderCommission";
 import { saleIdentityFromRow } from "@/lib/orderSaleIdentity";
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
 import type { PaymentAttemptStatus, SavedPaymentAttempt } from "./paymentAttemptTypes";
@@ -215,6 +219,7 @@ type OrderRow = {
   source: string | null;
   channel: string | null;
   partner_id: string | null;
+  commission_rate?: string | number | null;
   cancelled_at: string | Date | null;
   cancelled_by: string | null;
   cancellation_reason: string | null;
@@ -289,6 +294,7 @@ function mapOrderRowLite(row: OrderRow): SavedOrder {
     ...(source ? { source } : {}),
     ...(identity.channel ? { channel: identity.channel } : {}),
     partnerId: identity.partnerId,
+    commissionRate: parseOptionalCommissionRate(row.commission_rate),
     ...(toIsoString(row.cancelled_at) ? { cancelledAt: toIsoString(row.cancelled_at) } : {}),
     ...(row.cancelled_by ? { cancelledBy: row.cancelled_by } : {}),
     ...(row.cancellation_reason ? { cancellationReason: row.cancellation_reason } : {}),
@@ -784,6 +790,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         source,
         channel,
         partner_id,
+        commission_rate,
         picked_up_at,
         snapshot,
         created_at,
@@ -813,6 +820,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         'online',
         'partner',
         e.partner_id,
+        NULL,
         ${pickedUpAt}::timestamptz,
         e.snapshot,
         now(),
@@ -842,6 +850,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         source,
         channel,
         partner_id,
+        commission_rate,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -910,6 +919,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       o.source,
       o.channel,
       o.partner_id,
+      o.commission_rate,
       o.cancelled_at,
       o.cancelled_by,
       o.cancellation_reason,
@@ -952,9 +962,17 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
     return { ok: false, reason: "conflict" };
   }
 
+  let order = mapOrderRowLite(row);
+  if (isFlower) {
+    order = { ...order, commissionRate: null };
+  } else if (order.channel === "partner" && order.partnerId) {
+    const rate = await syncOpenMonthPlantCommission(order.partnerId);
+    order = { ...order, commissionRate: rate };
+  }
+
   return {
     ok: true,
-    order: mapOrderRowLite(row),
+    order,
     attempt,
     finalized: true,
     posStatus: isFlower ? "available" : row.pos_status === "available" ? "available" : "sold",
