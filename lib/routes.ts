@@ -9,7 +9,6 @@ export const routes = {
     index: () => "/admin",
     login: () => "/admin-login",
     orders: () => "/admin/orders",
-    ordersNew: () => "/admin/orders/new",
     ordersWithQuery: (query: string) => {
       const qs = query.replace(/^\?/, "");
       return qs ? `/admin/orders?${qs}` : "/admin/orders";

@@ -15,12 +15,8 @@ import {
   logOrderFlowSection,
   logOrderFlowStart,
 } from "@/lib/logOrderFlow";
-import { getLocationById, resolveLocationFields } from "@/lib/mockLocations";
-import {
-  isValidEmail,
-  isValidIsraeliMobilePhone,
-  isValidPhone,
-} from "@/lib/formValidation";
+import { getLocationById } from "@/lib/mockLocations";
+import { isValidEmail, isValidPhone } from "@/lib/formValidation";
 import { getPlantById } from "@/lib/plantCatalog";
 import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import { getOfferById } from "@/lib/offerStorage";
@@ -36,15 +32,6 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     value.trim(),
   );
-}
-
-function parsePrice(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
 }
 
 async function buildSnapshot(input: {
@@ -178,150 +165,6 @@ async function completedOrder(input: {
   };
 }
 
-/**
- * Manual admin entry (no client orderId): creates a completed sale row for testing.
- */
-async function postLegacyManualOrder(record: Record<string, unknown>): Promise<Response> {
-  const {
-    plantId,
-    locationId: locationIdRaw,
-    fullName,
-    phone,
-    customerEmail: customerEmailRaw,
-    apartmentOrNotes,
-    fulfillmentMethod: fulfillmentMethodRaw,
-    plantName,
-    price,
-  } = record;
-
-  const nameStr = typeof fullName === "string" ? fullName.trim() : "";
-  const phoneStr = typeof phone === "string" ? phone.trim() : "";
-  const emailTrim =
-    typeof customerEmailRaw === "string" ? customerEmailRaw.trim().toLowerCase() : "";
-  const fulfillmentMethod: FulfillmentMethod =
-    fulfillmentMethodRaw === "pickup" ? "pickup" : "delivery";
-  const orderStatus: OrderStatus =
-    fulfillmentMethod === "pickup" ? "picked_up" : "sold";
-
-  if (!nameStr) {
-    return NextResponse.json({ error: "fullName is required" }, { status: 400 });
-  }
-  if (!emailTrim || !isValidEmail(emailTrim)) {
-    return NextResponse.json(
-      { error: "customerEmail is required and must be a valid email" },
-      { status: 400 },
-    );
-  }
-  if (!isValidIsraeliMobilePhone(phoneStr)) {
-    return NextResponse.json(
-      { error: "Please enter a valid 10-digit Israeli phone number." },
-      { status: 400 },
-    );
-  }
-
-  let addressStr = "";
-  if (fulfillmentMethod === "delivery") {
-    const resolved = resolveDeliveryAddressFromRequest(record);
-    if (resolved.error) {
-      return NextResponse.json({ error: resolved.error }, { status: 400 });
-    }
-    addressStr = resolved.address;
-  }
-
-  const notesStr =
-    typeof apartmentOrNotes === "string" ? apartmentOrNotes.trim() : "";
-
-  let locationInput: string | null | undefined;
-  if (locationIdRaw === null) {
-    locationInput = null;
-  } else if (typeof locationIdRaw === "string") {
-    locationInput = locationIdRaw;
-  } else {
-    locationInput = undefined;
-  }
-
-  const {
-    locationId: resolvedLocationId,
-    locationName: resolvedLocationName,
-    locationAddress: resolvedLocationAddress,
-  } = await resolveLocationFields(
-    locationInput === undefined ? undefined : locationInput,
-  );
-
-  const catalogId = typeof plantId === "string" ? plantId.trim() : "";
-  const catalogPlant = catalogId ? await getPlantById(catalogId) : undefined;
-
-  let resolvedPlantId: string;
-  let resolvedPlantName: string;
-  let resolvedPrice: number;
-
-  if (catalogPlant) {
-    resolvedPlantId = catalogPlant.id;
-    resolvedPlantName = catalogPlant.name;
-    const customPrice = parsePrice(price);
-    resolvedPrice =
-      customPrice !== null && customPrice >= 0 ? customPrice : catalogPlant.supplierPrice;
-  } else {
-    const manualName = typeof plantName === "string" ? plantName.trim() : "";
-    const manualPrice = parsePrice(price);
-    if (!manualName) {
-      return NextResponse.json(
-        { error: "plantId must match a catalog plant, or plantName is required" },
-        { status: 400 },
-      );
-    }
-    if (manualPrice === null || manualPrice < 0) {
-      return NextResponse.json(
-        { error: "price is required and must be a non-negative number" },
-        { status: 400 },
-      );
-    }
-    resolvedPlantId = "manual";
-    resolvedPlantName = manualName;
-    resolvedPrice = manualPrice;
-  }
-
-  const createdAt = new Date().toISOString();
-  const orderId = randomUUID();
-  const manualOffer: Offer = {
-    id: "manual-offer",
-    productId: resolvedPlantId,
-    consumerPrice: resolvedPrice,
-    status: "active",
-    createdAt,
-  };
-  const order: SavedOrder = {
-    id: orderId,
-    orderId,
-    offerId: manualOffer.id,
-    plantId: resolvedPlantId,
-    plantName: resolvedPlantName,
-    locationId: resolvedLocationId,
-    locationName: resolvedLocationName,
-    locationAddress: resolvedLocationAddress,
-    price: resolvedPrice,
-    fullName: nameStr,
-    customerEmail: emailTrim,
-    phone: phoneStr,
-    address: addressStr,
-    apartmentOrNotes: notesStr,
-    fulfillmentMethod,
-    createdAt,
-    orderStatus,
-    source: "admin",
-    ...(orderStatus === "picked_up" ? { pickedUpAt: createdAt } : {}),
-  };
-
-  await appendOrder(order);
-  const orderCreatedEvent = await appendOrderCreatedEvent(order);
-  logOrderFlowStart({ flow: "legacy_manual_admin", orderId: order.orderId });
-  logOrderFlowSection("FINAL ORDER (manual admin)", order);
-  logOrderFlowSection("order_created EVENT", orderCreatedEvent);
-  logOrderFlowEnd();
-
-  return NextResponse.json({ ok: true, orderId: order.orderId });
-}
-
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {
@@ -335,14 +178,6 @@ export async function POST(request: NextRequest) {
   }
 
   const record = body as Record<string, unknown>;
-
-  if (
-    record.orderId === undefined &&
-    record.price !== undefined &&
-    (typeof record.plantId === "string" || typeof record.plantName === "string")
-  ) {
-    return postLegacyManualOrder(record);
-  }
 
   const {
     orderId: orderIdRaw,
