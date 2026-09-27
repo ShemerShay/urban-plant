@@ -75,26 +75,30 @@ export async function replacePartnerCommissionTiers(
     throw new PartnerCommissionAgreementLockedError();
   }
 
-  await sql`
-    DELETE FROM partner_commission_tiers
-    WHERE partner_id = ${trimmed}
-  `;
+  const results = await sql.transaction([
+    sql`
+      DELETE FROM partner_commission_tiers
+      WHERE partner_id = ${trimmed}
+    `,
+    ...tiers.map(
+      (tier) => sql`
+        INSERT INTO partner_commission_tiers (
+          id, partner_id, min_units, max_units, commission_rate
+        )
+        VALUES (
+          ${randomUUID()},
+          ${trimmed},
+          ${tier.minUnits},
+          ${tier.maxUnits},
+          ${tier.commissionRate}
+        )
+        RETURNING id, partner_id, min_units, max_units, commission_rate
+      `,
+    ),
+  ]);
 
   const inserted: CommissionTier[] = [];
-  for (const tier of tiers) {
-    const rows = await sql`
-      INSERT INTO partner_commission_tiers (
-        id, partner_id, min_units, max_units, commission_rate
-      )
-      VALUES (
-        ${randomUUID()},
-        ${trimmed},
-        ${tier.minUnits},
-        ${tier.maxUnits},
-        ${tier.commissionRate}
-      )
-      RETURNING id, partner_id, min_units, max_units, commission_rate
-    `;
+  for (const rows of results.slice(1)) {
     const row = (rows as TierRow[])[0];
     if (!row) throw new Error("Could not save commission tier");
     inserted.push(mapTierRow(row));

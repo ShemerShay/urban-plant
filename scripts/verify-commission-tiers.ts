@@ -101,6 +101,30 @@ async function main(): Promise<void> {
     assert.equal(defaultTiers[0]?.commissionRate, 0);
     assert.equal(defaultTiers[0]?.maxUnits, null);
 
+    let replaceRolledBack = false;
+    try {
+      await sql.transaction([
+        sql`
+          DELETE FROM partner_commission_tiers
+          WHERE partner_id = ${testPartner.id}
+        `,
+        sql`
+          INSERT INTO partner_commission_tiers (
+            id, partner_id, min_units, max_units, commission_rate
+          )
+          VALUES (${`bad-${testPartner.id}`}, ${testPartner.id}, 0, NULL, 0)
+        `,
+      ]);
+    } catch {
+      replaceRolledBack = true;
+    }
+    assert.equal(replaceRolledBack, true, "invalid replacement transaction must fail");
+    const afterFailedReplace = await readPartnerCommissionTiers(testPartner.id);
+    assert.equal(afterFailedReplace.length, 1);
+    assert.equal(afterFailedReplace[0]?.commissionRate, 0);
+    assert.equal(afterFailedReplace[0]?.maxUnits, null);
+    console.log("verify-commission-tiers: failed replace rolls back ok");
+
     await replacePartnerCommissionTiers(testPartner.id, [
       { minUnits: 1, maxUnits: 5, commissionRate: 10 },
       { minUnits: 6, maxUnits: 10, commissionRate: 12 },
@@ -208,6 +232,25 @@ async function main(): Promise<void> {
     await sql`DELETE FROM partner_commission_tiers WHERE partner_id = ${testPartner.id}`;
     await sql`DELETE FROM partners WHERE id = ${testPartner.id}`;
   }
+
+  const seeded = await sql`
+    SELECT p.id, t.min_units, t.max_units, t.commission_rate
+    FROM partners p
+    JOIN partner_commission_tiers t ON t.partner_id = p.id
+    WHERE p.id NOT LIKE 'commission-verify-%'
+    ORDER BY p.id, t.min_units
+  `;
+  for (const row of seeded as {
+    id: string;
+    min_units: number;
+    max_units: number | null;
+    commission_rate: string | number;
+  }[]) {
+    assert.equal(Number(row.min_units), 1);
+    assert.equal(row.max_units, null);
+    assert.equal(Number(row.commission_rate), 0, `seeded 0% tier changed for ${row.id}`);
+  }
+  console.log("verify-commission-tiers: seeded 0% tiers unchanged");
 
   console.log("verify-commission-tiers: all ok");
 }
