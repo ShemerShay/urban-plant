@@ -60,6 +60,7 @@ async function assertSchemaAndConstraints(): Promise<void> {
     deletePaymentAttemptById,
   } = await import("../lib/paymentAttemptStorage");
   const { getPosSpotById, readPosSpots } = await import("../lib/posSpotStorage");
+  const { getPartnerLocationById } = await import("../lib/partnerLocationStorage");
 
   // 1–3: table, columns, FKs/indexes/CHECKs
   const tables = await sql`
@@ -181,6 +182,8 @@ async function assertSchemaAndConstraints(): Promise<void> {
   const spots = await readPosSpots();
   assert.ok(spots.length > 0, "need at least one POS spot for FK tests");
   const posSpotId = spots[0].id;
+  const location = await getPartnerLocationById(spots[0].partnerLocationId);
+  assert.ok(location?.partnerId, "POS location must have a Partner id");
 
   const now = new Date().toISOString();
   const attemptId = randomUUID();
@@ -269,11 +272,13 @@ async function assertSchemaAndConstraints(): Promise<void> {
   await sql`
     INSERT INTO orders (
       order_id, product_id, product_name, price, full_name, phone,
-      address, apartment_or_notes, fulfillment_method, order_status, created_at
+      address, apartment_or_notes, fulfillment_method, order_status, created_at,
+      channel, partner_id, partner_location_id
     )
     VALUES (
       ${orderId}::uuid, 'phase2-verify-product', 'Phase 2 Verify Product', 1,
-      'Phase 2 Verify', '0500000000', '', '', 'delivery', 'cancelled', ${now}::timestamptz
+      'Phase 2 Verify', '0500000000', '', '', 'delivery', 'cancelled', ${now}::timestamptz,
+      'partner', ${location!.partnerId}, ${spots[0].partnerLocationId}
     )
   `;
   await sql`

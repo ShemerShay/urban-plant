@@ -8,6 +8,7 @@ import { sql } from "@/lib/db";
 import { paymentResumeTokensEqual } from "@/lib/paymentResume";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
+import { resolveOrderSaleIdentity, saleIdentityFromRow } from "@/lib/orderSaleIdentity";
 import type {
   FulfillmentMethod,
   OrderSnapshot,
@@ -123,6 +124,8 @@ type OrderRow = {
   fulfillment_method: string;
   order_status: string;
   source: string | null;
+  channel: string | null;
+  partner_id: string | null;
   cancelled_at: string | Date | null;
   cancelled_by: string | null;
   cancellation_reason: string | null;
@@ -164,6 +167,7 @@ function mapOrderRow(row: OrderRow): SavedOrder {
     row.source === "manual" || row.source === "admin" || row.source === "online"
       ? row.source
       : undefined;
+  const identity = saleIdentityFromRow(row);
 
   return {
     id: orderId,
@@ -190,6 +194,8 @@ function mapOrderRow(row: OrderRow): SavedOrder {
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     orderStatus,
     ...(source ? { source } : {}),
+    ...(identity.channel ? { channel: identity.channel } : {}),
+    partnerId: identity.partnerId,
     ...(toIsoString(row.cancelled_at) ? { cancelledAt: toIsoString(row.cancelled_at) } : {}),
     ...(row.cancelled_by ? { cancelledBy: row.cancelled_by } : {}),
     ...(row.cancellation_reason ? { cancellationReason: row.cancellation_reason } : {}),
@@ -219,6 +225,7 @@ function mapOrderRow(row: OrderRow): SavedOrder {
 }
 
 async function insertOrder(order: SavedOrder): Promise<void> {
+  const identity = await resolveOrderSaleIdentity(order);
   await sql`
     INSERT INTO orders (
       order_id,
@@ -241,6 +248,8 @@ async function insertOrder(order: SavedOrder): Promise<void> {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -270,6 +279,8 @@ async function insertOrder(order: SavedOrder): Promise<void> {
       ${order.fulfillmentMethod},
       ${order.orderStatus},
       ${order.source ?? null},
+      ${identity.channel},
+      ${identity.partnerId},
       ${order.cancelledAt ?? null}::timestamptz,
       ${order.cancelledBy ?? null},
       ${order.cancellationReason ?? null},
@@ -304,6 +315,8 @@ export async function readOrders(): Promise<SavedOrder[]> {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -377,6 +390,8 @@ export async function getOrderById(orderId: string): Promise<SavedOrder | null> 
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -399,6 +414,7 @@ export async function getOrderById(orderId: string): Promise<SavedOrder | null> 
 }
 
 export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null> {
+  const identity = await resolveOrderSaleIdentity(order);
   const rows = await sql`
     UPDATE orders
     SET
@@ -421,6 +437,8 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
       fulfillment_method = ${order.fulfillmentMethod},
       order_status = ${order.orderStatus},
       source = ${order.source ?? null},
+      channel = ${identity.channel},
+      partner_id = ${identity.partnerId},
       cancelled_at = ${order.cancelledAt ?? null}::timestamptz,
       cancelled_by = ${order.cancelledBy ?? null},
       cancellation_reason = ${order.cancellationReason ?? null},
@@ -450,6 +468,8 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -518,6 +538,8 @@ export async function attachCheckoutSessionIdToPendingOrder(
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -598,6 +620,8 @@ export async function cancelPendingPaymentOrder(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -673,6 +697,8 @@ export async function adminCancelPendingPaymentOrder(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -776,6 +802,8 @@ export async function claimPaymentRetryLock(input: {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -846,6 +874,8 @@ export async function getOrderByCheckoutSessionId(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -972,6 +1002,8 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         o.fulfillment_method,
         o.order_status,
         o.source,
+        o.channel,
+        o.partner_id,
         o.cancelled_at,
         o.cancelled_by,
         o.cancellation_reason,
@@ -1018,6 +1050,8 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       o.fulfillment_method,
       o.order_status,
       o.source,
+      o.channel,
+      o.partner_id,
       o.cancelled_at,
       o.cancelled_by,
       o.cancellation_reason,
@@ -1128,6 +1162,8 @@ export async function rotateCheckoutSessionIdForResume(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -1227,6 +1263,8 @@ export async function claimPurchaseEmailProcessing(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1297,6 +1335,8 @@ export async function saveCardcomDocumentOnOrder(input: {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1350,6 +1390,8 @@ export async function markPurchaseEmailSent(orderId: string): Promise<SavedOrder
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1406,6 +1448,8 @@ export async function markPurchaseEmailFailed(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1463,6 +1507,8 @@ export async function ensurePurchaseEmailPending(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
       cancelled_at,
       cancelled_by,
       cancellation_reason,

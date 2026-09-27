@@ -61,6 +61,10 @@ export interface SavedOrder {
   /** Order lifecycle status (includes pending_payment before verified Cardcom payment). */
   orderStatus: OrderStatus;
   source?: "online" | "manual" | "admin";
+  /** Sales channel. Distinct from `source`, which is how the row was created. */
+  channel?: "partner" | "catalog";
+  /** Top-level Partner for Partner sales; null for Catalog. */
+  partnerId?: string | null;
   cancelledAt?: string;
   cancelledBy?: string;
   cancellationReason?: string;

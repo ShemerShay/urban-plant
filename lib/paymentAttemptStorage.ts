@@ -9,6 +9,7 @@ import { sql } from "@/lib/db";
 import { paymentResumeTokensEqual } from "@/lib/paymentResume";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
+import { saleIdentityFromRow } from "@/lib/orderSaleIdentity";
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
 import type { PaymentAttemptStatus, SavedPaymentAttempt } from "./paymentAttemptTypes";
 import { isPaymentAttemptStatus } from "./paymentAttemptTypes";
@@ -212,6 +213,8 @@ type OrderRow = {
   fulfillment_method: string;
   order_status: string;
   source: string | null;
+  channel: string | null;
+  partner_id: string | null;
   cancelled_at: string | Date | null;
   cancelled_by: string | null;
   cancellation_reason: string | null;
@@ -249,6 +252,7 @@ function mapOrderRowLite(row: OrderRow): SavedOrder {
     row.source === "manual" || row.source === "admin" || row.source === "online"
       ? row.source
       : undefined;
+  const identity = saleIdentityFromRow(row);
   const orderStatus =
     row.order_status === "pending_payment" ||
     row.order_status === "sold" ||
@@ -283,6 +287,8 @@ function mapOrderRowLite(row: OrderRow): SavedOrder {
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     orderStatus,
     ...(source ? { source } : {}),
+    ...(identity.channel ? { channel: identity.channel } : {}),
+    partnerId: identity.partnerId,
     ...(toIsoString(row.cancelled_at) ? { cancelledAt: toIsoString(row.cancelled_at) } : {}),
     ...(row.cancelled_by ? { cancelledBy: row.cancelled_by } : {}),
     ...(row.cancellation_reason ? { cancellationReason: row.cancellation_reason } : {}),
@@ -728,9 +734,15 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
           a.snapshot->>'partnerLocationName',
           NULL
         ) AS partner_location_name,
+        loc.partner_id,
         COALESCE(pl.inventory_type, 'plants') AS inventory_type
       FROM payment_attempts a
       INNER JOIN pos_spots p ON p.id = a.pos_spot_id
+      INNER JOIN partner_locations loc
+        ON loc.id = COALESCE(
+          NULLIF(btrim(a.snapshot->>'partnerLocationId'), ''),
+          p.partner_location_id
+        )
       LEFT JOIN plants pl ON pl.id = a.product_id
       WHERE a.id = ${attemptId}::uuid
         AND a.status = 'awaiting_payment'
@@ -770,6 +782,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
         picked_up_at,
         snapshot,
         created_at,
@@ -797,6 +811,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         e.fulfillment_method,
         ${nextStatus},
         'online',
+        'partner',
+        e.partner_id,
         ${pickedUpAt}::timestamptz,
         e.snapshot,
         now(),
@@ -824,6 +840,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -890,6 +908,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       o.fulfillment_method,
       o.order_status,
       o.source,
+      o.channel,
+      o.partner_id,
       o.cancelled_at,
       o.cancelled_by,
       o.cancellation_reason,
