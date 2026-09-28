@@ -9,6 +9,8 @@ export const MANUAL_PRODUCT_ID = "manual";
 export interface Offer {
   id: string;
   productId: string;
+  /** Physical configuration. Null until a variant is assigned. */
+  variantId?: string | null;
   consumerPrice: number;
   status: OfferStatus;
   createdAt: string;

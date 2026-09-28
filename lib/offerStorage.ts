@@ -38,10 +38,17 @@ function defaultOffers(): Offer[] {
 export type OfferRow = {
   id: string;
   product_id: string;
+  variant_id?: string | null;
   consumer_price: string | number;
   status: string;
   created_at: string | Date;
 };
+
+function mapVariantId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
 
 export function mapOfferRow(row: OfferRow): Offer {
   const status: OfferStatus = row.status === "inactive" ? "inactive" : "active";
@@ -50,6 +57,7 @@ export function mapOfferRow(row: OfferRow): Offer {
   return {
     id: row.id,
     productId: row.product_id,
+    variantId: mapVariantId(row.variant_id),
     consumerPrice: parseNumeric(row.consumer_price),
     status,
     createdAt,
@@ -61,14 +69,14 @@ export async function readOffers(filter?: {
 }): Promise<Offer[]> {
   const rows = filter?.inventoryType
     ? await sql`
-        SELECT o.id, o.product_id, o.consumer_price, o.status, o.created_at
+        SELECT o.id, o.product_id, o.variant_id, o.consumer_price, o.status, o.created_at
         FROM offers o
         INNER JOIN plants pl ON pl.id = o.product_id
         WHERE pl.inventory_type = ${filter.inventoryType}
         ORDER BY o.created_at ASC
       `
     : await sql`
-        SELECT id, product_id, consumer_price, status, created_at
+        SELECT id, product_id, variant_id, consumer_price, status, created_at
         FROM offers
         ORDER BY created_at ASC
       `;
@@ -82,11 +90,12 @@ export async function saveOffers(offers: Offer[]): Promise<void> {
   for (const offer of offers) {
     await sql`
       INSERT INTO offers (
-        id, product_id, consumer_price, status, created_at
+        id, product_id, variant_id, consumer_price, status, created_at
       )
       VALUES (
         ${offer.id},
         ${offer.productId},
+        ${offer.variantId ?? null},
         ${offer.consumerPrice},
         ${offer.status},
         ${offer.createdAt}::timestamptz
@@ -99,7 +108,7 @@ export async function getOfferById(id: string): Promise<Offer | undefined> {
   const trimmed = id.trim();
   if (!trimmed) return undefined;
   const rows = await sql`
-    SELECT id, product_id, consumer_price, status, created_at
+    SELECT id, product_id, variant_id, consumer_price, status, created_at
     FROM offers
     WHERE id = ${trimmed}
     LIMIT 1
@@ -124,11 +133,12 @@ export async function appendOffer(input: NewOfferInput): Promise<Offer> {
 
   await sql`
     INSERT INTO offers (
-      id, product_id, consumer_price, status, created_at
+      id, product_id, variant_id, consumer_price, status, created_at
     )
     VALUES (
       ${offer.id},
       ${offer.productId},
+      ${offer.variantId ?? null},
       ${offer.consumerPrice},
       ${offer.status},
       ${offer.createdAt}::timestamptz
@@ -157,6 +167,7 @@ export async function updateOffer(
   const offer: Offer = {
     id: trimmed,
     productId,
+    variantId: existing.variantId ?? null,
     consumerPrice,
     status,
     createdAt: existing.createdAt,

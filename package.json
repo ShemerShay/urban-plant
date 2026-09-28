@@ -41,6 +41,8 @@
     "db:migrate:partner-profile": "node scripts/apply-sql-file.mjs db/migrations/031_partner_profile_fields.sql",
     "db:migrate:partners": "node scripts/apply-sql-file.mjs db/migrations/032_partners.sql",
     "db:migrate:commission-tiers": "node scripts/apply-sql-file.mjs db/migrations/034_partner_commission.sql",
+    "db:migrate:plant-variants": "node scripts/apply-sql-file.mjs db/migrations/035_plant_variants.sql",
+    "verify:plant-variants": "npx tsx scripts/verify-plant-variants-schema.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts"
   },
