@@ -42,7 +42,9 @@
     "db:migrate:partners": "node scripts/apply-sql-file.mjs db/migrations/032_partners.sql",
     "db:migrate:commission-tiers": "node scripts/apply-sql-file.mjs db/migrations/034_partner_commission.sql",
     "db:migrate:plant-variants": "node scripts/apply-sql-file.mjs db/migrations/035_plant_variants.sql",
+    "db:migrate:central-inventory": "node scripts/apply-sql-file.mjs db/migrations/036_central_inventory.sql",
     "verify:plant-variants": "npx tsx scripts/verify-plant-variants-schema.ts",
+    "verify:central-inventory": "npx tsx scripts/verify-central-inventory-schema.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts"
   },
