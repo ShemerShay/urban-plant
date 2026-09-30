@@ -4,6 +4,7 @@
 
 import { sql } from "@/lib/db";
 import { cycleEffectForPosWrite, cycleSqlFlags } from "@/lib/placementCycle";
+import { placementBoundaryCtes } from "@/lib/placementSegment";
 import type { OccupancyIntent } from "@/lib/posOccupancy";
 import { addCalendarDaysUtc, toIsoDateString, toIsoString, utcCalendarDateString } from "@/lib/storageUtils";
 
@@ -298,17 +299,12 @@ export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boo
         ${posSpot.posWeeklyNote ?? null},
         ${posSpot.createdAt}::timestamptz
       )
-      RETURNING id, plant_variant_id
-    ),
-    opened AS (
-      INSERT INTO placement_cycles (
-        id, pos_spot_id, plant_variant_id, started_at, ended_at, end_reason, order_id
-      )
-      SELECT gen_random_uuid(), written.id, written.plant_variant_id, now(), NULL, NULL, NULL
-      FROM written
-      WHERE written.plant_variant_id IS NOT NULL
+      RETURNING id, plant_variant_id, pocket_id, current_offer_id
     )
-    SELECT 1 AS cycle_ok FROM written
+    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
+    SELECT segment_guard.seg_ok AS cycle_ok
+    FROM written
+    CROSS JOIN segment_guard
   `;
 }
 
@@ -367,18 +363,12 @@ export function insertPosSpotWithOccupancyGuardQuery(posSpot: PosSpot, variantId
         ${posSpot.posWeeklyNote ?? null},
         ${posSpot.createdAt}::timestamptz
       )
-      RETURNING id, plant_variant_id
-    ),
-    opened AS (
-      INSERT INTO placement_cycles (
-        id, pos_spot_id, plant_variant_id, started_at, ended_at, end_reason, order_id
-      )
-      SELECT gen_random_uuid(), written.id, written.plant_variant_id, now(), NULL, NULL, NULL
-      FROM written
-      WHERE written.plant_variant_id IS NOT NULL
+      RETURNING id, plant_variant_id, pocket_id, current_offer_id
     )
+    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
     SELECT 1 / COUNT(*)::integer AS occupancy_ok
     FROM written
+    CROSS JOIN segment_guard
     WHERE plant_variant_id IS NOT DISTINCT FROM ${expectedVariantId}::uuid
   `;
 }
@@ -619,9 +609,25 @@ export async function completePosSpotSaleFromHold(
           WHERE c.pos_spot_id = pos_upd.id
             AND c.ended_at IS NULL
           RETURNING c.id
+        ),
+        segment_close AS (
+          UPDATE placement_segments s
+          SET ended_at = now()
+          FROM closed c
+          WHERE s.placement_cycle_id = c.id
+            AND s.ended_at IS NULL
+          RETURNING s.id
+        ),
+        segment_guard AS (
+          SELECT 1 / CASE
+            WHEN (SELECT COUNT(*) FROM closed) = (SELECT COUNT(*) FROM segment_close)
+            THEN 1
+            ELSE 0
+          END AS seg_ok
         )
         SELECT pos_upd.* FROM pos_upd
         LEFT JOIN closed ON true
+        CROSS JOIN segment_guard
       `
     : await sql`
         WITH e AS (
@@ -655,9 +661,25 @@ export async function completePosSpotSaleFromHold(
           WHERE c.pos_spot_id = pos_upd.id
             AND c.ended_at IS NULL
           RETURNING c.id
+        ),
+        segment_close AS (
+          UPDATE placement_segments s
+          SET ended_at = now()
+          FROM closed c
+          WHERE s.placement_cycle_id = c.id
+            AND s.ended_at IS NULL
+          RETURNING s.id
+        ),
+        segment_guard AS (
+          SELECT 1 / CASE
+            WHEN (SELECT COUNT(*) FROM closed) = (SELECT COUNT(*) FROM segment_close)
+            THEN 1
+            ELSE 0
+          END AS seg_ok
         )
         SELECT pos_upd.* FROM pos_upd
         LEFT JOIN closed ON true
+        CROSS JOIN segment_guard
       `;
   const row = (rows as PosSpotRow[])[0];
   if (!row) return { ok: false, outcome: "unavailable" };
@@ -994,36 +1016,11 @@ export async function preparePosSpotUpdate(
             END
           WHERE ${occupancyWhere}
           RETURNING ${POS_SPOT_ROW_SQL}
-        ),
-        closed AS (
-          UPDATE placement_cycles c
-          SET
-            ended_at = now(),
-            end_reason = ${closeReason}
-          FROM written w
-          WHERE ${shouldClose}
-            AND c.pos_spot_id = w.id
-            AND c.ended_at IS NULL
-          RETURNING c.id
-        ),
-        closed_done AS (
-          SELECT COUNT(*)::int AS n FROM closed
-        ),
-        opened AS (
-          INSERT INTO placement_cycles (
-            id, pos_spot_id, plant_variant_id, started_at, ended_at, end_reason, order_id
-          )
-          SELECT gen_random_uuid(), w.id, w.plant_variant_id, now(), NULL, NULL, NULL
-          FROM written w
-          CROSS JOIN closed_done
-          WHERE ${shouldOpen}
-            AND w.plant_variant_id IS NOT NULL
-          RETURNING id
         )
+        ${placementBoundaryCtes({ shouldClose, shouldOpen, closeReason })}
         SELECT ${POS_SPOT_ROW_SQL}
         FROM written
-        CROSS JOIN closed_done
-        CROSS JOIN (SELECT COUNT(*)::int AS opened_n FROM opened) opened_done
+        CROSS JOIN segment_guard
       `
     : sql`
         WITH written AS (
@@ -1083,37 +1080,12 @@ export async function preparePosSpotUpdate(
               ELSE payment_hold_attempt_id
             END
           WHERE ${occupancyWhere}
-          RETURNING id, plant_variant_id
-        ),
-        closed AS (
-          UPDATE placement_cycles c
-          SET
-            ended_at = now(),
-            end_reason = ${closeReason}
-          FROM written w
-          WHERE ${shouldClose}
-            AND c.pos_spot_id = w.id
-            AND c.ended_at IS NULL
-          RETURNING c.id
-        ),
-        closed_done AS (
-          SELECT COUNT(*)::int AS n FROM closed
-        ),
-        opened AS (
-          INSERT INTO placement_cycles (
-            id, pos_spot_id, plant_variant_id, started_at, ended_at, end_reason, order_id
-          )
-          SELECT gen_random_uuid(), w.id, w.plant_variant_id, now(), NULL, NULL, NULL
-          FROM written w
-          CROSS JOIN closed_done
-          WHERE ${shouldOpen}
-            AND w.plant_variant_id IS NOT NULL
-          RETURNING id
+          RETURNING id, plant_variant_id, pocket_id, current_offer_id
         )
+        ${placementBoundaryCtes({ shouldClose, shouldOpen, closeReason })}
         SELECT 1 / COUNT(*)::integer AS occupancy_ok
         FROM written
-        CROSS JOIN closed_done
-        CROSS JOIN (SELECT COUNT(*)::int AS opened_n FROM opened) opened_done
+        CROSS JOIN segment_guard
         WHERE written.plant_variant_id IS NOT DISTINCT FROM ${plantVariantIdForSql}::uuid
       `;
 

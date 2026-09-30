@@ -174,12 +174,80 @@ export async function updateOffer(
   };
 
   await sql`
-    UPDATE offers
-    SET
-      product_id = ${offer.productId},
-      consumer_price = ${offer.consumerPrice},
-      status = ${offer.status}
-    WHERE id = ${trimmed}
+    WITH old AS (
+      SELECT id, consumer_price
+      FROM offers
+      WHERE id = ${trimmed}
+    ),
+    price_upd AS (
+      UPDATE offers
+      SET
+        product_id = ${offer.productId},
+        consumer_price = ${offer.consumerPrice}::numeric,
+        status = ${offer.status}
+      FROM old
+      WHERE offers.id = old.id
+      RETURNING offers.id, offers.consumer_price, old.consumer_price AS previous_price
+    ),
+    affected AS (
+      SELECT
+        c.id AS cycle_id,
+        p.pocket_id,
+        pk.name AS pocket_name,
+        p.current_offer_id AS offer_id,
+        u.consumer_price
+      FROM price_upd u
+      INNER JOIN pos_spots p ON p.current_offer_id = u.id
+      INNER JOIN placement_cycles c
+        ON c.pos_spot_id = p.id
+       AND c.ended_at IS NULL
+      LEFT JOIN pockets pk ON pk.id = p.pocket_id
+      WHERE u.consumer_price IS DISTINCT FROM u.previous_price
+    ),
+    closed_segments AS (
+      UPDATE placement_segments s
+      SET ended_at = now()
+      FROM affected a
+      WHERE s.placement_cycle_id = a.cycle_id
+        AND s.ended_at IS NULL
+        AND s.consumer_price IS DISTINCT FROM a.consumer_price
+      RETURNING s.placement_cycle_id
+    ),
+    opened_segments AS (
+      INSERT INTO placement_segments (
+        id,
+        placement_cycle_id,
+        started_at,
+        ended_at,
+        pocket_id,
+        pocket_name,
+        offer_id,
+        consumer_price
+      )
+      SELECT
+        gen_random_uuid(),
+        a.cycle_id,
+        now(),
+        NULL,
+        a.pocket_id,
+        CASE WHEN a.pocket_id IS NULL THEN NULL ELSE a.pocket_name END,
+        a.offer_id,
+        a.consumer_price
+      FROM affected a
+      INNER JOIN closed_segments cs ON cs.placement_cycle_id = a.cycle_id
+      WHERE (
+        a.pocket_id IS NULL
+        OR (a.pocket_name IS NOT NULL AND length(trim(a.pocket_name)) > 0)
+      )
+      RETURNING id
+    )
+    SELECT 1 / CASE
+      WHEN (SELECT COUNT(*) FROM affected) = (SELECT COUNT(*) FROM closed_segments)
+       AND (SELECT COUNT(*) FROM closed_segments) = (SELECT COUNT(*) FROM opened_segments)
+      THEN 1
+      ELSE 0
+    END AS seg_ok
+    FROM price_upd
   `;
 
   return offer;

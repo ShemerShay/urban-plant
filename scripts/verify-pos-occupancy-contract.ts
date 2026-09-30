@@ -656,6 +656,12 @@ async function main(): Promise<void> {
     }
     const spotIds = [plantSpotId, flowerSpotId, legacySpotId].filter(Boolean) as string[];
     if (spotIds.length > 0) {
+      await sql`
+        DELETE FROM placement_segments
+        WHERE placement_cycle_id IN (
+          SELECT id FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])
+        )
+      `;
       await sql`DELETE FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])`;
       await sql`DELETE FROM pos_spots WHERE id = ANY(${spotIds}::uuid[])`;
     }
@@ -668,6 +674,13 @@ async function main(): Promise<void> {
     }
     await sql`DELETE FROM pockets WHERE name LIKE ${`${tag}-pocket%`}`;
     await sql`DELETE FROM offers WHERE id = ${offerA} OR id = ${offerB} OR id = ${offerFlower} OR id = ${offerLegacy}`;
+    await sql`
+      DELETE FROM placement_segments
+      WHERE placement_cycle_id IN (
+        SELECT id FROM placement_cycles
+        WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid)
+      )
+    `;
     await sql`DELETE FROM placement_cycles WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid)`;
     await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid)`;
   }

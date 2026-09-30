@@ -891,6 +891,21 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         AND c.ended_at IS NULL
       RETURNING c.id
     ),
+    segment_close AS (
+      UPDATE placement_segments s
+      SET ended_at = now()
+      FROM cycle_close cc
+      WHERE s.placement_cycle_id = cc.id
+        AND s.ended_at IS NULL
+      RETURNING s.id
+    ),
+    segment_guard AS (
+      SELECT 1 / CASE
+        WHEN (SELECT COUNT(*) FROM cycle_close) = (SELECT COUNT(*) FROM segment_close)
+        THEN 1
+        ELSE 0
+      END AS seg_ok
+    ),
     attempt_upd AS (
       UPDATE payment_attempts a
       SET
@@ -950,7 +965,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
       (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type,
       (SELECT id FROM attempt_upd LIMIT 1) AS finalized_attempt_id,
-      (SELECT COUNT(*)::int FROM cycle_close) AS cycles_closed
+      (SELECT COUNT(*)::int FROM cycle_close) AS cycles_closed,
+      (SELECT seg_ok FROM segment_guard) AS segment_guard_ok
     FROM order_ins o
   `;
 
