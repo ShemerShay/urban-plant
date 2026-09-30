@@ -10,12 +10,13 @@ import { isPosAssignableOffer } from "@/lib/offerTypes";
 import { resolveSpotOffers, type PartnerPlantProduct } from "@/lib/partnerPlantSummary";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPocketById } from "@/lib/pocketStorage";
+import { posCentralStockHttpError, writePosCreate } from "@/lib/posCentralStock";
 import {
   occupancyToSpotFields,
   PosOccupancyError,
   resolveOccupancyForPosCreate,
 } from "@/lib/posOccupancy";
-import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";
+import { PosSpotSlugConflictError, readPosSpots } from "@/lib/posSpotStorage";
 import {
   buildPosSpotNameAndSlug,
   formatPosSpotDisplayName,
@@ -208,9 +209,30 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    await appendPosSpot(posSpot);
-  } catch {
-    return NextResponse.json({ error: "POS Spot spot name or spot slug already exists" }, { status: 409 });
+    await writePosCreate({
+      occupancyAction: occupancy.action,
+      inventorySource: record.inventorySource,
+      posSpot,
+      variantId: occupancy.plantVariantId,
+    });
+  } catch (err) {
+    if (err instanceof PosSpotSlugConflictError) {
+      return NextResponse.json(
+        { error: "POS Spot spot name or spot slug already exists" },
+        { status: 409 },
+      );
+    }
+    const mapped = posCentralStockHttpError(err);
+    if (mapped) {
+      return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    }
+    if (err instanceof Error && /already exists/i.test(err.message)) {
+      return NextResponse.json(
+        { error: "POS Spot spot name or spot slug already exists" },
+        { status: 409 },
+      );
+    }
+    throw err;
   }
 
   await appendEvent({

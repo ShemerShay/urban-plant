@@ -8,6 +8,7 @@ import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID } from "@/lib/offerTypes";
 import { getPocketById } from "@/lib/pocketStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
+import { posCentralStockHttpError, writePosUpdate } from "@/lib/posCentralStock";
 import {
   occupancyToSpotFields,
   parseOccupancyIntent,
@@ -17,7 +18,6 @@ import {
 import {
   getPosSpotById,
   PosSpotSlugConflictError,
-  updatePosSpot,
 } from "@/lib/posSpotStorage";
 import { formatPosSpotDisplayName } from "@/lib/posSpotSlugUtils";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
@@ -232,52 +232,63 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   try {
-    const posSpot = await updatePosSpot(id, {
-      partnerLocationId,
-      posNumber,
-      posName,
-      ...(spotDescription ? { spotDescription } : {}),
-      ...(hasPocketId
-        ? { updatePocketId: true as const, pocketId: nextPocketId }
-        : {}),
-      ...occupancyFields,
-      ...(hasCheckStatus
-        ? {
-            updateCheckFields: true as const,
-            checkStatus: record.checkStatus as boolean,
-            checkBy:
-              typeof record.checkBy === "string"
-                ? record.checkBy.trim() || null
-                : record.checkBy === null
-                  ? null
-                  : null,
-          }
-        : {}),
-      ...(hasPosWeeklyNote
-        ? {
-            updatePosWeeklyNote: true as const,
-            posWeeklyNote:
-              typeof posWeeklyNoteRaw === "string"
-                ? posWeeklyNoteRaw.trim() || null
-                : posWeeklyNoteRaw === null
-                  ? null
-                  : null,
-          }
-        : {}),
-      ...(hasOfferPlacedAt
-        ? { updateOfferPlacedAt: true as const, offerPlacedAt: offerPlacedAt ?? null }
-        : {}),
-      ...(occupancy.forceAvailable
-        ? { updateStatus: true as const, status: "available" as const }
-        : hasStatus && parsedStatus
-          ? { updateStatus: true as const, status: parsedStatus }
+    const posSpot = await writePosUpdate({
+      occupancyAction: occupancy.action,
+      inventorySource: record.inventorySource,
+      id,
+      existing,
+      variantId: occupancy.plantVariantId,
+      patch: {
+        partnerLocationId,
+        posNumber,
+        posName,
+        ...(spotDescription ? { spotDescription } : {}),
+        ...(hasPocketId
+          ? { updatePocketId: true as const, pocketId: nextPocketId }
           : {}),
+        ...occupancyFields,
+        ...(hasCheckStatus
+          ? {
+              updateCheckFields: true as const,
+              checkStatus: record.checkStatus as boolean,
+              checkBy:
+                typeof record.checkBy === "string"
+                  ? record.checkBy.trim() || null
+                  : record.checkBy === null
+                    ? null
+                    : null,
+            }
+          : {}),
+        ...(hasPosWeeklyNote
+          ? {
+              updatePosWeeklyNote: true as const,
+              posWeeklyNote:
+                typeof posWeeklyNoteRaw === "string"
+                  ? posWeeklyNoteRaw.trim() || null
+                  : posWeeklyNoteRaw === null
+                    ? null
+                    : null,
+            }
+          : {}),
+        ...(hasOfferPlacedAt
+          ? { updateOfferPlacedAt: true as const, offerPlacedAt: offerPlacedAt ?? null }
+          : {}),
+        ...(occupancy.forceAvailable
+          ? { updateStatus: true as const, status: "available" as const }
+          : hasStatus && parsedStatus
+            ? { updateStatus: true as const, status: parsedStatus }
+            : {}),
+      },
     });
     if (!posSpot) {
       return NextResponse.json({ error: "Could not update POS Spot" }, { status: 400 });
     }
     return NextResponse.json({ ok: true, posSpot });
   } catch (err) {
+    const mapped = posCentralStockHttpError(err);
+    if (mapped) {
+      return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    }
     if (err instanceof PosSpotSlugConflictError) {
       return NextResponse.json({ error: "Spot slug is already used by another POS Spot" }, { status: 409 });
     }

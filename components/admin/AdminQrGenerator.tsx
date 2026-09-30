@@ -9,6 +9,10 @@ import { displayApiError, inventoryStatusLabel } from "@/lib/displayLabels";
 import type { PartnerLocation } from "@/lib/mockLocations";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
+import {
+  adminSaveNeedsInventorySource,
+  type InventorySource,
+} from "@/lib/inventorySource";
 import { buildPosSpotNameAndSlug } from "@/lib/posSpotSlugUtils";
 import { absoluteAppUrl, getClientOrigin, posSpotPath, routes } from "@/lib/routes";
 
@@ -62,6 +66,7 @@ export function AdminQrGenerator() {
   const [locations, setLocations] = useState<PartnerLocation[]>([]);
   const [currentOfferId, setCurrentOfferId] = useState("");
   const [plantVariantId, setPlantVariantId] = useState("");
+  const [inventorySource, setInventorySource] = useState<InventorySource | "">("");
   const [partnerLocationId, setPartnerLocationId] = useState("");
   const [posNumber, setPosNumber] = useState("");
   const [spotDescription, setSpotDescription] = useState("");
@@ -110,6 +115,15 @@ export function AdminQrGenerator() {
 
   const offer = offers.find((item) => item.id === currentOfferId);
   const selectedIsPlant = Boolean(offer) && offer?.inventoryType !== "flowers";
+  const showInventorySource = adminSaveNeedsInventorySource({
+    selectedIsPlant,
+    creating: true,
+    occupiedVariantId: "",
+    selectedVariantId: plantVariantId,
+    sameVariantReplace: false,
+    existingOfferId: "",
+    existingOfferIsFlower: false,
+  });
   const variantsForSelectedPlant = useMemo(() => {
     if (!offer || !selectedIsPlant) return [];
     return plantVariants.filter((variant) => variant.plantId === offer.productId);
@@ -121,6 +135,7 @@ export function AdminQrGenerator() {
       posNumber.trim() &&
       spotSlug.trim() &&
       (!selectedIsPlant || plantVariantId.trim()) &&
+      (!showInventorySource || inventorySource) &&
       !isSaving,
   );
 
@@ -132,6 +147,7 @@ export function AdminQrGenerator() {
     setPartnerLocationId(locations[0]?.id ?? "");
     setCurrentOfferId(offers[0]?.id ?? "");
     setPlantVariantId("");
+    setInventorySource("");
   }
 
   async function handleCopyUrl() {
@@ -182,6 +198,7 @@ export function AdminQrGenerator() {
           placementNotes: placementNotes.trim(),
           currentOfferId,
           ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
+          ...(showInventorySource && inventorySource ? { inventorySource } : {}),
           status,
         }),
       });
@@ -279,6 +296,34 @@ export function AdminQrGenerator() {
                 <span className="text-xs text-amber-700">{t(locale, "admin.qr.noVariants")}</span>
               ) : null}
             </label>
+          ) : null}
+
+          {showInventorySource ? (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.pos.inventorySource.label")}
+              </legend>
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="qr-inventory-source"
+                  className="mt-1"
+                  checked={inventorySource === "central"}
+                  onChange={() => setInventorySource("central")}
+                />
+                <span>{t(locale, "admin.pos.inventorySource.central")}</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="qr-inventory-source"
+                  className="mt-1"
+                  checked={inventorySource === "already_at_partner"}
+                  onChange={() => setInventorySource("already_at_partner")}
+                />
+                <span>{t(locale, "admin.pos.inventorySource.alreadyAtPartner")}</span>
+              </label>
+            </fieldset>
           ) : null}
 
           <label className="block space-y-2">
