@@ -31,7 +31,9 @@ type LandingJoinRow = {
 };
 
 async function loadPosLandingDetailsFallback(posSpot: PosSpot): Promise<PosLandingDetails> {
-  const offer = await getOfferById(posSpot.currentOfferId);
+  const offer = posSpot.currentOfferId
+    ? await getOfferById(posSpot.currentOfferId)
+    : undefined;
   const plant = offer ? await getPlantById(offer.productId) : undefined;
   const partner = await getLocationById(posSpot.partnerLocationId);
   const pocket = posSpot.pocketId ? await getPocketById(posSpot.pocketId) : undefined;
@@ -43,7 +45,7 @@ async function loadPosLandingDetailsFallback(posSpot: PosSpot): Promise<PosLandi
  * Does not re-read `pos_spots` (keeps the post-expiry snapshot used for CTA/gates).
  */
 export async function getPosLandingDetails(posSpot: PosSpot): Promise<PosLandingDetails> {
-  const offerId = posSpot.currentOfferId.trim();
+  const offerId = posSpot.currentOfferId?.trim() ?? "";
   const partnerId = posSpot.partnerLocationId.trim();
   const pocketId = posSpot.pocketId?.trim() || null;
   if (!offerId) {

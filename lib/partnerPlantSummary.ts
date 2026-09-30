@@ -28,7 +28,7 @@ export function resolveSpotOffers(
   const resolved = new Map<string, PartnerPlantOffer>();
   for (const spot of spots) {
     const offerId = spot.currentOfferId;
-    if (resolved.has(offerId)) continue;
+    if (!offerId || resolved.has(offerId)) continue;
     const offer = offerById.get(offerId);
     const product = offer ? productById.get(offer.productId) : undefined;
     resolved.set(offerId, {
@@ -61,6 +61,7 @@ export function isCountedPlantSpot(
   offer: PartnerPlantOffer | undefined,
 ): boolean {
   if (offer?.inventoryType !== "plants") return false;
+  if (!spot.currentOfferId) return false;
   return spot.status === "available" || spot.status === "sold" || spot.status === "inactive";
 }
 
@@ -78,6 +79,7 @@ export function groupPlantSpotsByType(
 ): PartnerPlantGroup[] {
   const byProduct = new Map<string, PartnerPlantGroup>();
   for (const spot of spots) {
+    if (!spot.currentOfferId) continue;
     const offer = offerById.get(spot.currentOfferId);
     if (!offer) continue;
     const existing = byProduct.get(offer.productId);

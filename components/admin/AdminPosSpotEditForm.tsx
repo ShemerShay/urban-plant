@@ -36,12 +36,31 @@ type OfferRow = {
   consumerPrice: number;
   currency: "ILS" | "USD" | "EUR";
   status: "active" | "inactive";
+  inventoryType?: "plants" | "flowers" | null;
+  variantId?: string | null;
 };
+
+type PlantVariantOption = {
+  id: string;
+  plantId: string;
+  sizeLabel?: string;
+  nurseryPotDiameterCm?: number;
+};
+
+function variantOptionLabel(variant: PlantVariantOption): string {
+  const size = variant.sizeLabel?.trim();
+  const cm = variant.nurseryPotDiameterCm;
+  if (size && cm != null) return `${size} (${cm} cm)`;
+  if (size) return size;
+  if (cm != null) return `${cm} cm`;
+  return variant.id.slice(0, 8);
+}
 
 type EditLoadResponse = {
   posSpot?: PosSpot;
   offers?: OfferRow[];
   locations?: PartnerLocation[];
+  plantVariants?: PlantVariantOption[];
   error?: string;
 };
 
@@ -96,11 +115,14 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   const [initialSpot, setInitialSpot] = useState<PosSpot | null>(null);
 
   const [offers, setOffers] = useState<OfferRow[]>([]);
+  const [plantVariants, setPlantVariants] = useState<PlantVariantOption[]>([]);
   const [locations, setLocations] = useState<PartnerLocation[]>([]);
 
   const [partnerLocationId, setPartnerLocationId] = useState("");
   const [partnerLocationAddress, setPartnerLocationAddress] = useState("");
   const [currentOfferId, setCurrentOfferId] = useState("");
+  const [plantVariantId, setPlantVariantId] = useState("");
+  const [sameVariantReplace, setSameVariantReplace] = useState(false);
   const [posNumber, setPosNumber] = useState("");
   const [pocket, setPocket] = useState<PosSpotPocketValue | "">("");
   const [pocketOther, setPocketOther] = useState("");
@@ -142,9 +164,12 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
         }
         setInitialSpot(spot);
         setOffers(data.offers ?? []);
+        setPlantVariants(data.plantVariants ?? []);
         setLocations(data.locations ?? []);
         setPartnerLocationId(spot.partnerLocationId);
-        setCurrentOfferId(spot.currentOfferId);
+        setCurrentOfferId(spot.currentOfferId ?? "");
+        setPlantVariantId(spot.plantVariantId ?? "");
+        setSameVariantReplace(false);
         setPosNumber(spot.posNumber ?? "");
         setPocket((spot.pocket as PosSpotPocketValue) ?? "");
         setPocketOther(spot.pocketOther ?? "");
@@ -208,6 +233,15 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
     }
     return active;
   }, [offers, currentOfferId]);
+  const selectedOffer = offers.find((offer) => offer.id === currentOfferId);
+  const selectedIsPlant = Boolean(selectedOffer) && selectedOffer?.inventoryType !== "flowers";
+  const variantsForSelectedPlant = useMemo(() => {
+    if (!selectedOffer || !selectedIsPlant) return [];
+    return plantVariants.filter((variant) => variant.plantId === selectedOffer.productId);
+  }, [plantVariants, selectedOffer, selectedIsPlant]);
+  const showSameVariantReplace = Boolean(
+    initialSpot?.plantVariantId && plantVariantId === initialSpot.plantVariantId,
+  );
 
   const relativePath = useMemo(() => (spotSlug ? posSpotPath(spotSlug) : ""), [spotSlug]);
   const fullUrlPreview = origin && relativePath ? absoluteAppUrl(origin, relativePath) : "";
@@ -246,6 +280,8 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
           partnerLocationId,
           partnerLocationAddress,
           currentOfferId,
+          ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
+          ...(showSameVariantReplace && sameVariantReplace ? { sameVariantReplace: true } : {}),
           posNumber: posNumber.trim(),
           pocket,
           ...(pocket === "other" ? { pocketOther: pocketOther.trim() } : {}),
@@ -524,7 +560,23 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
             </span>
             <select
               value={currentOfferId}
-              onChange={(e) => setCurrentOfferId(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setCurrentOfferId(next);
+                const nextOffer = offers.find((offer) => offer.id === next);
+                const nextVariants = plantVariants.filter(
+                  (variant) => variant.plantId === nextOffer?.productId,
+                );
+                if (
+                  nextOffer?.variantId &&
+                  nextVariants.some((variant) => variant.id === nextOffer.variantId)
+                ) {
+                  setPlantVariantId(nextOffer.variantId);
+                } else if (!nextVariants.some((variant) => variant.id === plantVariantId)) {
+                  setPlantVariantId("");
+                }
+                setSameVariantReplace(false);
+              }}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
               {offerOptions.map((item) => (
@@ -537,6 +589,79 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               ))}
             </select>
           </label>
+
+          {selectedIsPlant ? (
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.pos.edit.variant")}
+              </span>
+              <select
+                value={plantVariantId}
+                onChange={(e) => {
+                  setPlantVariantId(e.target.value);
+                  setSameVariantReplace(false);
+                }}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
+              >
+                <option value="">{t(locale, "admin.pos.edit.selectVariant")}</option>
+                {variantsForSelectedPlant.map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variantOptionLabel(variant)}
+                  </option>
+                ))}
+              </select>
+              {selectedOffer && variantsForSelectedPlant.length === 0 ? (
+                <span className="text-xs text-amber-700">{t(locale, "admin.pos.edit.noVariants")}</span>
+              ) : null}
+            </label>
+          ) : null}
+
+          {showSameVariantReplace ? (
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={sameVariantReplace}
+                onChange={(e) => setSameVariantReplace(e.target.checked)}
+              />
+              <span>{t(locale, "admin.pos.edit.sameVariantReplace")}</span>
+            </label>
+          ) : null}
+
+          {initialSpot && (initialSpot.plantVariantId || initialSpot.currentOfferId) && selectedIsPlant ? (
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={async () => {
+                setIsSaving(true);
+                setSaveError(null);
+                try {
+                  const res = await fetch(routes.api.posSpot(posSpotId), {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      partnerLocationId,
+                      posNumber: posNumber.trim(),
+                      occupancyIntent: "remove",
+                    }),
+                  });
+                  const data = (await res.json().catch(() => ({}))) as { error?: string };
+                  if (!res.ok) {
+                    setSaveError(displayApiError(locale, data.error, "admin.pos.edit.saveFailed"));
+                    return;
+                  }
+                  router.push(routes.admin.posSpots());
+                } catch {
+                  setSaveError(t(locale, "common.networkError"));
+                } finally {
+                  setIsSaving(false);
+                }
+              }}
+              className="text-sm font-medium text-amber-800 underline underline-offset-2"
+            >
+              {t(locale, "admin.pos.edit.removePlant")}
+            </button>
+          ) : null}
 
           <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/50 px-3 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">

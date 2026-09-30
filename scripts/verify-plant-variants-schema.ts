@@ -297,7 +297,10 @@ async function main(): Promise<void> {
   const liveOffers = await readOffers();
   assert.ok(liveOffers.every((offer) => offer.variantId == null));
   const liveSpots = await readPosSpots();
-  assert.ok(liveSpots.every((spot) => Boolean(spot.currentOfferId)));
+  assert.ok(
+    liveSpots.every((spot) => !spot.plantVariantId || Boolean(spot.currentOfferId)),
+    "occupying POS must keep an offer",
+  );
 
   console.log("verify-plant-variants-schema: existing plants/offers/POS/orders untouched");
 }

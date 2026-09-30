@@ -19,7 +19,25 @@ type OfferOption = {
   consumerPrice: number;
   currency: "ILS" | "USD" | "EUR";
   status: "active" | "inactive";
+  inventoryType?: "plants" | "flowers" | null;
+  variantId?: string | null;
 };
+
+type PlantVariantOption = {
+  id: string;
+  plantId: string;
+  sizeLabel?: string;
+  nurseryPotDiameterCm?: number;
+};
+
+function variantOptionLabel(variant: PlantVariantOption): string {
+  const size = variant.sizeLabel?.trim();
+  const cm = variant.nurseryPotDiameterCm;
+  if (size && cm != null) return `${size} (${cm} cm)`;
+  if (size) return size;
+  if (cm != null) return `${cm} cm`;
+  return variant.id.slice(0, 8);
+}
 
 type PosSpotStatus = "available" | "sold" | "inactive" | "held_for_payment";
 
@@ -40,8 +58,10 @@ export function AdminQrGenerator() {
   const qrHostRef = useRef<HTMLDivElement>(null);
   const origin = useClientOrigin();
   const [offers, setOffers] = useState<OfferOption[]>([]);
+  const [plantVariants, setPlantVariants] = useState<PlantVariantOption[]>([]);
   const [locations, setLocations] = useState<PartnerLocation[]>([]);
   const [currentOfferId, setCurrentOfferId] = useState("");
+  const [plantVariantId, setPlantVariantId] = useState("");
   const [partnerLocationId, setPartnerLocationId] = useState("");
   const [posNumber, setPosNumber] = useState("");
   const [spotDescription, setSpotDescription] = useState("");
@@ -59,11 +79,13 @@ export function AdminQrGenerator() {
       const data = (await res.json()) as {
         offers?: OfferOption[];
         locations?: PartnerLocation[];
+        plantVariants?: PlantVariantOption[];
       };
       if (cancelled) return;
       const activeOffers = (data.offers ?? []).filter((offer) => offer.status === "active");
       const nextLocations = data.locations ?? [];
       setOffers(activeOffers);
+      setPlantVariants(data.plantVariants ?? []);
       setLocations(nextLocations);
       setPartnerLocationId((prev) => prev || nextLocations[0]?.id || "");
       setCurrentOfferId((prev) => prev || activeOffers[0]?.id || "");
@@ -87,12 +109,18 @@ export function AdminQrGenerator() {
   const fullUrl = origin && relativePath ? absoluteAppUrl(origin, relativePath) : "";
 
   const offer = offers.find((item) => item.id === currentOfferId);
+  const selectedIsPlant = Boolean(offer) && offer?.inventoryType !== "flowers";
+  const variantsForSelectedPlant = useMemo(() => {
+    if (!offer || !selectedIsPlant) return [];
+    return plantVariants.filter((variant) => variant.plantId === offer.productId);
+  }, [plantVariants, offer, selectedIsPlant]);
 
   const canSave = Boolean(
     partnerLocationId.trim() &&
       currentOfferId.trim() &&
       posNumber.trim() &&
       spotSlug.trim() &&
+      (!selectedIsPlant || plantVariantId.trim()) &&
       !isSaving,
   );
 
@@ -103,6 +131,7 @@ export function AdminQrGenerator() {
     setStatus("available");
     setPartnerLocationId(locations[0]?.id ?? "");
     setCurrentOfferId(offers[0]?.id ?? "");
+    setPlantVariantId("");
   }
 
   async function handleCopyUrl() {
@@ -152,6 +181,7 @@ export function AdminQrGenerator() {
           ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
           placementNotes: placementNotes.trim(),
           currentOfferId,
+          ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
           status,
         }),
       });
@@ -202,7 +232,22 @@ export function AdminQrGenerator() {
             </span>
             <select
               value={currentOfferId}
-              onChange={(e) => setCurrentOfferId(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setCurrentOfferId(next);
+                const nextOffer = offers.find((item) => item.id === next);
+                const nextVariants = plantVariants.filter(
+                  (variant) => variant.plantId === nextOffer?.productId,
+                );
+                if (
+                  nextOffer?.variantId &&
+                  nextVariants.some((variant) => variant.id === nextOffer.variantId)
+                ) {
+                  setPlantVariantId(nextOffer.variantId);
+                } else if (!nextVariants.some((variant) => variant.id === plantVariantId)) {
+                  setPlantVariantId("");
+                }
+              }}
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
             >
               {offers.map((item) => (
@@ -212,6 +257,29 @@ export function AdminQrGenerator() {
               ))}
             </select>
           </label>
+
+          {selectedIsPlant ? (
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.qr.variant")}
+              </span>
+              <select
+                value={plantVariantId}
+                onChange={(e) => setPlantVariantId(e.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200/60"
+              >
+                <option value="">{t(locale, "admin.qr.selectVariant")}</option>
+                {variantsForSelectedPlant.map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variantOptionLabel(variant)}
+                  </option>
+                ))}
+              </select>
+              {offer && variantsForSelectedPlant.length === 0 ? (
+                <span className="text-xs text-amber-700">{t(locale, "admin.qr.noVariants")}</span>
+              ) : null}
+            </label>
+          ) : null}
 
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-700">

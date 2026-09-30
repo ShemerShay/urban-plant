@@ -25,6 +25,7 @@ const POS_SPOT_ROW_SQL = sql`
   placement_notes,
   spot_slug,
   current_offer_id,
+  plant_variant_id,
   status,
   offer_placed_at,
   check_status,
@@ -48,7 +49,8 @@ type PosSpotRow = {
   spot_description: string | null;
   placement_notes: string | null;
   spot_slug: string;
-  current_offer_id: string;
+  current_offer_id: string | null;
+  plant_variant_id: string | null;
   status: string;
   offer_placed_at: string | Date | null;
   check_status: boolean;
@@ -151,7 +153,12 @@ function mapPosSpotRow(row: PosSpotRow): PosSpot {
     ...(spotDescription ? { spotDescription } : {}),
     ...(placementNotes ? { placementNotes } : {}),
     spotSlug: row.spot_slug,
-    currentOfferId: row.current_offer_id,
+    ...(typeof row.current_offer_id === "string" && row.current_offer_id.trim()
+      ? { currentOfferId: row.current_offer_id.trim() }
+      : {}),
+    ...(typeof row.plant_variant_id === "string" && row.plant_variant_id.trim()
+      ? { plantVariantId: row.plant_variant_id.trim() }
+      : {}),
     status: normalizeStatus(row.status),
     ...(offerPlacedAt ? { offerPlacedAt } : {}),
     checkStatus,
@@ -204,6 +211,7 @@ async function insertPosSpot(posSpot: PosSpot): Promise<void> {
       placement_notes,
       spot_slug,
       current_offer_id,
+      plant_variant_id,
       status,
       payment_hold_started_at,
       offer_placed_at,
@@ -225,7 +233,8 @@ async function insertPosSpot(posSpot: PosSpot): Promise<void> {
       ${posSpot.spotDescription ?? null},
       ${posSpot.placementNotes ?? null},
       ${posSpot.spotSlug},
-      ${posSpot.currentOfferId},
+      ${posSpot.currentOfferId ?? null},
+      ${posSpot.plantVariantId ?? null}::uuid,
       ${posSpot.status},
       ${holdStartedAt}::timestamptz,
       ${posSpot.offerPlacedAt ?? null}::timestamptz,
@@ -373,6 +382,7 @@ export async function acquirePosSpotHoldForPayment(
       payment_hold_attempt_id = ${attemptId}::uuid
     WHERE id = ${trimmed}::uuid
       AND status = 'available'
+      AND current_offer_id IS NOT NULL
     RETURNING ${POS_SPOT_ROW_SQL}
   `;
   const row = (rows as PosSpotRow[])[0];
@@ -447,7 +457,8 @@ export async function completePosSpotSaleFromHold(
         SET
           status = 'sold',
           payment_hold_started_at = NULL,
-          payment_hold_attempt_id = NULL
+          payment_hold_attempt_id = NULL,
+          plant_variant_id = NULL
         FROM e
         WHERE pos_spots.id = ${trimmed}::uuid
           AND pos_spots.status = 'held_for_payment'
@@ -469,7 +480,8 @@ export async function completePosSpotSaleFromHold(
         SET
           status = 'sold',
           payment_hold_started_at = NULL,
-          payment_hold_attempt_id = NULL
+          payment_hold_attempt_id = NULL,
+          plant_variant_id = NULL
         FROM e
         WHERE pos_spots.id = ${trimmed}::uuid
           AND pos_spots.status = 'held_for_payment'
@@ -576,7 +588,8 @@ export async function updatePosSpot(
     pocket?: string | null;
     pocketOther?: string | null;
     updateLegacyPocket?: boolean;
-    currentOfferId: string;
+    currentOfferId?: string | null;
+    plantVariantId?: string | null;
     checkStatus?: boolean;
     checkBy?: string | null;
     updateCheckFields?: boolean;
@@ -677,6 +690,17 @@ export async function updatePosSpot(
     checkByForSql = by || null;
   }
 
+  const updateCurrentOffer = patch.currentOfferId !== undefined;
+  const currentOfferIdForSql =
+    typeof patch.currentOfferId === "string" && patch.currentOfferId.trim()
+      ? patch.currentOfferId.trim()
+      : null;
+  const updatePlantVariant = patch.plantVariantId !== undefined;
+  const plantVariantIdForSql =
+    typeof patch.plantVariantId === "string" && patch.plantVariantId.trim()
+      ? patch.plantVariantId.trim()
+      : null;
+
   const rows = await sql`
     UPDATE pos_spots
     SET
@@ -689,7 +713,14 @@ export async function updatePosSpot(
       pos_name = ${posName},
       spot_description = ${spotDescription},
       spot_slug = ${spotSlug},
-      current_offer_id = ${patch.currentOfferId.trim()},
+      current_offer_id = CASE
+        WHEN ${updateCurrentOffer} THEN ${currentOfferIdForSql}
+        ELSE current_offer_id
+      END,
+      plant_variant_id = CASE
+        WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
+        ELSE plant_variant_id
+      END,
       check_status = CASE
         WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
         ELSE check_status

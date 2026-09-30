@@ -4,11 +4,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { appendEvent } from "@/lib/eventStorage";
 import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
+import { readPlantVariants } from "@/lib/plantVariantStorage";
 import { readOffers } from "@/lib/offerStorage";
 import { isPosAssignableOffer } from "@/lib/offerTypes";
 import { resolveSpotOffers, type PartnerPlantProduct } from "@/lib/partnerPlantSummary";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPocketById } from "@/lib/pocketStorage";
+import {
+  occupancyToSpotFields,
+  PosOccupancyError,
+  resolveOccupancyForPosCreate,
+} from "@/lib/posOccupancy";
 import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";
 import {
   buildPosSpotNameAndSlug,
@@ -34,10 +40,11 @@ function cleanString(value: unknown): string {
 
 export async function GET(request: NextRequest) {
   const partnerId = cleanString(request.nextUrl.searchParams.get("partnerId"));
-  const [offers, allSpotsInitial, locations] = await Promise.all([
+  const [offers, allSpotsInitial, locations, plantVariants] = await Promise.all([
     readOffers(),
     readPosSpots(),
     readPartnerLocations(),
+    readPlantVariants(),
   ]);
 
   // Lazy-repair expired holds so Admin lists show truth without waiting for cron.
@@ -51,7 +58,11 @@ export async function GET(request: NextRequest) {
     ? allSpots.filter((spot) => spot.partnerLocationId === partnerId)
     : allSpots;
   const posOffers = offers.filter(isPosAssignableOffer);
-  const referencedOfferIds = new Set(posSpots.map((spot) => spot.currentOfferId));
+  const referencedOfferIds = new Set(
+    posSpots
+      .map((spot) => spot.currentOfferId)
+      .filter((id): id is string => Boolean(id)),
+  );
   const productIds = new Set(
     offers
       .filter((offer) => isPosAssignableOffer(offer) || referencedOfferIds.has(offer.id))
@@ -68,6 +79,7 @@ export async function GET(request: NextRequest) {
       ...offer,
       productName: product?.name ?? offer.productId,
       currency: product?.currency ?? "ILS",
+      inventoryType: product?.inventoryType ?? null,
     };
   });
   const catalogById = new Map<string, PartnerPlantProduct>();
@@ -81,6 +93,7 @@ export async function GET(request: NextRequest) {
     spotOffers: resolveSpotOffers(posSpots, offers, catalogById),
     locations,
     posSpots,
+    plantVariants,
   });
 }
 
@@ -98,11 +111,11 @@ export async function POST(request: NextRequest) {
   const record = body as Record<string, unknown>;
   const partnerLocationId = cleanString(record.partnerLocationId);
   const currentOfferId = cleanString(record.currentOfferId);
+  const plantVariantId = cleanString(record.plantVariantId);
   const spotDescription = cleanString(record.spotDescription);
   const posNumber = cleanString(record.posNumber);
   const placementNotes = cleanString(record.placementNotes);
   const pocketIdRaw = cleanString(record.pocketId);
-  const offerPlacedAt = new Date().toISOString();
   const status = normalizeStatus(record.status);
 
   if (!partnerLocationId) {
@@ -124,6 +137,20 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  let occupancy;
+  try {
+    occupancy = await resolveOccupancyForPosCreate({
+      offerId: currentOfferId,
+      plantVariantId: plantVariantId || null,
+    });
+  } catch (err) {
+    if (err instanceof PosOccupancyError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+  const occupancyFields = occupancyToSpotFields(occupancy);
   if (!posNumber) {
     return NextResponse.json({ error: "posNumber is required" }, { status: 400 });
   }
@@ -166,10 +193,17 @@ export async function POST(request: NextRequest) {
     ...(spotDescription ? { spotDescription } : {}),
     ...(placementNotes ? { placementNotes } : {}),
     spotSlug,
-    currentOfferId,
-    status,
+    ...(occupancyFields.currentOfferId
+      ? { currentOfferId: occupancyFields.currentOfferId }
+      : {}),
+    ...(occupancyFields.plantVariantId
+      ? { plantVariantId: occupancyFields.plantVariantId }
+      : {}),
+    status: occupancy.forceAvailable ? "available" : status,
     checkStatus: false as const,
-    offerPlacedAt,
+    ...(occupancyFields.offerPlacedAt
+      ? { offerPlacedAt: occupancyFields.offerPlacedAt }
+      : {}),
     createdAt,
   };
 

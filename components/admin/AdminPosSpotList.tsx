@@ -426,7 +426,7 @@ export function AdminPosSpotList() {
               <PosSpotCard
                 spot={spot}
                 location={locationById.get(spot.partnerLocationId)}
-                offer={offerById.get(spot.currentOfferId)}
+                offer={offerById.get(spot.currentOfferId ?? "")}
                 origin={origin}
                 locale={locale}
               />

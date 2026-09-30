@@ -53,7 +53,25 @@ type OfferOption = {
   consumerPrice: number;
   currency: "ILS" | "USD" | "EUR";
   status: "active" | "inactive";
+  inventoryType?: "plants" | "flowers" | null;
+  variantId?: string | null;
 };
+
+type PlantVariantOption = {
+  id: string;
+  plantId: string;
+  sizeLabel?: string;
+  nurseryPotDiameterCm?: number;
+};
+
+function variantOptionLabel(variant: PlantVariantOption): string {
+  const size = variant.sizeLabel?.trim();
+  const cm = variant.nurseryPotDiameterCm;
+  if (size && cm != null) return `${size} (${cm} cm)`;
+  if (size) return size;
+  if (cm != null) return `${cm} cm`;
+  return variant.id.slice(0, 8);
+}
 
 type AdminPartnerDetailProps = {
   /** Partner location id. */
@@ -217,7 +235,7 @@ function PlantTypeGroup({
               key={spot.id}
               locale={locale}
               spot={spot}
-              offerName={offerNameById.get(spot.currentOfferId) ?? name}
+              offerName={offerNameById.get(spot.currentOfferId ?? "") ?? name}
               onEdit={() => onEditSpot(spot)}
               onArchive={() => onArchiveSpot(spot)}
             />
@@ -311,6 +329,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
   const [pockets, setPockets] = useState<Pocket[]>([]);
   const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
   const [offers, setOffers] = useState<OfferOption[]>([]);
+  const [plantVariants, setPlantVariants] = useState<PlantVariantOption[]>([]);
   const [spotOffers, setSpotOffers] = useState<PartnerPlantOffer[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -331,6 +350,8 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
   const [posNumber, setPosNumber] = useState("");
   const [pocketId, setPocketId] = useState("");
   const [currentOfferId, setCurrentOfferId] = useState("");
+  const [plantVariantId, setPlantVariantId] = useState("");
+  const [sameVariantReplace, setSameVariantReplace] = useState(false);
   const [spotDescription, setSpotDescription] = useState("");
   const [placementNotes, setPlacementNotes] = useState("");
   const [spotStatus, setSpotStatus] = useState<PosSpotStatus>("available");
@@ -369,6 +390,18 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     () => offers.filter((offer) => offer.status === "active"),
     [offers],
   );
+  const selectedOffer = useMemo(
+    () => offers.find((offer) => offer.id === currentOfferId),
+    [offers, currentOfferId],
+  );
+  const selectedIsPlant = Boolean(selectedOffer) && selectedOffer?.inventoryType !== "flowers";
+  const variantsForSelectedPlant = useMemo(() => {
+    if (!selectedOffer || !selectedIsPlant) return [];
+    return plantVariants.filter((variant) => variant.plantId === selectedOffer.productId);
+  }, [plantVariants, selectedOffer, selectedIsPlant]);
+  const occupiedVariantId = editSpot?.plantVariantId ?? "";
+  const showSameVariantReplace =
+    Boolean(editSpot && occupiedVariantId && plantVariantId === occupiedVariantId);
 
   const loadAll = useCallback(async () => {
     setLoadError(null);
@@ -409,6 +442,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
         posSpots?: PosSpot[];
         offers?: OfferOption[];
         spotOffers?: PartnerPlantOffer[];
+        plantVariants?: PlantVariantOption[];
       };
 
       const found = (partnersData.partners ?? []).find((p) => p.id === partnerId) ?? null;
@@ -422,6 +456,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       setPockets(pocketsData.pockets ?? []);
       setPosSpots(spotsData.posSpots ?? []);
       setOffers(spotsData.offers ?? []);
+      setPlantVariants(spotsData.plantVariants ?? []);
       setSpotOffers(spotsData.spotOffers ?? []);
     } catch {
       setLoadError(displayApiError(locale, undefined, "admin.partners.detail.loadFailed"));
@@ -445,7 +480,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
 
   const countedPlantSpots = useMemo(
     () =>
-      posSpots.filter((spot) => isCountedPlantSpot(spot, offerById.get(spot.currentOfferId))),
+      posSpots.filter((spot) => isCountedPlantSpot(spot, offerById.get(spot.currentOfferId ?? ""))),
     [offerById, posSpots],
   );
 
@@ -605,6 +640,8 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     setPosNumber(suggestNextPosNumber(posSpots.map((s) => s.posNumber)));
     setPocketId("");
     setCurrentOfferId(activeOffers[0]?.id ?? "");
+    setPlantVariantId("");
+    setSameVariantReplace(false);
     setSpotDescription("");
     setPlacementNotes("");
     setSpotStatus("available");
@@ -616,7 +653,9 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     setEditSpot(spot);
     setPosNumber(spot.posNumber ?? "");
     setPocketId(spot.pocketId ?? "");
-    setCurrentOfferId(spot.currentOfferId);
+    setCurrentOfferId(spot.currentOfferId ?? "");
+    setPlantVariantId(spot.plantVariantId ?? "");
+    setSameVariantReplace(false);
     setSpotDescription(spot.spotDescription ?? "");
     setPlacementNotes(spot.placementNotes ?? "");
     setSpotStatus(
@@ -686,6 +725,10 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       setSpotError(t(locale, "admin.partners.detail.offerRequired"));
       return;
     }
+    if (selectedIsPlant && !plantVariantId.trim() && !editSpot?.plantVariantId) {
+      setSpotError(t(locale, "admin.partners.detail.variantRequired"));
+      return;
+    }
     setSpotBusy(true);
     setSpotError(null);
     try {
@@ -699,6 +742,8 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             posNumber: posNumber.trim(),
             pocketId: pocketId || null,
             currentOfferId,
+            ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
+            ...(showSameVariantReplace && sameVariantReplace ? { sameVariantReplace: true } : {}),
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -718,6 +763,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             posNumber: posNumber.trim(),
             ...(pocketId ? { pocketId } : {}),
             currentOfferId,
+            ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -728,6 +774,35 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
           setSpotError(displayApiError(locale, data.error, "admin.partners.detail.posCreateFailed"));
           return;
         }
+      }
+      setCreateSpotOpen(false);
+      setEditSpot(null);
+      await loadAll();
+    } catch {
+      setSpotError(displayApiError(locale, undefined, "admin.partners.detail.posSaveFailed"));
+    } finally {
+      setSpotBusy(false);
+    }
+  }
+
+  async function removePlantFromSpot() {
+    if (!partner || !editSpot) return;
+    setSpotBusy(true);
+    setSpotError(null);
+    try {
+      const res = await fetch(routes.api.posSpot(editSpot.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partnerLocationId: partner.id,
+          posNumber: posNumber.trim() || editSpot.posNumber || "",
+          occupancyIntent: "remove",
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setSpotError(displayApiError(locale, data.error, "admin.partners.detail.posUpdateFailed"));
+        return;
       }
       setCreateSpotOpen(false);
       setEditSpot(null);
@@ -751,7 +826,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
           partnerLocationId: partner.id,
           partnerLocationAddress: partner.address,
           posNumber: archiveTarget.posNumber ?? "",
-          currentOfferId: archiveTarget.currentOfferId,
           pocketId: archiveTarget.pocketId ?? null,
           status: "inactive",
         }),
@@ -1105,7 +1179,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
                   <div className="flex flex-wrap gap-x-2">
                     <dt className="font-medium text-slate-500">{t(locale, "admin.common.offer")}</dt>
                     <dd className="text-slate-900">
-                      {offerNameById.get(spot.currentOfferId) ?? "—"}
+                      {offerNameById.get(spot.currentOfferId ?? "") ?? "—"}
                     </dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
@@ -1216,7 +1290,11 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
         onSubmit={() => void saveSpot()}
         busy={spotBusy}
         error={spotError}
-        canSubmit={Boolean(posNumber.trim() && currentOfferId.trim())}
+        canSubmit={Boolean(
+          posNumber.trim() &&
+            currentOfferId.trim() &&
+            (editSpot || !selectedIsPlant || plantVariantId.trim()),
+        )}
         submitLabel={
           editSpot ? t(locale, "admin.shared.save") : t(locale, "admin.shared.create")
         }
@@ -1254,7 +1332,20 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
           <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.offer")}</span>
           <select
             value={currentOfferId}
-            onChange={(e) => setCurrentOfferId(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setCurrentOfferId(next);
+              const nextOffer = offers.find((offer) => offer.id === next);
+              const nextVariants = plantVariants.filter(
+                (variant) => variant.plantId === nextOffer?.productId,
+              );
+              if (nextOffer?.variantId && nextVariants.some((variant) => variant.id === nextOffer.variantId)) {
+                setPlantVariantId(nextOffer.variantId);
+              } else if (!nextVariants.some((variant) => variant.id === plantVariantId)) {
+                setPlantVariantId("");
+              }
+              setSameVariantReplace(false);
+            }}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
             <option value="">{t(locale, "admin.partners.detail.selectOffer")}</option>
@@ -1265,6 +1356,54 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             ))}
           </select>
         </label>
+        {selectedIsPlant ? (
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.partners.detail.variant")}
+            </span>
+            <select
+              value={plantVariantId}
+              onChange={(e) => {
+                setPlantVariantId(e.target.value);
+                setSameVariantReplace(false);
+              }}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+            >
+              <option value="">{t(locale, "admin.partners.detail.selectVariant")}</option>
+              {variantsForSelectedPlant.map((variant) => (
+                <option key={variant.id} value={variant.id}>
+                  {variantOptionLabel(variant)}
+                </option>
+              ))}
+            </select>
+            {selectedOffer && variantsForSelectedPlant.length === 0 ? (
+              <span className="text-xs text-amber-700">
+                {t(locale, "admin.partners.detail.noVariants")}
+              </span>
+            ) : null}
+          </label>
+        ) : null}
+        {showSameVariantReplace ? (
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={sameVariantReplace}
+              onChange={(e) => setSameVariantReplace(e.target.checked)}
+            />
+            <span>{t(locale, "admin.partners.detail.sameVariantReplace")}</span>
+          </label>
+        ) : null}
+        {editSpot && (editSpot.plantVariantId || editSpot.currentOfferId) && selectedIsPlant ? (
+          <button
+            type="button"
+            onClick={() => void removePlantFromSpot()}
+            className="text-sm font-medium text-amber-800 underline underline-offset-2"
+            disabled={spotBusy}
+          >
+            {t(locale, "admin.partners.detail.removePlant")}
+          </button>
+        ) : null}
         <label className="block space-y-1">
           <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.status")}</span>
           <select
