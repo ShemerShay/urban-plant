@@ -46,6 +46,7 @@
     "db:migrate:pos-occupancy": "node scripts/apply-sql-file.mjs db/migrations/037_pos_occupancy_contract.sql",
     "db:migrate:placement-cycles": "node scripts/apply-sql-file.mjs db/migrations/038_placement_cycles.sql",
     "db:migrate:placement-segments": "node scripts/apply-sql-file.mjs db/migrations/039_placement_segments.sql",
+    "db:migrate:catalog-admin": "node scripts/apply-sql-file.mjs db/migrations/040_catalog_admin.sql",
     "verify:plant-variants": "npx tsx scripts/verify-plant-variants-schema.ts",
     "verify:central-inventory": "npx tsx scripts/verify-central-inventory-schema.ts",
     "verify:pos-occupancy": "npx tsx scripts/verify-pos-occupancy-contract.ts",
@@ -53,7 +54,8 @@
     "verify:placement-cycles": "npx tsx scripts/verify-placement-cycles.ts",
     "verify:placement-segments": "npx tsx scripts/verify-placement-segments.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
-    "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts"
+    "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts",
+    "verify:admin-catalog-inventory": "npx tsx scripts/verify-admin-catalog-inventory.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

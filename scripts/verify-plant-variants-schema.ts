@@ -67,6 +67,7 @@ async function main(): Promise<void> {
     "plant_id",
     "size_label",
     "nursery_pot_diameter_cm",
+    "catalog_price",
   ]);
   const variantByName = Object.fromEntries(
     (
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
   assert.equal(variantByName.plant_id.is_nullable, "NO");
   assert.equal(variantByName.size_label.is_nullable, "YES");
   assert.equal(variantByName.nursery_pot_diameter_cm.is_nullable, "YES");
+  assert.equal(variantByName.catalog_price.is_nullable, "YES");
 
   const offerVariantCol = await sql`
     SELECT is_nullable, data_type

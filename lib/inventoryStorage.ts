@@ -120,6 +120,28 @@ export async function getInventoryQuantity(variantId: string): Promise<number> {
   return row ? parseNumeric(row.quantity) : 0;
 }
 
+/** Current central quantity for many variants. Missing rows are 0. */
+export async function getInventoryQuantities(
+  variantIds: string[],
+): Promise<Map<string, number>> {
+  const ids = [
+    ...new Set(variantIds.map((id) => id.trim()).filter(Boolean)),
+  ];
+  const quantities = new Map<string, number>();
+  for (const id of ids) quantities.set(id, 0);
+  if (ids.length === 0) return quantities;
+
+  const rows = await sql`
+    SELECT variant_id, quantity
+    FROM inventory
+    WHERE variant_id = ANY(${ids}::uuid[])
+  `;
+  for (const row of rows as { variant_id: string; quantity: string | number }[]) {
+    quantities.set(String(row.variant_id), parseNumeric(row.quantity));
+  }
+  return quantities;
+}
+
 export async function getInventoryBalance(
   variantId: string,
 ): Promise<InventoryBalance | null> {

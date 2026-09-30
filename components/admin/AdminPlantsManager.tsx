@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
+import { AdminPlantVariantsPanel } from "@/components/admin/AdminPlantVariantsPanel";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { useLocale } from "@/components/locale/LocaleProvider";
@@ -50,6 +51,7 @@ type PlantDraft = {
   location: string;
   petFriendly: boolean;
   careInstructionsText: string;
+  catalogPublished: boolean;
 };
 
 const LIGHT_OPTIONS: LightLevel[] = [
@@ -106,6 +108,7 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     location: plant.location ?? "",
     petFriendly: plant.petFriendly ?? false,
     careInstructionsText: linesFromArray(plant.careInstructions ?? []),
+    catalogPublished: plant.catalogPublished === true,
   };
 }
 
@@ -133,6 +136,7 @@ function emptyDraft(): PlantDraft {
     location: "",
     petFriendly: false,
     careInstructionsText: "",
+    catalogPublished: false,
   };
 }
 
@@ -180,6 +184,7 @@ function draftToPayload(
     petFriendly: draft.petFriendly,
     careInstructions: arrayFromLines(draft.careInstructionsText),
     inventoryType: "plants",
+    catalogPublished: draft.catalogPublished,
   };
 }
 
@@ -368,6 +373,19 @@ function PlantFieldsForm({
             onChange={(e) => patch({ name: e.target.value })}
           />
         </label>
+        {!isFlowers ? (
+        <label className="flex items-center gap-2 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={draft.catalogPublished}
+            onChange={(e) => patch({ catalogPublished: e.target.checked })}
+            className={adminCheckboxClassName}
+          />
+          <span className="text-sm text-slate-800">
+            {t(locale, "admin.plants.catalogPublished")}
+          </span>
+        </label>
+        ) : null}
         {!isFlowers ? (
         <>
         <label className="block sm:col-span-2">
@@ -582,6 +600,18 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
         <dt className="font-medium text-slate-500">{t(locale, "admin.common.name")}</dt>
         <dd className="text-slate-900">{plant.name}</dd>
       </div>
+      {plant.inventoryType !== "flowers" ? (
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">
+            {t(locale, "admin.plants.catalogPublished")}
+          </dt>
+          <dd className="text-slate-900">
+            {plant.catalogPublished
+              ? t(locale, "admin.plants.catalogPublishedBadge")
+              : t(locale, "admin.plants.catalogUnpublishedBadge")}
+          </dd>
+        </div>
+      ) : null}
       {plant.nameHe ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.nameHe")}</dt>
@@ -815,6 +845,19 @@ function AdminPlantCard({
             <span className="mt-0.5 block truncate text-sm text-slate-600">{plant.subtitle}</span>
             <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>{formatPrice(plant.price, plant.currency, locale)}</span>
+              {plant.inventoryType !== "flowers" ? (
+                <span
+                  className={
+                    plant.catalogPublished
+                      ? "rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800"
+                      : "rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600"
+                  }
+                >
+                  {plant.catalogPublished
+                    ? t(locale, "admin.plants.catalogPublishedBadge")
+                    : t(locale, "admin.plants.catalogUnpublishedBadge")}
+                </span>
+              ) : null}
             </span>
           </span>
           <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={isOpen} />
@@ -881,6 +924,9 @@ function AdminPlantCard({
           ) : (
             <PlantDetailView plant={plant} />
           )}
+          {plant.inventoryType !== "flowers" ? (
+            <AdminPlantVariantsPanel plant={plant} />
+          ) : null}
         </div>
       ) : null}
 

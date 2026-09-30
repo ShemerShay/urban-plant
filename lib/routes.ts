@@ -102,6 +102,12 @@ export const routes = {
     plants: () => "/api/plants",
     plant: (plantId: string) => `/api/plants/${encodeURIComponent(plantId.trim())}`,
     plantImages: () => "/api/plant-images",
+    plantVariants: (plantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/variants`,
+    plantVariant: (plantId: string, variantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}`,
+    plantVariantInventory: (plantId: string, variantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}/inventory`,
     offers: () => "/api/offers",
     offer: (offerId: string) => `/api/offers/${encodeURIComponent(offerId.trim())}`,
     partnerBrands: () => "/api/partner-brands",
