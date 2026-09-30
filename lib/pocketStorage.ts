@@ -194,10 +194,24 @@ export async function deletePocket(id: string): Promise<{
         AND old.plant_variant_id IS NOT NULL
         AND cleared.new_variant_id IS NULL
       RETURNING c.id
+    ),
+    closed_segments AS (
+      UPDATE placement_segments s
+      SET ended_at = now()
+      FROM closed c
+      WHERE s.placement_cycle_id = c.id
+        AND s.ended_at IS NULL
+      RETURNING s.id
     )
     SELECT cleared.id
     FROM cleared
-    CROSS JOIN (SELECT COUNT(*)::int AS n FROM closed) closed_done
+    CROSS JOIN (
+      SELECT 1 / CASE
+        WHEN (SELECT COUNT(*) FROM closed) = (SELECT COUNT(*) FROM closed_segments)
+        THEN 1
+        ELSE 0
+      END AS seg_ok
+    ) segment_guard
   `;
   const deleteQuery = sql`
     DELETE FROM pockets

@@ -45,11 +45,13 @@
     "db:migrate:central-inventory": "node scripts/apply-sql-file.mjs db/migrations/036_central_inventory.sql",
     "db:migrate:pos-occupancy": "node scripts/apply-sql-file.mjs db/migrations/037_pos_occupancy_contract.sql",
     "db:migrate:placement-cycles": "node scripts/apply-sql-file.mjs db/migrations/038_placement_cycles.sql",
+    "db:migrate:placement-segments": "node scripts/apply-sql-file.mjs db/migrations/039_placement_segments.sql",
     "verify:plant-variants": "npx tsx scripts/verify-plant-variants-schema.ts",
     "verify:central-inventory": "npx tsx scripts/verify-central-inventory-schema.ts",
     "verify:pos-occupancy": "npx tsx scripts/verify-pos-occupancy-contract.ts",
     "verify:pos-central-inventory": "npx tsx scripts/verify-pos-central-inventory.ts",
     "verify:placement-cycles": "npx tsx scripts/verify-placement-cycles.ts",
+    "verify:placement-segments": "npx tsx scripts/verify-placement-segments.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts"
   },

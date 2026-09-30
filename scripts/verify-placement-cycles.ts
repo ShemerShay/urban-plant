@@ -777,6 +777,12 @@ async function main(): Promise<void> {
       }
     }
     if (spotIds.length > 0) {
+      await sql`
+        DELETE FROM placement_segments
+        WHERE placement_cycle_id IN (
+          SELECT id FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])
+        )
+      `;
       await sql`DELETE FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])`;
     }
     for (const orderId of orderIds) {
@@ -794,6 +800,13 @@ async function main(): Promise<void> {
     }
     await sql`DELETE FROM pockets WHERE name LIKE ${`${tag}-pocket%`}`;
     await sql`DELETE FROM offers WHERE id = ${offerA} OR id = ${offerB} OR id = ${offerFlower} OR id = ${offerEmpty} OR id = ${offerLegacy}`;
+    await sql`
+      DELETE FROM placement_segments
+      WHERE placement_cycle_id IN (
+        SELECT id FROM placement_cycles
+        WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)
+      )
+    `;
     await sql`DELETE FROM placement_cycles WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)`;
     await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)`;
     await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)`;
