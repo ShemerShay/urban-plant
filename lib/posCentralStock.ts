@@ -130,6 +130,7 @@ export async function commitPosUpdateFromCentral(input: {
 
   const preparedUpdate = await preparePosSpotUpdate(input.id, {
     ...input.patch,
+    occupancyAction: input.action,
     occupancyWriteGuard,
   });
   if (!preparedUpdate) return null;
@@ -165,7 +166,7 @@ export async function writePosCreate(input: {
   }
   const source = requireInventorySource(input.inventorySource);
   if (source === "already_at_partner") {
-    await appendPosSpot(input.posSpot);
+    await appendPosSpot(input.posSpot, { openCycle: true });
     return input.posSpot;
   }
   const variantId = input.variantId?.trim() || "";
@@ -184,11 +185,17 @@ export async function writePosUpdate(input: {
   variantId: string | null | undefined;
 }): Promise<PosSpot | null> {
   if (!occupancyActionNeedsInventorySource(input.occupancyAction)) {
-    return updatePosSpot(input.id, input.patch);
+    return updatePosSpot(input.id, {
+      ...input.patch,
+      occupancyAction: input.occupancyAction,
+    });
   }
   const source = requireInventorySource(input.inventorySource);
   if (source === "already_at_partner") {
-    return updatePosSpot(input.id, input.patch);
+    return updatePosSpot(input.id, {
+      ...input.patch,
+      occupancyAction: input.occupancyAction,
+    });
   }
   const variantId = input.variantId?.trim() || "";
   if (!variantId) {

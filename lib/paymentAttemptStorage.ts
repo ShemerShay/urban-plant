@@ -879,6 +879,18 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         AND p.payment_hold_attempt_id = e.attempt_id
       RETURNING p.id, p.status
     ),
+    cycle_close AS (
+      UPDATE placement_cycles c
+      SET
+        ended_at = now(),
+        end_reason = 'sold',
+        order_id = o.order_id
+      FROM pos_upd p
+      INNER JOIN order_ins o ON true
+      WHERE c.pos_spot_id = p.id
+        AND c.ended_at IS NULL
+      RETURNING c.id
+    ),
     attempt_upd AS (
       UPDATE payment_attempts a
       SET
@@ -937,7 +949,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
       (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
       (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type,
-      (SELECT id FROM attempt_upd LIMIT 1) AS finalized_attempt_id
+      (SELECT id FROM attempt_upd LIMIT 1) AS finalized_attempt_id,
+      (SELECT COUNT(*)::int FROM cycle_close) AS cycles_closed
     FROM order_ins o
   `;
 
