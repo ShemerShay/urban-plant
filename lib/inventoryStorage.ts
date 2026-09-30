@@ -148,21 +148,63 @@ export async function readInventoryHistory(
   return (rows as HistoryRow[]).map(mapHistory);
 }
 
+type InventorySqlQuery = ReturnType<typeof sql>;
+
 /**
- * Apply a signed central-stock change and append history in one statement.
- * Positive delta receives stock; negative delta sends stock out.
+ * Three statements that apply a signed delta and append history.
+ * Callers must run them in one Neon transaction with any coupled writes.
  */
-export async function applyInventoryDelta(input: {
+export function inventoryDeltaQueries(input: {
   variantId: string;
   delta: number;
   note?: string | null;
-}): Promise<InventoryBalance> {
+}): InventorySqlQuery[] {
+  const variantId = trimVariantId(input.variantId);
+  const note = parseNote(input.note);
+  return [
+    sql`
+      INSERT INTO inventory (variant_id, quantity, updated_at)
+      VALUES (${variantId}::uuid, 0, now())
+      ON CONFLICT (variant_id) DO NOTHING
+    `,
+    sql`
+      UPDATE inventory
+      SET quantity = quantity + ${input.delta}::integer,
+          updated_at = now()
+      WHERE variant_id = ${variantId}::uuid
+      RETURNING variant_id, quantity, updated_at
+    `,
+    sql`
+      INSERT INTO inventory_history (variant_id, delta, note)
+      VALUES (${variantId}::uuid, ${input.delta}::integer, ${note})
+      RETURNING id
+    `,
+  ];
+}
+
+export function mapInventoryWriteError(error: unknown): never {
+  if (error instanceof InventoryChangeError) throw error;
+  const message = error instanceof Error ? error.message : String(error);
+  if (/inventory_quantity_non_negative/i.test(message)) {
+    throw new InventoryChangeError(
+      "insufficient_quantity",
+      "Inventory quantity cannot go below 0",
+    );
+  }
+  throw error;
+}
+
+/** Validate a plant variant and return the inventory SQL list. Does not write. */
+export async function prepareInventoryDelta(input: {
+  variantId: string;
+  delta: number;
+  note?: string | null;
+}): Promise<{ queries: InventorySqlQuery[] }> {
   const variantId = trimVariantId(input.variantId);
   if (!variantId) {
     throw new InventoryChangeError("variant_not_found", "Variant is required");
   }
   assertWritableDelta(input.delta);
-  const note = parseNote(input.note);
 
   const inventoryType = await loadVariantInventoryType(variantId);
   if (inventoryType == null) {
@@ -175,26 +217,28 @@ export async function applyInventoryDelta(input: {
     );
   }
 
+  return {
+    queries: inventoryDeltaQueries({
+      variantId,
+      delta: input.delta,
+      note: input.note,
+    }),
+  };
+}
+
+/**
+ * Apply a signed central-stock change and append history in one statement.
+ * Positive delta receives stock; negative delta sends stock out.
+ */
+export async function applyInventoryDelta(input: {
+  variantId: string;
+  delta: number;
+  note?: string | null;
+}): Promise<InventoryBalance> {
+  const prepared = await prepareInventoryDelta(input);
+
   try {
-    const results = await sql.transaction([
-      sql`
-        INSERT INTO inventory (variant_id, quantity, updated_at)
-        VALUES (${variantId}::uuid, 0, now())
-        ON CONFLICT (variant_id) DO NOTHING
-      `,
-      sql`
-        UPDATE inventory
-        SET quantity = quantity + ${input.delta}::integer,
-            updated_at = now()
-        WHERE variant_id = ${variantId}::uuid
-        RETURNING variant_id, quantity, updated_at
-      `,
-      sql`
-        INSERT INTO inventory_history (variant_id, delta, note)
-        VALUES (${variantId}::uuid, ${input.delta}::integer, ${note})
-        RETURNING id
-      `,
-    ]);
+    const results = await sql.transaction(prepared.queries);
     const row = (results[1] as InventoryRow[])[0];
     if (!row) {
       throw new InventoryChangeError(
@@ -204,14 +248,6 @@ export async function applyInventoryDelta(input: {
     }
     return mapBalance(row);
   } catch (error) {
-    if (error instanceof InventoryChangeError) throw error;
-    const message = error instanceof Error ? error.message : String(error);
-    if (/inventory_quantity_non_negative/i.test(message)) {
-      throw new InventoryChangeError(
-        "insufficient_quantity",
-        "Inventory quantity cannot go below 0",
-      );
-    }
-    throw error;
+    mapInventoryWriteError(error);
   }
 }

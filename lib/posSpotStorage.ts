@@ -192,12 +192,12 @@ export async function savePosSpots(spots: PosSpot[]): Promise<void> {
   }
 }
 
-async function insertPosSpot(posSpot: PosSpot): Promise<void> {
+export function insertPosSpotQuery(posSpot: PosSpot) {
   const holdStartedAt =
     posSpot.status === "held_for_payment"
       ? (posSpot.paymentHoldStartedAt ?? new Date().toISOString())
       : null;
-  await sql`
+  return sql`
     INSERT INTO pos_spots (
       id,
       spot_name,
@@ -245,6 +245,73 @@ async function insertPosSpot(posSpot: PosSpot): Promise<void> {
       ${posSpot.createdAt}::timestamptz
     )
   `;
+}
+
+/** INSERT plus same-statement 1/0 if the occupying variant was not written. */
+export function insertPosSpotWithOccupancyGuardQuery(posSpot: PosSpot, variantId: string) {
+  const holdStartedAt =
+    posSpot.status === "held_for_payment"
+      ? (posSpot.paymentHoldStartedAt ?? new Date().toISOString())
+      : null;
+  const expectedVariantId = variantId.trim();
+  return sql`
+    WITH written AS (
+      INSERT INTO pos_spots (
+        id,
+        spot_name,
+        partner_location_id,
+        pos_number,
+        pocket_id,
+        pocket,
+        pocket_other,
+        pos_name,
+        spot_description,
+        placement_notes,
+        spot_slug,
+        current_offer_id,
+        plant_variant_id,
+        status,
+        payment_hold_started_at,
+        offer_placed_at,
+        check_status,
+        check_by,
+        next_check,
+        pos_weekly_note,
+        created_at
+      )
+      VALUES (
+        ${posSpot.id}::uuid,
+        ${posSpot.spotName},
+        ${posSpot.partnerLocationId},
+        ${posSpot.posNumber ?? null},
+        ${posSpot.pocketId ?? null}::uuid,
+        ${posSpot.pocket ?? null},
+        ${posSpot.pocketOther ?? null},
+        ${posSpot.posName},
+        ${posSpot.spotDescription ?? null},
+        ${posSpot.placementNotes ?? null},
+        ${posSpot.spotSlug},
+        ${posSpot.currentOfferId ?? null},
+        ${expectedVariantId}::uuid,
+        ${posSpot.status},
+        ${holdStartedAt}::timestamptz,
+        ${posSpot.offerPlacedAt ?? null}::timestamptz,
+        ${posSpot.checkStatus},
+        ${posSpot.checkBy ?? null},
+        ${posSpot.nextCheck ?? null}::date,
+        ${posSpot.posWeeklyNote ?? null},
+        ${posSpot.createdAt}::timestamptz
+      )
+      RETURNING plant_variant_id
+    )
+    SELECT 1 / COUNT(*)::integer AS occupancy_ok
+    FROM written
+    WHERE plant_variant_id IS NOT DISTINCT FROM ${expectedVariantId}::uuid
+  `;
+}
+
+async function insertPosSpot(posSpot: PosSpot): Promise<void> {
+  await insertPosSpotQuery(posSpot);
 }
 
 export async function getPosSpotById(id: string): Promise<PosSpot | undefined> {
@@ -567,40 +634,61 @@ function computeNextCheckAfterMarkChecked(prev: PosSpotCheckDbRow | undefined): 
   return prevNext ?? addCalendarDaysUtc(today, 7);
 }
 
+export type OccupancyWriteGuard =
+  | { kind: "place" }
+  | { kind: "replace"; plantVariantId: string | null; offerPlacedAt: string | null };
+
+export type PosSpotUpdatePatch = {
+  partnerLocationId: string;
+  posNumber: string;
+  posName: string;
+  /** When omitted, existing spot_name is preserved (pocket moves must not rewrite identity). */
+  spotName?: string;
+  spotDescription?: string;
+  /** When omitted, existing spot_slug is preserved. */
+  spotSlug?: string;
+  pocketId?: string | null;
+  updatePocketId?: boolean;
+  /** @deprecated Legacy columns; only written when explicitly provided. */
+  pocket?: string | null;
+  pocketOther?: string | null;
+  updateLegacyPocket?: boolean;
+  currentOfferId?: string | null;
+  plantVariantId?: string | null;
+  checkStatus?: boolean;
+  checkBy?: string | null;
+  updateCheckFields?: boolean;
+  posWeeklyNote?: string | null;
+  updatePosWeeklyNote?: boolean;
+  offerPlacedAt?: string | null;
+  updateOfferPlacedAt?: boolean;
+  status?: PosSpotStatus;
+  updateStatus?: boolean;
+  /** When set, the UPDATE matches only if occupancy is still in this state. */
+  occupancyWriteGuard?: OccupancyWriteGuard;
+};
+
+export type PreparedPosSpotUpdate = {
+  query: ReturnType<typeof sql>;
+  leavingHeldForPayment: boolean;
+  previousAttemptId: string | null;
+};
+
+export async function finalizePreparedPosSpotUpdate(
+  prepared: PreparedPosSpotUpdate,
+): Promise<void> {
+  if (prepared.leavingHeldForPayment && prepared.previousAttemptId) {
+    await expireAwaitingAttemptForAdminRelease(prepared.previousAttemptId);
+  }
+}
+
 /**
- * Updates editable POS fields. Keeps the same row `id` (UUID) so orders and FKs stay valid
- * when `spotSlug` changes (QR URL is derived from `spot_slug`, not from `id`).
+ * Builds the POS UPDATE query without executing it, so callers can put it in a Neon batch.
  */
-export async function updatePosSpot(
+export async function preparePosSpotUpdate(
   id: string,
-  patch: {
-    partnerLocationId: string;
-    posNumber: string;
-    posName: string;
-    /** When omitted, existing spot_name is preserved (pocket moves must not rewrite identity). */
-    spotName?: string;
-    spotDescription?: string;
-    /** When omitted, existing spot_slug is preserved. */
-    spotSlug?: string;
-    pocketId?: string | null;
-    updatePocketId?: boolean;
-    /** @deprecated Legacy columns; only written when explicitly provided. */
-    pocket?: string | null;
-    pocketOther?: string | null;
-    updateLegacyPocket?: boolean;
-    currentOfferId?: string | null;
-    plantVariantId?: string | null;
-    checkStatus?: boolean;
-    checkBy?: string | null;
-    updateCheckFields?: boolean;
-    posWeeklyNote?: string | null;
-    updatePosWeeklyNote?: boolean;
-    offerPlacedAt?: string | null;
-    updateOfferPlacedAt?: boolean;
-    status?: PosSpotStatus;
-    updateStatus?: boolean;
-  },
-): Promise<PosSpot | null> {
+  patch: PosSpotUpdatePatch,
+): Promise<PreparedPosSpotUpdate | null> {
   const trimmedId = id.trim();
   if (!trimmedId) return null;
 
@@ -701,72 +789,170 @@ export async function updatePosSpot(
       ? patch.plantVariantId.trim()
       : null;
 
-  const rows = await sql`
-    UPDATE pos_spots
-    SET
-      partner_location_id = ${patch.partnerLocationId.trim()},
-      pos_number = ${posNumber},
-      spot_name = ${spotName},
-      pocket_id = ${pocketIdForSql}::uuid,
-      pocket = ${legacyPocketForSql},
-      pocket_other = ${legacyPocketOtherForSql},
-      pos_name = ${posName},
-      spot_description = ${spotDescription},
-      spot_slug = ${spotSlug},
-      current_offer_id = CASE
-        WHEN ${updateCurrentOffer} THEN ${currentOfferIdForSql}
-        ELSE current_offer_id
-      END,
-      plant_variant_id = CASE
-        WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
-        ELSE plant_variant_id
-      END,
-      check_status = CASE
-        WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
-        ELSE check_status
-      END,
-      check_by = CASE
-        WHEN ${clearingCheck} THEN NULL
-        WHEN ${settingCheck} THEN ${checkByForSql ?? null}
-        ELSE check_by
-      END,
-      next_check = CASE
-        WHEN ${clearingCheck} THEN next_check
-        WHEN ${settingCheck} THEN ${nextCheckForSql}::date
-        ELSE next_check
-      END,
-      pos_weekly_note = CASE
-        WHEN ${patch.updatePosWeeklyNote ?? false} THEN ${patch.posWeeklyNote ?? null}
-        ELSE pos_weekly_note
-      END,
-      offer_placed_at = CASE
-        WHEN ${patch.updateOfferPlacedAt ?? false} THEN ${patch.offerPlacedAt ?? null}::timestamptz
-        ELSE offer_placed_at
-      END,
-      status = CASE
-        WHEN ${updateStatus} THEN ${statusForSql}
-        ELSE status
-      END,
-      payment_hold_started_at = CASE
-        WHEN ${enteringHeldFromNonHeld} THEN now()
-        WHEN ${leavingHeldForPayment} THEN NULL
-        ELSE payment_hold_started_at
-      END,
-      payment_hold_attempt_id = CASE
-        WHEN ${enteringHeldFromNonHeld} THEN NULL
-        WHEN ${leavingHeldForPayment} THEN NULL
-        ELSE payment_hold_attempt_id
-      END
-    WHERE id = ${trimmedId}::uuid
-    RETURNING ${POS_SPOT_ROW_SQL}
+  const skipOccupancyGuard = !patch.occupancyWriteGuard;
+  const applyPlaceGuard = patch.occupancyWriteGuard?.kind === "place";
+  const applyReplaceGuard = patch.occupancyWriteGuard?.kind === "replace";
+  const replaceVariantId =
+    patch.occupancyWriteGuard?.kind === "replace" ? patch.occupancyWriteGuard.plantVariantId : null;
+  const replacePlacedAt =
+    patch.occupancyWriteGuard?.kind === "replace" ? patch.occupancyWriteGuard.offerPlacedAt : null;
+
+  const occupancyWhere = sql`
+    id = ${trimmedId}::uuid
+    AND CASE
+      WHEN ${skipOccupancyGuard} THEN true
+      WHEN ${applyPlaceGuard} THEN plant_variant_id IS NULL
+      WHEN ${applyReplaceGuard} THEN
+        plant_variant_id IS NOT DISTINCT FROM ${replaceVariantId}::uuid
+        AND offer_placed_at IS NOT DISTINCT FROM ${replacePlacedAt}::timestamptz
+      ELSE true
+    END
   `;
 
+  const query = skipOccupancyGuard
+    ? sql`
+        UPDATE pos_spots
+        SET
+          partner_location_id = ${patch.partnerLocationId.trim()},
+          pos_number = ${posNumber},
+          spot_name = ${spotName},
+          pocket_id = ${pocketIdForSql}::uuid,
+          pocket = ${legacyPocketForSql},
+          pocket_other = ${legacyPocketOtherForSql},
+          pos_name = ${posName},
+          spot_description = ${spotDescription},
+          spot_slug = ${spotSlug},
+          current_offer_id = CASE
+            WHEN ${updateCurrentOffer} THEN ${currentOfferIdForSql}
+            ELSE current_offer_id
+          END,
+          plant_variant_id = CASE
+            WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
+            ELSE plant_variant_id
+          END,
+          check_status = CASE
+            WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
+            ELSE check_status
+          END,
+          check_by = CASE
+            WHEN ${clearingCheck} THEN NULL
+            WHEN ${settingCheck} THEN ${checkByForSql ?? null}
+            ELSE check_by
+          END,
+          next_check = CASE
+            WHEN ${clearingCheck} THEN next_check
+            WHEN ${settingCheck} THEN ${nextCheckForSql}::date
+            ELSE next_check
+          END,
+          pos_weekly_note = CASE
+            WHEN ${patch.updatePosWeeklyNote ?? false} THEN ${patch.posWeeklyNote ?? null}
+            ELSE pos_weekly_note
+          END,
+          offer_placed_at = CASE
+            WHEN ${patch.updateOfferPlacedAt ?? false} THEN ${patch.offerPlacedAt ?? null}::timestamptz
+            ELSE offer_placed_at
+          END,
+          status = CASE
+            WHEN ${updateStatus} THEN ${statusForSql}
+            ELSE status
+          END,
+          payment_hold_started_at = CASE
+            WHEN ${enteringHeldFromNonHeld} THEN now()
+            WHEN ${leavingHeldForPayment} THEN NULL
+            ELSE payment_hold_started_at
+          END,
+          payment_hold_attempt_id = CASE
+            WHEN ${enteringHeldFromNonHeld} THEN NULL
+            WHEN ${leavingHeldForPayment} THEN NULL
+            ELSE payment_hold_attempt_id
+          END
+        WHERE ${occupancyWhere}
+        RETURNING ${POS_SPOT_ROW_SQL}
+      `
+    : sql`
+        WITH written AS (
+          UPDATE pos_spots
+          SET
+            partner_location_id = ${patch.partnerLocationId.trim()},
+            pos_number = ${posNumber},
+            spot_name = ${spotName},
+            pocket_id = ${pocketIdForSql}::uuid,
+            pocket = ${legacyPocketForSql},
+            pocket_other = ${legacyPocketOtherForSql},
+            pos_name = ${posName},
+            spot_description = ${spotDescription},
+            spot_slug = ${spotSlug},
+            current_offer_id = CASE
+              WHEN ${updateCurrentOffer} THEN ${currentOfferIdForSql}
+              ELSE current_offer_id
+            END,
+            plant_variant_id = CASE
+              WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
+              ELSE plant_variant_id
+            END,
+            check_status = CASE
+              WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
+              ELSE check_status
+            END,
+            check_by = CASE
+              WHEN ${clearingCheck} THEN NULL
+              WHEN ${settingCheck} THEN ${checkByForSql ?? null}
+              ELSE check_by
+            END,
+            next_check = CASE
+              WHEN ${clearingCheck} THEN next_check
+              WHEN ${settingCheck} THEN ${nextCheckForSql}::date
+              ELSE next_check
+            END,
+            pos_weekly_note = CASE
+              WHEN ${patch.updatePosWeeklyNote ?? false} THEN ${patch.posWeeklyNote ?? null}
+              ELSE pos_weekly_note
+            END,
+            offer_placed_at = CASE
+              WHEN ${patch.updateOfferPlacedAt ?? false} THEN ${patch.offerPlacedAt ?? null}::timestamptz
+              ELSE offer_placed_at
+            END,
+            status = CASE
+              WHEN ${updateStatus} THEN ${statusForSql}
+              ELSE status
+            END,
+            payment_hold_started_at = CASE
+              WHEN ${enteringHeldFromNonHeld} THEN now()
+              WHEN ${leavingHeldForPayment} THEN NULL
+              ELSE payment_hold_started_at
+            END,
+            payment_hold_attempt_id = CASE
+              WHEN ${enteringHeldFromNonHeld} THEN NULL
+              WHEN ${leavingHeldForPayment} THEN NULL
+              ELSE payment_hold_attempt_id
+            END
+          WHERE ${occupancyWhere}
+          RETURNING plant_variant_id
+        )
+        SELECT 1 / COUNT(*)::integer AS occupancy_ok
+        FROM written
+        WHERE plant_variant_id IS NOT DISTINCT FROM ${plantVariantIdForSql}::uuid
+      `;
+
+  return { query, leavingHeldForPayment, previousAttemptId };
+}
+
+/**
+ * Updates editable POS fields. Keeps the same row `id` (UUID) so orders and FKs stay valid
+ * when `spotSlug` changes (QR URL is derived from `spot_slug`, not from `id`).
+ */
+export async function updatePosSpot(
+  id: string,
+  patch: PosSpotUpdatePatch,
+): Promise<PosSpot | null> {
+  const prepared = await preparePosSpotUpdate(id, patch);
+  if (!prepared) return null;
+
+  const rows = await prepared.query;
   const row = (rows as PosSpotRow[])[0];
   if (!row) return null;
 
-  if (leavingHeldForPayment && previousAttemptId) {
-    await expireAwaitingAttemptForAdminRelease(previousAttemptId);
-  }
+  await finalizePreparedPosSpotUpdate(prepared);
   return mapPosSpotRow(row);
 }
 

@@ -47,6 +47,7 @@
     "verify:plant-variants": "npx tsx scripts/verify-plant-variants-schema.ts",
     "verify:central-inventory": "npx tsx scripts/verify-central-inventory-schema.ts",
     "verify:pos-occupancy": "npx tsx scripts/verify-pos-occupancy-contract.ts",
+    "verify:pos-central-inventory": "npx tsx scripts/verify-pos-central-inventory.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts"
   },

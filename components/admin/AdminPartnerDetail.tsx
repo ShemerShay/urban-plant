@@ -45,6 +45,10 @@ import {
   suggestNextPosNumber,
 } from "@/lib/posSpotSlugUtils";
 import { absoluteAppUrl, getClientOrigin, posSpotPath, routes } from "@/lib/routes";
+import {
+  adminSaveNeedsInventorySource,
+  type InventorySource,
+} from "@/lib/inventorySource";
 
 type OfferOption = {
   id: string;
@@ -352,6 +356,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
   const [currentOfferId, setCurrentOfferId] = useState("");
   const [plantVariantId, setPlantVariantId] = useState("");
   const [sameVariantReplace, setSameVariantReplace] = useState(false);
+  const [inventorySource, setInventorySource] = useState<InventorySource | "">("");
   const [spotDescription, setSpotDescription] = useState("");
   const [placementNotes, setPlacementNotes] = useState("");
   const [spotStatus, setSpotStatus] = useState<PosSpotStatus>("available");
@@ -402,6 +407,22 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
   const occupiedVariantId = editSpot?.plantVariantId ?? "";
   const showSameVariantReplace =
     Boolean(editSpot && occupiedVariantId && plantVariantId === occupiedVariantId);
+  const existingOfferIsFlower = (() => {
+    const offerId = editSpot?.currentOfferId;
+    if (!offerId) return false;
+    const fromOffers = offers.find((offer) => offer.id === offerId);
+    if (fromOffers) return fromOffers.inventoryType === "flowers";
+    return offerById.get(offerId)?.inventoryType === "flowers";
+  })();
+  const showInventorySource = adminSaveNeedsInventorySource({
+    selectedIsPlant,
+    creating: !editSpot,
+    occupiedVariantId,
+    selectedVariantId: plantVariantId,
+    sameVariantReplace,
+    existingOfferId: editSpot?.currentOfferId ?? "",
+    existingOfferIsFlower,
+  });
 
   const loadAll = useCallback(async () => {
     setLoadError(null);
@@ -642,6 +663,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     setCurrentOfferId(activeOffers[0]?.id ?? "");
     setPlantVariantId("");
     setSameVariantReplace(false);
+    setInventorySource("");
     setSpotDescription("");
     setPlacementNotes("");
     setSpotStatus("available");
@@ -656,6 +678,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     setCurrentOfferId(spot.currentOfferId ?? "");
     setPlantVariantId(spot.plantVariantId ?? "");
     setSameVariantReplace(false);
+    setInventorySource("");
     setSpotDescription(spot.spotDescription ?? "");
     setPlacementNotes(spot.placementNotes ?? "");
     setSpotStatus(
@@ -744,6 +767,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             currentOfferId,
             ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
             ...(showSameVariantReplace && sameVariantReplace ? { sameVariantReplace: true } : {}),
+            ...(showInventorySource && inventorySource ? { inventorySource } : {}),
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -764,6 +788,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             ...(pocketId ? { pocketId } : {}),
             currentOfferId,
             ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
+            ...(showInventorySource && inventorySource ? { inventorySource } : {}),
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -1293,7 +1318,8 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
         canSubmit={Boolean(
           posNumber.trim() &&
             currentOfferId.trim() &&
-            (editSpot || !selectedIsPlant || plantVariantId.trim()),
+            (editSpot || !selectedIsPlant || plantVariantId.trim()) &&
+            (!showInventorySource || inventorySource),
         )}
         submitLabel={
           editSpot ? t(locale, "admin.shared.save") : t(locale, "admin.shared.create")
@@ -1393,6 +1419,33 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             />
             <span>{t(locale, "admin.partners.detail.sameVariantReplace")}</span>
           </label>
+        ) : null}
+        {showInventorySource ? (
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.pos.inventorySource.label")}
+            </legend>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="partner-inventory-source"
+                className="mt-1"
+                checked={inventorySource === "central"}
+                onChange={() => setInventorySource("central")}
+              />
+              <span>{t(locale, "admin.pos.inventorySource.central")}</span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="partner-inventory-source"
+                className="mt-1"
+                checked={inventorySource === "already_at_partner"}
+                onChange={() => setInventorySource("already_at_partner")}
+              />
+              <span>{t(locale, "admin.pos.inventorySource.alreadyAtPartner")}</span>
+            </label>
+          </fieldset>
         ) : null}
         {editSpot && (editSpot.plantVariantId || editSpot.currentOfferId) && selectedIsPlant ? (
           <button

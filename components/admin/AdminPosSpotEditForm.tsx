@@ -28,6 +28,10 @@ import {
   posSpotPath,
   routes,
 } from "@/lib/routes";
+import {
+  adminSaveNeedsInventorySource,
+  type InventorySource,
+} from "@/lib/inventorySource";
 
 type OfferRow = {
   id: string;
@@ -123,6 +127,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   const [currentOfferId, setCurrentOfferId] = useState("");
   const [plantVariantId, setPlantVariantId] = useState("");
   const [sameVariantReplace, setSameVariantReplace] = useState(false);
+  const [inventorySource, setInventorySource] = useState<InventorySource | "">("");
   const [posNumber, setPosNumber] = useState("");
   const [pocket, setPocket] = useState<PosSpotPocketValue | "">("");
   const [pocketOther, setPocketOther] = useState("");
@@ -242,6 +247,17 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
   const showSameVariantReplace = Boolean(
     initialSpot?.plantVariantId && plantVariantId === initialSpot.plantVariantId,
   );
+  const existingOfferIsFlower =
+    offers.find((offer) => offer.id === initialSpot?.currentOfferId)?.inventoryType === "flowers";
+  const showInventorySource = adminSaveNeedsInventorySource({
+    selectedIsPlant,
+    creating: false,
+    occupiedVariantId: initialSpot?.plantVariantId ?? "",
+    selectedVariantId: plantVariantId,
+    sameVariantReplace,
+    existingOfferId: initialSpot?.currentOfferId ?? "",
+    existingOfferIsFlower,
+  });
 
   const relativePath = useMemo(() => (spotSlug ? posSpotPath(spotSlug) : ""), [spotSlug]);
   const fullUrlPreview = origin && relativePath ? absoluteAppUrl(origin, relativePath) : "";
@@ -260,7 +276,8 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
       pocketValid &&
       (spotSlug.trim() || initialSpot?.spotSlug) &&
       !isSaving &&
-      initialSpot,
+      initialSpot &&
+      (!showInventorySource || inventorySource),
   );
 
   async function handleSave() {
@@ -282,6 +299,7 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
           currentOfferId,
           ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
           ...(showSameVariantReplace && sameVariantReplace ? { sameVariantReplace: true } : {}),
+          ...(showInventorySource && inventorySource ? { inventorySource } : {}),
           posNumber: posNumber.trim(),
           pocket,
           ...(pocket === "other" ? { pocketOther: pocketOther.trim() } : {}),
@@ -626,6 +644,34 @@ export function AdminPosSpotEditForm({ posSpotId }: { posSpotId: string }) {
               />
               <span>{t(locale, "admin.pos.edit.sameVariantReplace")}</span>
             </label>
+          ) : null}
+
+          {showInventorySource ? (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-slate-700">
+                {t(locale, "admin.pos.inventorySource.label")}
+              </legend>
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="pos-edit-inventory-source"
+                  className="mt-1"
+                  checked={inventorySource === "central"}
+                  onChange={() => setInventorySource("central")}
+                />
+                <span>{t(locale, "admin.pos.inventorySource.central")}</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="radio"
+                  name="pos-edit-inventory-source"
+                  className="mt-1"
+                  checked={inventorySource === "already_at_partner"}
+                  onChange={() => setInventorySource("already_at_partner")}
+                />
+                <span>{t(locale, "admin.pos.inventorySource.alreadyAtPartner")}</span>
+              </label>
+            </fieldset>
           ) : null}
 
           {initialSpot && (initialSpot.plantVariantId || initialSpot.currentOfferId) && selectedIsPlant ? (
