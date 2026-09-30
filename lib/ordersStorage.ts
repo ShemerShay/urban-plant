@@ -1070,6 +1070,18 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       WHERE p.id = e.pos_spot_id
         AND e.inventory_type <> 'flowers'
       RETURNING p.id, p.status
+    ),
+    cycle_close AS (
+      UPDATE placement_cycles c
+      SET
+        ended_at = now(),
+        end_reason = 'sold',
+        order_id = u.order_id
+      FROM pos_upd p
+      INNER JOIN order_upd u ON true
+      WHERE c.pos_spot_id = p.id
+        AND c.ended_at IS NULL
+      RETURNING c.id
     )
     SELECT
       o.order_id,
@@ -1110,7 +1122,8 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       o.purchase_email_last_error,
       (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
       (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
-      (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type
+      (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type,
+      (SELECT COUNT(*)::int FROM cycle_close) AS cycles_closed
     FROM order_upd o
   `;
 

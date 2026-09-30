@@ -49,12 +49,14 @@ function assertStaticBoundaries(): void {
   assert.doesNotMatch(composer, /Placement Cycle|placement_segment/i);
 
   const migrations = readdirSync(join(root, "db/migrations"));
-  assert.equal(
-    migrations.some((name) => name.startsWith("038_")),
-    false,
-    "Slice B must not add a schema migration",
-  );
   assert.equal(existsSync(join(root, "db/migrations/038_pos_central_inventory.sql")), false);
+  assert.equal(
+    migrations
+      .filter((name) => name.startsWith("038_") && name !== "038_placement_cycles.sql")
+      .length,
+    0,
+    "Slice B must not add a schema migration besides later Placement Cycle",
+  );
 
   console.log("verify-pos-central-inventory: static boundaries ok");
 }
@@ -206,6 +208,10 @@ async function main(): Promise<void> {
   }
 
   try {
+    await sql`
+      DELETE FROM placement_cycles
+      WHERE pos_spot_id IN (SELECT id FROM pos_spots WHERE spot_slug LIKE 'inv-b-%')
+    `;
     await sql`DELETE FROM pos_spots WHERE spot_slug LIKE 'inv-b-%'`;
     await sql`DELETE FROM offers WHERE id LIKE 'inv-b-offer-%'`;
     const leftoverVariants = await sql`
@@ -214,6 +220,7 @@ async function main(): Promise<void> {
     `;
     const leftoverIds = (leftoverVariants as { id: string }[]).map((row) => row.id);
     if (leftoverIds.length > 0) {
+      await sql`DELETE FROM placement_cycles WHERE plant_variant_id = ANY(${leftoverIds}::uuid[])`;
       await sql`DELETE FROM inventory_history WHERE variant_id = ANY(${leftoverIds}::uuid[])`;
       await sql`DELETE FROM inventory WHERE variant_id = ANY(${leftoverIds}::uuid[])`;
       await sql`DELETE FROM plant_variants WHERE id = ANY(${leftoverIds}::uuid[])`;
@@ -623,6 +630,7 @@ async function main(): Promise<void> {
       }
     }
     if (spotIds.length > 0) {
+      await sql`DELETE FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])`;
       await sql`DELETE FROM pos_spots WHERE id = ANY(${spotIds}::uuid[])`;
     }
     if (pocketId) {
@@ -634,6 +642,7 @@ async function main(): Promise<void> {
     }
     await sql`DELETE FROM pockets WHERE name LIKE ${`${tag}-pocket%`}`;
     await sql`DELETE FROM offers WHERE id = ${offerA} OR id = ${offerB} OR id = ${offerFlower} OR id = ${offerEmpty} OR id = ${offerLast}`;
+    await sql`DELETE FROM placement_cycles WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
     await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
     await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
     await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
