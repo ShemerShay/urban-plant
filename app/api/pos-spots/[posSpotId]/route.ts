@@ -2,11 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
+import { readPlantVariants } from "@/lib/plantVariantStorage";
 import { readOffers } from "@/lib/offerStorage";
 import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID } from "@/lib/offerTypes";
 import { getPocketById } from "@/lib/pocketStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
+import {
+  occupancyToSpotFields,
+  parseOccupancyIntent,
+  PosOccupancyError,
+  resolveOccupancyForPosPatch,
+} from "@/lib/posOccupancy";
 import {
   getPosSpotById,
   PosSpotSlugConflictError,
@@ -46,6 +53,7 @@ async function mapOffersForResponse() {
         ...offer,
         productName: product?.name ?? offer.productId,
         currency: product?.currency ?? "ILS",
+        inventoryType: product?.inventoryType ?? null,
       };
     }),
   );
@@ -64,8 +72,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   if (!posSpot) {
     return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
   }
-  const [offers, locations] = await Promise.all([mapOffersForResponse(), readPartnerLocations()]);
-  return NextResponse.json({ posSpot, offers, locations });
+  const [offers, locations, plantVariants] = await Promise.all([
+    mapOffersForResponse(),
+    readPartnerLocations(),
+    readPlantVariants(),
+  ]);
+  return NextResponse.json({ posSpot, offers, locations, plantVariants });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
@@ -92,7 +104,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const partnerLocationAddress = cleanString(record.partnerLocationAddress);
   const spotDescription = cleanString(record.spotDescription);
   const posNumber = cleanString(record.posNumber) || existing.posNumber || "";
-  const currentOfferId = cleanString(record.currentOfferId) || existing.currentOfferId;
+  const occupancyIntentRaw = parseOccupancyIntent(record.occupancyIntent);
+  const occupancyIntentInBody = "occupancyIntent" in record;
+  if (occupancyIntentInBody && record.occupancyIntent != null && !occupancyIntentRaw) {
+    return NextResponse.json({ error: "occupancyIntent is invalid" }, { status: 400 });
+  }
+  const requestedOfferId = "currentOfferId" in record
+    ? record.currentOfferId === null
+      ? null
+      : cleanString(record.currentOfferId) || null
+    : undefined;
+  const requestedVariantId = "plantVariantId" in record
+    ? record.plantVariantId === null
+      ? null
+      : cleanString(record.plantVariantId) || null
+    : undefined;
+  const sameVariantReplace = record.sameVariantReplace === true;
   const hasPocketId = "pocketId" in record;
   const pocketIdRaw =
     record.pocketId === null
@@ -108,9 +135,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
   if (!posNumber) {
     return NextResponse.json({ error: "posNumber is required" }, { status: 400 });
-  }
-  if (!currentOfferId) {
-    return NextResponse.json({ error: "currentOfferId is required" }, { status: 400 });
   }
 
   const locations = await readPartnerLocations();
@@ -129,26 +153,33 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
   }
 
-  const offers = await readOffers();
-  const offer = offers.find((item) => item.id === currentOfferId);
-  if (!offer) {
-    return NextResponse.json({ error: "Offer not found" }, { status: 404 });
-  }
-  if (
-    offer.id === MANUAL_OFFER_ID ||
-    offer.productId === MANUAL_PRODUCT_ID ||
-    (offer.status !== "active" && currentOfferId !== existing.currentOfferId)
-  ) {
+  const statusRaw = record.status;
+  const hasStatus = "status" in record;
+  const parsedStatus = hasStatus ? parsePosSpotStatus(statusRaw) : null;
+  if (hasStatus && !parsedStatus) {
     return NextResponse.json(
-      {
-        error:
-          offer.id === MANUAL_OFFER_ID || offer.productId === MANUAL_PRODUCT_ID
-            ? "Manual offers cannot be used on POS spots"
-            : "When changing the offer, choose an active offer.",
-      },
+      { error: "status must be available, sold, inactive, or held_for_payment" },
       { status: 400 },
     );
   }
+
+  let occupancy;
+  try {
+    occupancy = await resolveOccupancyForPosPatch({
+      existing,
+      occupancyIntent: occupancyIntentRaw,
+      requestedOfferId,
+      requestedVariantId,
+      sameVariantReplace,
+      requestedStatus: parsedStatus,
+    });
+  } catch (err) {
+    if (err instanceof PosOccupancyError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+  const occupancyFields = occupancyToSpotFields(occupancy);
 
   let nextPocketId = existing.pocketId ?? null;
   let pocketName: string | undefined;
@@ -179,21 +210,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     pocketName,
   );
 
-  const statusRaw = record.status;
-  const hasStatus = "status" in record;
-  const parsedStatus = hasStatus ? parsePosSpotStatus(statusRaw) : null;
-  if (hasStatus && !parsedStatus) {
-    return NextResponse.json(
-      { error: "status must be available, sold, inactive, or held_for_payment" },
-      { status: 400 },
-    );
-  }
-
   const hasCheckStatus = typeof record.checkStatus === "boolean";
   const posWeeklyNoteRaw = record.posWeeklyNote;
   const hasPosWeeklyNote = "posWeeklyNote" in record;
   const offerPlacedAtRaw = record.offerPlacedAt;
-  const hasOfferPlacedAt = "offerPlacedAt" in record;
+  const hasOfferPlacedAt = "offerPlacedAt" in record && !occupancy.updateOfferPlacedAt;
 
   let offerPlacedAt: string | null | undefined;
   if (hasOfferPlacedAt) {
@@ -219,7 +240,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       ...(hasPocketId
         ? { updatePocketId: true as const, pocketId: nextPocketId }
         : {}),
-      currentOfferId,
+      ...occupancyFields,
       ...(hasCheckStatus
         ? {
             updateCheckFields: true as const,
@@ -246,9 +267,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       ...(hasOfferPlacedAt
         ? { updateOfferPlacedAt: true as const, offerPlacedAt: offerPlacedAt ?? null }
         : {}),
-      ...(hasStatus && parsedStatus
-        ? { updateStatus: true as const, status: parsedStatus }
-        : {}),
+      ...(occupancy.forceAvailable
+        ? { updateStatus: true as const, status: "available" as const }
+        : hasStatus && parsedStatus
+          ? { updateStatus: true as const, status: parsedStatus }
+          : {}),
     });
     if (!posSpot) {
       return NextResponse.json({ error: "Could not update POS Spot" }, { status: 400 });
@@ -257,6 +280,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   } catch (err) {
     if (err instanceof PosSpotSlugConflictError) {
       return NextResponse.json({ error: "Spot slug is already used by another POS Spot" }, { status: 409 });
+    }
+    if (err instanceof PosOccupancyError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
     throw err;
   }

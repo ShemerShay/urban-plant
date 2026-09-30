@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const offer = await getOfferById(available.currentOfferId);
+  const offer = await getOfferById(available.currentOfferId ?? "");
   if (!offer || offer.status !== "active" || offer.consumerPrice <= 0) {
     console.log("verify-payment-prep: skip (no valid active offer)");
     return;
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
     let flowerOffer: NonNullable<Awaited<ReturnType<typeof getOfferById>>> | undefined;
     for (const spot of latestSpots) {
       if (spot.status !== "available") continue;
-      const candidateOffer = await getOfferById(spot.currentOfferId);
+      const candidateOffer = await getOfferById(spot.currentOfferId ?? "");
       if (
         !candidateOffer ||
         candidateOffer.status !== "active" ||

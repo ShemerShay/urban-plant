@@ -83,6 +83,21 @@ assert.deepEqual(
 
 assert.deepEqual(countPlantSpots(counted), { active: 3, total: 7 }, "location = available/total");
 
+const emptyAvailable = {
+  ...spot("pos-empty", "offer-dracaena-1", "available"),
+};
+delete emptyAvailable.currentOfferId;
+assert.equal(
+  isCountedPlantSpot(emptyAvailable, offerById.get(emptyAvailable.currentOfferId)),
+  false,
+  "empty/removed POS must not count as an active plant",
+);
+assert.deepEqual(
+  countPlantSpots([...counted, emptyAvailable].filter((item) => isCountedPlantSpot(item, offerById.get(item.currentOfferId)))),
+  { active: 3, total: 7 },
+  "empty POS is excluded from partner plant counts",
+);
+
 const pocketA = counted.filter((item) => item.pocketId === "pocket-a");
 assert.deepEqual(countPlantSpots(pocketA), { active: 3, total: 6 }, "pocket = available/total");
 

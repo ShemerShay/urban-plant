@@ -238,7 +238,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const offer = await getOfferById(available.currentOfferId);
+  const offer = await getOfferById(available.currentOfferId ?? "");
   if (!offer || offer.status !== "active" || offer.consumerPrice <= 0) {
     console.log("verify-cardcom-document-email: skip DB (no valid offer)");
     return;

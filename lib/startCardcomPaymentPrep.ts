@@ -37,7 +37,7 @@ import {
   posRequiresPaymentHold,
   type InventoryType,
 } from "@/lib/inventoryType";
-import { isPosSpotPurchasable } from "@/lib/posSpotHold";
+import { posAllowsNewCustomerPurchase } from "@/lib/posOccupancy";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import {
   acquirePosSpotHoldForPayment,
@@ -361,7 +361,7 @@ export async function startCardcomPaymentPrep(
     return { ok: false, code: "not_found", error: "POS Spot not found", httpStatus: 404 };
   }
   posSpot = refreshed;
-  if (!isPosSpotPurchasable(posSpot.status)) {
+  if (!posAllowsNewCustomerPurchase(posSpot)) {
     return {
       ok: false,
       code: "unavailable",
@@ -370,7 +370,7 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const offer = await getOfferById(posSpot.currentOfferId);
+  const offer = await getOfferById(posSpot.currentOfferId ?? "");
   if (!offer || offer.status !== "active") {
     return { ok: false, code: "validation", error: "Offer is not available", httpStatus: 400 };
   }

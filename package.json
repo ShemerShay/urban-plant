@@ -43,8 +43,10 @@
     "db:migrate:commission-tiers": "node scripts/apply-sql-file.mjs db/migrations/034_partner_commission.sql",
     "db:migrate:plant-variants": "node scripts/apply-sql-file.mjs db/migrations/035_plant_variants.sql",
     "db:migrate:central-inventory": "node scripts/apply-sql-file.mjs db/migrations/036_central_inventory.sql",
+    "db:migrate:pos-occupancy": "node scripts/apply-sql-file.mjs db/migrations/037_pos_occupancy_contract.sql",
     "verify:plant-variants": "npx tsx scripts/verify-plant-variants-schema.ts",
     "verify:central-inventory": "npx tsx scripts/verify-central-inventory-schema.ts",
+    "verify:pos-occupancy": "npx tsx scripts/verify-pos-occupancy-contract.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts"
   },

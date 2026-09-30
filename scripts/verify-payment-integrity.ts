@@ -81,7 +81,7 @@ async function main(): Promise<void> {
     console.log("verify-payment-integrity: unit checks ok");
     return;
   }
-  const offer = await getOfferById(available.currentOfferId);
+  const offer = await getOfferById(available.currentOfferId ?? "");
   if (!offer || offer.status !== "active") {
     console.log("verify-payment-integrity: skip DB (no offer)");
     return;

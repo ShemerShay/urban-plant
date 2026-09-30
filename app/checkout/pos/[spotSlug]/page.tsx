@@ -17,6 +17,7 @@ import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
 import { getAwaitingPaymentAttemptForResume } from "@/lib/paymentAttemptStorage";
 import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
+import { isEmptyPosOccupancy } from "@/lib/posOccupancy";
 import { getPosLandingDetails } from "@/lib/posLandingRead";
 import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
 import { startCardcomPaymentPrep } from "@/lib/startCardcomPaymentPrep";
@@ -47,6 +48,45 @@ export default async function PosCheckoutPage({
   const { posSpot } = resolved;
 
   const { offer, plant, partner, pocket } = await getPosLandingDetails(posSpot);
+  if (isEmptyPosOccupancy(posSpot)) {
+    const partnerName = partner?.name?.trim() || undefined;
+    return (
+      <main
+        id="main-content"
+        tabIndex={-1}
+        data-page="checkout-page"
+        data-pos-empty="true"
+        className="mx-auto min-h-screen w-full max-w-md px-4 py-6"
+      >
+        <TrackPosScan
+          pos_spot_id={posSpot.id}
+          spot_slug={posSpot.spotSlug}
+          partner_id={posSpot.partnerLocationId}
+          partner_name={partnerName}
+          pocket_id={posSpot.pocketId}
+          pocket_name={pocket?.name}
+        />
+        <RememberCustomerPath />
+        <div className="space-y-6">
+          <PlantPageHeader knownPartner={partner?.name ?? ""} />
+          <section
+            className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
+            aria-labelledby="checkout-order-heading"
+          >
+            <h1
+              id="checkout-order-heading"
+              className="text-heading font-semibold text-foreground"
+            >
+              {t(locale, "checkout.empty.title")}
+            </h1>
+            <p className="text-body mt-3 leading-6 text-slate-600">
+              {t(locale, "checkout.empty.body")}
+            </p>
+          </section>
+        </div>
+      </main>
+    );
+  }
   if (!offer || offer.status !== "active") notFound();
   if (!plant) notFound();
 

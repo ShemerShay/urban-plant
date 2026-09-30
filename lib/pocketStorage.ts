@@ -135,8 +135,9 @@ export async function countPosSpotsForPocket(pocketId: string): Promise<number> 
 }
 
 /**
- * Delete a pocket. Assigned POS spots are set inactive and unassigned (pocket_id = null).
- * Spot rows, slugs, and numbers are preserved for historical Orders / Events / QR identity.
+ * Delete a pocket. POS rows in the pocket are unassigned (pocket_id = null).
+ * Remaining plant occupancy is Removed. Flower offers and sold leftover offers are kept.
+ * Spot rows, slugs, and numbers are preserved. Status and payment holds are left unchanged.
  */
 export async function deletePocket(id: string): Promise<{
   deleted: boolean;
@@ -146,11 +147,33 @@ export async function deletePocket(id: string): Promise<{
   if (!trimmed) return { deleted: false, inactivatedCount: 0 };
 
   const inactivated = await sql`
-    UPDATE pos_spots
+    UPDATE pos_spots p
     SET
-      status = 'inactive',
+      plant_variant_id = NULL,
+      current_offer_id = CASE
+        WHEN p.status = 'sold' THEN p.current_offer_id
+        WHEN EXISTS (
+          SELECT 1
+          FROM offers o
+          INNER JOIN plants pl ON pl.id = o.product_id
+          WHERE o.id = p.current_offer_id
+            AND COALESCE(pl.inventory_type, 'plants') = 'flowers'
+        ) THEN p.current_offer_id
+        ELSE NULL
+      END,
+      offer_placed_at = CASE
+        WHEN p.status = 'sold' THEN p.offer_placed_at
+        WHEN EXISTS (
+          SELECT 1
+          FROM offers o
+          INNER JOIN plants pl ON pl.id = o.product_id
+          WHERE o.id = p.current_offer_id
+            AND COALESCE(pl.inventory_type, 'plants') = 'flowers'
+        ) THEN p.offer_placed_at
+        ELSE NULL
+      END,
       pocket_id = NULL
-    WHERE pocket_id = ${trimmed}::uuid
+    WHERE p.pocket_id = ${trimmed}::uuid
     RETURNING id
   `;
   const inactivatedCount = (inactivated as { id: string }[]).length;
