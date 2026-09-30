@@ -36,4 +36,6 @@ export interface PlantProduct {
   careInstructions?: string[];
   /** Catalog inventory type. Existing rows default to plants. */
   inventoryType: InventoryType;
+  /** Public Catalog visibility. Independent of stock and of POS. Default false. */
+  catalogPublished?: boolean;
 }

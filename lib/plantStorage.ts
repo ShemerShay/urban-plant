@@ -32,7 +32,26 @@ export type PlantRow = {
   care_instructions: unknown;
   created_at: string | Date | null;
   inventory_type?: string | null;
+  catalog_published?: boolean | null;
 };
+
+export class CatalogPublishError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CatalogPublishError";
+  }
+}
+
+function catalogPublishedForWrite(plant: PlantProduct): boolean {
+  const inventoryType = inventoryTypeOrDefault(plant.inventoryType);
+  if (inventoryType === "flowers") {
+    if (plant.catalogPublished === true) {
+      throw new CatalogPublishError("Flowers cannot be published to Catalog");
+    }
+    return false;
+  }
+  return plant.catalogPublished === true;
+}
 
 function parseJsonStringArray(value: unknown): string[] | undefined {
   if (value == null) return undefined;
@@ -120,6 +139,7 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     ...(supplierName ? { supplierName } : {}),
     ...(createdAt ? { createdAt } : {}),
     inventoryType: inventoryTypeOrDefault(row.inventory_type),
+    catalogPublished: row.catalog_published === true,
   };
 }
 
@@ -137,6 +157,7 @@ function seedPlantsWithSupplierPrice(): PlantProduct[] {
       supplierPrice,
       price: supplierPrice,
       inventoryType: plant.inventoryType ?? "plants",
+      catalogPublished: plant.catalogPublished === true,
     };
   });
 }
@@ -150,7 +171,7 @@ export async function readPlants(filter?: {
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
           supplier_price, currency, images, labels, light, water, water_he, average_size,
           supplier_name, difficulty, location, pet_friendly,
-          care_instructions, created_at, inventory_type
+          care_instructions, created_at, inventory_type, catalog_published
         FROM plants
         WHERE inventory_type = ${filter.inventoryType}
         ORDER BY name ASC
@@ -160,7 +181,7 @@ export async function readPlants(filter?: {
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
           supplier_price, currency, images, labels, light, water, water_he, average_size,
           supplier_name, difficulty, location, pet_friendly,
-          care_instructions, created_at, inventory_type
+          care_instructions, created_at, inventory_type, catalog_published
         FROM plants
         ORDER BY name ASC
       `;
@@ -182,7 +203,7 @@ export async function getPlantByIdAsync(id: string): Promise<PlantProduct | unde
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      care_instructions, created_at, inventory_type, catalog_published
     FROM plants
     WHERE id = ${trimmed}
     LIMIT 1
@@ -201,13 +222,14 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
   const imagesJson = jsonArrayOrNull(plant.images);
   const labelsJson = jsonArrayOrNull(plant.labels);
   const careJson = jsonArrayOrNull(plant.careInstructions);
+  const catalogPublished = catalogPublishedForWrite(plant);
 
   const rows = await sql`
     INSERT INTO plants (
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      care_instructions, created_at, inventory_type, catalog_published
     )
     VALUES (
       ${plant.id},
@@ -232,13 +254,14 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.petFriendly ?? null},
       ${careJson}::jsonb,
       ${plant.createdAt ?? new Date().toISOString()}::timestamptz,
-      ${inventoryTypeOrDefault(plant.inventoryType)}
+      ${inventoryTypeOrDefault(plant.inventoryType)},
+      ${catalogPublished}
     )
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      care_instructions, created_at, inventory_type, catalog_published
   `;
   const row = (rows as PlantRow[])[0];
   if (!row) throw new Error("Could not create plant");
@@ -258,6 +281,7 @@ export async function updatePlant(
   const imagesJson = jsonArrayOrNull(plant.images);
   const labelsJson = jsonArrayOrNull(plant.labels);
   const careJson = jsonArrayOrNull(plant.careInstructions);
+  const catalogPublished = catalogPublishedForWrite(plant);
 
   const rows = await sql`
     UPDATE plants
@@ -281,13 +305,14 @@ export async function updatePlant(
       difficulty = ${plant.difficulty ?? null},
       location = ${plant.location ?? null},
       pet_friendly = ${plant.petFriendly ?? null},
-      care_instructions = ${careJson}::jsonb
+      care_instructions = ${careJson}::jsonb,
+      catalog_published = ${catalogPublished}
     WHERE id = ${trimmed}
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
       supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      care_instructions, created_at, inventory_type, catalog_published
   `;
   const row = (rows as PlantRow[])[0];
   return row ? mapPlantRow(row) : null;

@@ -389,3 +389,41 @@ export function parsePlantBody(
 
   return { ok: true, plant };
 }
+
+export function catalogPublishedFieldPresent(body: Record<string, unknown>): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(body, "catalogPublished") ||
+    Object.prototype.hasOwnProperty.call(body, "catalog_published")
+  );
+}
+
+export function parseCatalogPublishedValue(
+  raw: unknown,
+): { ok: true; value: boolean } | { ok: false; error: string } {
+  if (typeof raw === "boolean") return { ok: true, value: raw };
+  if (raw === "true" || raw === "1") return { ok: true, value: true };
+  if (raw === "false" || raw === "0") return { ok: true, value: false };
+  return { ok: false, error: "catalogPublished must be a boolean" };
+}
+
+/** Catalog publish may only be set by an admin session. */
+export function resolveCatalogPublishedInput(input: {
+  body: Record<string, unknown>;
+  isAdmin: boolean;
+  existing?: boolean;
+}):
+  | { ok: true; value: boolean }
+  | { ok: false; status: 400 | 401; error: string } {
+  if (!catalogPublishedFieldPresent(input.body)) {
+    return { ok: true, value: input.existing === true };
+  }
+  if (!input.isAdmin) {
+    return { ok: false, status: 401, error: "Unauthorized" };
+  }
+  const raw = Object.prototype.hasOwnProperty.call(input.body, "catalogPublished")
+    ? input.body.catalogPublished
+    : input.body.catalog_published;
+  const parsed = parseCatalogPublishedValue(raw);
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.error };
+  return { ok: true, value: parsed.value };
+}

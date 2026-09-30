@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getPlantByIdAsync, updatePlant, deletePlant } from "@/lib/plantStorage";
+import { isAdminRequest } from "@/lib/adminAuth";
+import {
+  CatalogPublishError,
+  deletePlant,
+  getPlantByIdAsync,
+  updatePlant,
+} from "@/lib/plantStorage";
 import { plantToWire, wireBodyToParseInput } from "@/lib/plantWire";
-import { localizedFieldFromBody, parsePlantBody } from "@/lib/plantValidation";
+import {
+  localizedFieldFromBody,
+  parsePlantBody,
+  resolveCatalogPublishedInput,
+} from "@/lib/plantValidation";
 
 interface RouteParams {
   params: Promise<{ plantId: string }>;
@@ -36,6 +46,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
+  const catalogPublished = resolveCatalogPublishedInput({
+    body: record,
+    isAdmin: isAdminRequest(request),
+    existing: existing.catalogPublished === true,
+  });
+  if (!catalogPublished.ok) {
+    return NextResponse.json(
+      { error: catalogPublished.error },
+      { status: catalogPublished.status },
+    );
+  }
+
   try {
     const plant = await updatePlant(plantId, {
       ...parsed.plant,
@@ -54,6 +76,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       ),
       waterHe: localizedFieldFromBody(record, existing.waterHe, "waterHe", "water_he"),
       inventoryType: existing.inventoryType,
+      catalogPublished: catalogPublished.value,
       ...(existing.createdAt ? { createdAt: existing.createdAt } : {}),
     });
     if (!plant) {
@@ -61,6 +84,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
     return NextResponse.json({ plant: plantToWire(plant) });
   } catch (error) {
+    if (error instanceof CatalogPublishError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     const message = error instanceof Error ? error.message : "Could not update plant";
     return NextResponse.json({ error: message }, { status: 500 });
   }
