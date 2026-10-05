@@ -94,11 +94,6 @@ async function main(): Promise<void> {
   assert.equal(publishedCol.is_nullable, "NO");
   assert.match(String(publishedCol.column_default), /false/);
 
-  const unpublished = await sql`
-    SELECT COUNT(*)::int AS n FROM plants WHERE catalog_published = true
-  `;
-  assert.equal((unpublished as { n: number }[])[0].n, 0, "existing plants stay unpublished");
-
   const flowerPublished = await sql`
     SELECT COUNT(*)::int AS n
     FROM plants
@@ -179,16 +174,20 @@ async function main(): Promise<void> {
   const segmentsBefore = await sql`SELECT COUNT(*)::int AS n FROM placement_segments`;
   const cycleN = (cyclesBefore as { n: number }[])[0].n;
   const segmentN = (segmentsBefore as { n: number }[])[0].n;
+  const publishedBefore = await sql`
+    SELECT id FROM plants WHERE catalog_published = true ORDER BY id
+  `;
+  const publishedIdsBefore = (publishedBefore as { id: string }[]).map((row) => row.id);
 
   try {
     const createdPlant = await createPlant({
       ...sourcePlant,
       id: testPlantId,
       name: tag,
-      catalogPublished: false,
+      catalogPublished: undefined,
       createdAt: new Date().toISOString(),
     });
-    assert.equal(createdPlant.catalogPublished === true, false);
+    assert.equal(createdPlant.catalogPublished, false);
 
     const published = await updatePlant(testPlantId, {
       ...createdPlant,
@@ -375,6 +374,14 @@ async function main(): Promise<void> {
     }
     await deletePlant(testPlantId);
   }
+
+  const publishedAfter = await sql`
+    SELECT id FROM plants WHERE catalog_published = true ORDER BY id
+  `;
+  assert.deepEqual(
+    (publishedAfter as { id: string }[]).map((row) => row.id),
+    publishedIdsBefore,
+  );
 
   console.log("verify-admin-catalog-inventory: ok");
 }

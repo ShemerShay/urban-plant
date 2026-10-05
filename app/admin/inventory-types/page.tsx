@@ -15,6 +15,11 @@ const INVENTORY_TYPE_SECTIONS = [
     label: "admin.inventoryTypes.flowers",
     description: "admin.inventoryTypes.flowersDesc",
   },
+  {
+    href: routes.admin.pots(),
+    label: "admin.inventoryTypes.pots",
+    description: "admin.inventoryTypes.potsDesc",
+  },
 ] as const;
 
 export default async function AdminInventoryTypesPage() {

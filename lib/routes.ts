@@ -25,6 +25,7 @@ export const routes = {
     inventoryTypes: () => "/admin/inventory-types",
     inventoryTypesPlants: () => "/admin/inventory-types/plants",
     inventoryTypesFlowers: () => "/admin/inventory-types/flowers",
+    pots: () => "/admin/pots",
     products: () => "/admin/products",
     productsPlants: () => "/admin/products/plants",
     productsFlowers: () => "/admin/products/flowers",
@@ -51,6 +52,11 @@ export const routes = {
     spot: (spotSlug: string) => `/pos/${encodeURIComponent(spotSlug.trim())}`,
     checkout: (spotSlug: string) =>
       `/checkout/pos/${encodeURIComponent(spotSlug.trim())}`,
+  },
+  shop: {
+    index: () => "/shop",
+    plant: (plantId: string) =>
+      `/shop/plants/${encodeURIComponent(plantId.trim())}`,
   },
   customer: {
     accessibility: () => "/accessibility",
@@ -108,6 +114,12 @@ export const routes = {
       `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}`,
     plantVariantInventory: (plantId: string, variantId: string) =>
       `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}/inventory`,
+    pots: () => "/api/pots",
+    pot: (potId: string) => `/api/pots/${encodeURIComponent(potId.trim())}`,
+    potVariants: (potId: string) =>
+      `/api/pots/${encodeURIComponent(potId.trim())}/variants`,
+    potVariant: (potId: string, variantId: string) =>
+      `/api/pots/${encodeURIComponent(potId.trim())}/variants/${encodeURIComponent(variantId.trim())}`,
     offers: () => "/api/offers",
     offer: (offerId: string) => `/api/offers/${encodeURIComponent(offerId.trim())}`,
     partnerBrands: () => "/api/partner-brands",

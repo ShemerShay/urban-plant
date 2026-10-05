@@ -8,6 +8,7 @@ export const ANALYTICS_EVENTS = {
   checkoutStarted: "checkout_started",
   paymentStarted: "payment_started",
   purchaseCompleted: "purchase_completed",
+  productView: "product_view",
 } as const;
 
 /** Shared commerce context attached to funnel events when available. */
