@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -47,6 +47,7 @@
     "db:migrate:placement-cycles": "node scripts/apply-sql-file.mjs db/migrations/038_placement_cycles.sql",
     "db:migrate:placement-segments": "node scripts/apply-sql-file.mjs db/migrations/039_placement_segments.sql",
     "db:migrate:catalog-admin": "node scripts/apply-sql-file.mjs db/migrations/040_catalog_admin.sql",
+    "db:migrate:pots": "node scripts/apply-sql-file.mjs db/migrations/041_pots.sql",
     "verify:plant-variants": "npx tsx scripts/verify-plant-variants-schema.ts",
     "verify:central-inventory": "npx tsx scripts/verify-central-inventory-schema.ts",
     "verify:pos-occupancy": "npx tsx scripts/verify-pos-occupancy-contract.ts",
@@ -55,7 +56,8 @@
     "verify:placement-segments": "npx tsx scripts/verify-placement-segments.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts",
-    "verify:admin-catalog-inventory": "npx tsx scripts/verify-admin-catalog-inventory.ts"
+    "verify:admin-catalog-inventory": "npx tsx scripts/verify-admin-catalog-inventory.ts",
+    "verify:catalog-shop": "npx tsx scripts/verify-catalog-shop.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

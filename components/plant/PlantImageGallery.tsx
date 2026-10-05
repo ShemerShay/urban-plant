@@ -13,6 +13,8 @@ interface PlantImageGalleryProps {
   name: string;
   /** Smaller gallery for checkout product summary. Default is the product-page size. */
   compact?: boolean;
+  /** Responsive `sizes` hint. Default matches the narrow product page. */
+  sizes?: string;
 }
 
 function GalleryChevron({ pointing }: { pointing: "left" | "right" }) {
@@ -34,7 +36,12 @@ function GalleryChevron({ pointing }: { pointing: "left" | "right" }) {
   );
 }
 
-export function PlantImageGallery({ images, name, compact = false }: PlantImageGalleryProps) {
+export function PlantImageGallery({
+  images,
+  name,
+  compact = false,
+  sizes,
+}: PlantImageGalleryProps) {
   const locale = useLocale();
   const direction = localeHtmlDir(locale);
   const emblaOptions = useMemo(
@@ -143,7 +150,9 @@ export function PlantImageGallery({ images, name, compact = false }: PlantImageG
                   fill
                   priority={index === 0}
                   className="object-cover"
-                  sizes={compact ? "144px" : "(max-width: 448px) 100vw, 448px"}
+                  sizes={
+                    sizes ?? (compact ? "144px" : "(max-width: 448px) 100vw, 448px")
+                  }
                 />
               </div>
             ))}
