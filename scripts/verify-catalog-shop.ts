@@ -26,6 +26,7 @@ function assertShopWiring(): void {
 
   const shopPage = read("app/shop/page.tsx");
   assert.match(shopPage, /readCatalogShopCards/);
+  assert.match(shopPage, /max-w-5xl/);
   assert.doesNotMatch(shopPage, /TrackProductView/);
   assert.doesNotMatch(shopPage, /product_view/);
   assert.doesNotMatch(shopPage, /PosPlantLanding/);
@@ -35,9 +36,31 @@ function assertShopWiring(): void {
   assert.match(detailPage, /readCatalogShopDetail/);
   assert.match(detailPage, /notFound/);
   assert.match(detailPage, /TrackProductView/);
+  assert.match(detailPage, /max-w-2xl/);
+  assert.doesNotMatch(detailPage, /max-w-5xl/);
   assert.doesNotMatch(detailPage, /PosPlantLanding/);
   assert.doesNotMatch(detailPage, /TrackPosScan/);
   assert.doesNotMatch(detailPage, /FixedBottomCTA/);
+
+  const detailUi = read("components/shop/ShopPlantDetail.tsx");
+  assert.match(detailUi, /"use client"/);
+  assert.match(detailUi, /selectedSizeId/);
+  assert.match(detailUi, /selectedPotId/);
+  assert.match(detailUi, /onSelect=\{selectSize\}/);
+  assert.match(detailUi, /from \"@\/lib\/catalogShopSelection\"/);
+  assert.match(detailUi, /import type \{ CatalogShopDetail/);
+  assert.match(detailUi, /retainCompatiblePotId/);
+  assert.match(detailUi, /compatiblePots\.length > 0/);
+  assert.doesNotMatch(detailUi, /lg:grid/);
+  assert.doesNotMatch(detailUi, /lg:grid-cols/);
+  assert.doesNotMatch(detailUi, /FixedBottomCTA/);
+  assert.doesNotMatch(detailUi, /startCardcom/);
+  assert.doesNotMatch(detailUi, /routes\.checkout/);
+  assert.doesNotMatch(detailUi, /routes\.cart/);
+
+  const shopCard = read("components/shop/ShopPlantCard.tsx");
+  assert.match(shopCard, /formatCatalogPriceSummary/);
+  assert.doesNotMatch(shopCard, /selectedSizeId/);
 
   const tracker = read("components/analytics/TrackProductView.tsx");
   assert.match(tracker, /captureOncePerSession/);
@@ -82,6 +105,11 @@ function assertShopWiring(): void {
 
 async function main(): Promise<void> {
   assertShopWiring();
+
+  const { retainCompatiblePotId } = await import("../lib/catalogShopSelection");
+  assert.equal(retainCompatiblePotId(null, [{ id: "pot-a" }]), null);
+  assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-a" }, { id: "pot-b" }]), "pot-a");
+  assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-b" }]), null);
 
   await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");

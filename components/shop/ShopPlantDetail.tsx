@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
 
 import { PlantHero } from "@/components/plant/PlantHero";
 import { PlantImageGallery } from "@/components/plant/PlantImageGallery";
@@ -6,146 +9,214 @@ import { PlantProductAbout } from "@/components/plant/PlantProductAbout";
 import { PlantProductInfoGrid } from "@/components/plant/PlantProductInfoGrid";
 import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
 import type { CatalogShopDetail, CatalogShopPotOption, CatalogShopSize } from "@/lib/catalogShop";
+import { retainCompatiblePotId } from "@/lib/catalogShopSelection";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
 import type { Locale } from "@/lib/locale";
 
-function PotOption({
-  pot,
+function sizeButtonLabel(size: CatalogShopSize): string {
+  const label = size.sizeLabel?.trim();
+  if (label) return label;
+  if (size.nurseryPotDiameterCm != null) return String(size.nurseryPotDiameterCm);
+  return "";
+}
+
+function SizeSelector({
+  sizes,
+  selectedId,
+  onSelect,
   locale,
-  currency,
 }: {
-  pot: CatalogShopPotOption;
+  sizes: CatalogShopSize[];
+  selectedId: string;
+  onSelect: (id: string) => void;
   locale: Locale;
-  currency: CatalogShopDetail["currency"];
 }) {
-  const name = localizedPlantText(locale, pot.name, pot.nameHe);
-  const color = localizedPlantText(locale, pot.color, pot.colorHe);
   return (
-    <li className="flex items-center gap-3">
-      {pot.image ? (
-        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-neutral-100">
-          <Image src={pot.image} alt="" fill className="object-cover" sizes="56px" />
-        </div>
-      ) : null}
-      <div>
-        <p className="text-body font-medium text-foreground">{name}</p>
-        <p className="text-caption text-neutral-600">
-          {color}
-          {" · "}
-          {formatCatalogPrice(pot.catalogPrice, currency, locale)}
-        </p>
+    <section className="w-full">
+      <h2 id="shop-size-heading" className="text-heading-sm font-medium text-foreground">
+        {t(locale, "shop.sizes")}
+      </h2>
+      <div
+        className="mt-4 flex flex-wrap items-center justify-center gap-2"
+        role="radiogroup"
+        aria-labelledby="shop-size-heading"
+      >
+        {sizes.map((size) => {
+          const selected = size.id === selectedId;
+          const label = sizeButtonLabel(size);
+          return (
+            <button
+              key={size.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onSelect(size.id)}
+              className={`text-body flex h-12 min-w-12 items-center justify-center rounded-2xl px-4 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
+                selected
+                  ? "bg-brand text-white"
+                  : "bg-neutral-100 text-foreground hover:bg-neutral-200/80"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
-    </li>
+    </section>
   );
 }
 
-function SizeOption({
-  size,
+function PotSelector({
+  pots,
+  selectedId,
+  onSelect,
   locale,
   currency,
 }: {
-  size: CatalogShopSize;
+  pots: CatalogShopPotOption[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
   locale: Locale;
   currency: CatalogShopDetail["currency"];
 }) {
-  const inStock = size.quantity > 0;
   return (
-    <li className="border-t border-neutral-200 py-4 first:border-t-0 first:pt-0">
-      <div className="flex items-baseline justify-between gap-3">
-        <div>
-          {size.sizeLabel ? (
-            <p className="text-body font-medium text-foreground">{size.sizeLabel}</p>
-          ) : null}
-          {size.nurseryPotDiameterCm != null ? (
-            <p className="text-caption text-neutral-600">
-              {t(locale, "shop.diameter", { cm: size.nurseryPotDiameterCm })}
-            </p>
-          ) : null}
-        </div>
-        <p className="text-body font-medium text-foreground">
-          {formatCatalogPrice(size.catalogPrice, currency, locale)}
-        </p>
-      </div>
-      <p className="text-caption mt-1 text-neutral-600">
-        {inStock ? t(locale, "shop.inStock") : t(locale, "shop.unavailable")}
-      </p>
-      {size.pots.length > 0 ? (
-        <div className="mt-3">
-          <h3 className="text-caption font-medium text-neutral-600">{t(locale, "shop.pots")}</h3>
-          <ul className="mt-2 space-y-2">
-            {size.pots.map((pot) => (
-              <PotOption key={pot.id} pot={pot} locale={locale} currency={currency} />
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </li>
+    <section className="w-full">
+      <h2 id="shop-pots-heading" className="text-heading-sm font-medium text-foreground">
+        {t(locale, "shop.pots")}
+      </h2>
+      <ul className="mt-4 flex flex-wrap items-start justify-center gap-3" aria-labelledby="shop-pots-heading">
+        {pots.map((pot) => {
+          const selected = pot.id === selectedId;
+          const name = localizedPlantText(locale, pot.name, pot.nameHe);
+          const color = localizedPlantText(locale, pot.color, pot.colorHe);
+          const price = formatCatalogPrice(pot.catalogPrice, currency, locale);
+          return (
+            <li key={pot.id} className="w-[5.5rem] sm:w-24">
+              <button
+                type="button"
+                aria-pressed={selected}
+                aria-label={`${name}, ${color}, ${price}`}
+                onClick={() => onSelect(pot.id)}
+                className="flex w-full flex-col items-center gap-1.5 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2"
+              >
+                <span
+                  className={`relative block aspect-square w-full overflow-hidden rounded-2xl bg-neutral-100 ${
+                    selected ? "ring-2 ring-brand ring-offset-2" : ""
+                  }`}
+                >
+                  {pot.image ? (
+                    <Image src={pot.image} alt="" fill className="object-cover" sizes="96px" />
+                  ) : (
+                    <span className="text-caption flex h-full items-center justify-center p-2 text-neutral-600">
+                      {color}
+                    </span>
+                  )}
+                </span>
+                <span className="text-caption leading-snug text-neutral-600">{color}</span>
+                <span className="text-caption leading-snug text-neutral-600">{price}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
 export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; locale: Locale }) {
+  const [selectedSizeId, setSelectedSizeId] = useState(plant.sizes[0]?.id ?? "");
+  const [selectedPotId, setSelectedPotId] = useState<string | null>(null);
+
   const name = localizedPlantText(locale, plant.name, plant.nameHe);
   const subtitle = localizedPlantText(locale, plant.subtitle, plant.subtitleHe);
   const description = localizedPlantText(locale, plant.description, plant.descriptionHe);
   const water = localizedPlantText(locale, plant.water, plant.waterHe);
   const showCare = Boolean(plant.light && plant.difficulty && water);
+  const selectedSize = plant.sizes.find((size) => size.id === selectedSizeId) ?? plant.sizes[0];
+  const compatiblePots = selectedSize?.pots ?? [];
+
+  function selectSize(id: string) {
+    const nextSize = plant.sizes.find((size) => size.id === id);
+    setSelectedSizeId(id);
+    setSelectedPotId(retainCompatiblePotId(selectedPotId, nextSize?.pots ?? []));
+  }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div
-        className={
-          plant.images.length > 0
-            ? "lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)] lg:items-start lg:gap-12"
-            : undefined
-        }
-      >
-        {plant.images.length > 0 ? (
+    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center">
+      {plant.images.length > 0 ? (
+        <div className="w-full">
           <PlantImageGallery
             images={plant.images}
             name={name}
-            sizes="(min-width: 1024px) 38rem, calc(100vw - 3rem)"
+            sizes="(min-width: 672px) 42rem, calc(100vw - 3rem)"
           />
-        ) : null}
-
-        <div
-          className={`flex min-w-0 flex-col gap-8 ${plant.images.length > 0 ? "mt-8 lg:mt-2" : ""}`}
-        >
-          <PlantHero locale={locale} name={name} subtitle={subtitle} align="start" />
-
-          {plant.sizes.length > 0 ? (
-            <section className="w-full text-start" aria-label={t(locale, "shop.sizes")}>
-              <h2 className="text-heading-sm font-medium text-foreground">{t(locale, "shop.sizes")}</h2>
-              <ul className="mt-4">
-                {plant.sizes.map((size) => (
-                  <SizeOption key={size.id} size={size} locale={locale} currency={plant.currency} />
-                ))}
-              </ul>
-            </section>
-          ) : null}
-        </div>
-      </div>
-
-      {description || (showCare && plant.light && plant.difficulty) ? (
-        <div className="mt-16 w-full border-t border-neutral-200 pt-12 lg:mx-auto lg:max-w-2xl">
-          {description ? (
-            <div className="w-full">
-              <PlantProductAbout description={description} />
-            </div>
-          ) : null}
-
-          {showCare && plant.light && plant.difficulty ? (
-            <div className={description ? "mt-12 w-full" : "w-full"}>
-              <PlantProductInfoGrid
-                light={plant.light}
-                water={water}
-                difficulty={plant.difficulty}
-                averageSize={plant.averageSize}
-              />
-            </div>
-          ) : null}
         </div>
       ) : null}
+
+      <div
+        className={`flex w-full flex-col items-center gap-8 text-center ${
+          plant.images.length > 0 ? "mt-8" : ""
+        }`}
+      >
+        <PlantHero locale={locale} name={name} subtitle={subtitle} />
+
+        {selectedSize ? (
+          <>
+            <SizeSelector
+              sizes={plant.sizes}
+              selectedId={selectedSize.id}
+              onSelect={selectSize}
+              locale={locale}
+            />
+
+            <div className="w-full">
+              <p className="text-heading-sm font-medium text-foreground">
+                {formatCatalogPrice(selectedSize.catalogPrice, plant.currency, locale)}
+              </p>
+              {selectedSize.nurseryPotDiameterCm != null ? (
+                <p className="text-caption mt-1 text-neutral-600">
+                  {t(locale, "shop.diameter", { cm: selectedSize.nurseryPotDiameterCm })}
+                </p>
+              ) : null}
+              <p className="text-caption mt-1 text-neutral-600">
+                {selectedSize.quantity > 0 ? t(locale, "shop.inStock") : t(locale, "shop.unavailable")}
+              </p>
+            </div>
+
+            {compatiblePots.length > 0 ? (
+              <PotSelector
+                pots={compatiblePots}
+                selectedId={selectedPotId}
+                onSelect={setSelectedPotId}
+                locale={locale}
+                currency={plant.currency}
+              />
+            ) : null}
+          </>
+        ) : null}
+
+        {description || (showCare && plant.light && plant.difficulty) ? (
+          <div className="mt-8 w-full border-t border-neutral-200 pt-12">
+            {description ? (
+              <div className="w-full">
+                <PlantProductAbout description={description} />
+              </div>
+            ) : null}
+
+            {showCare && plant.light && plant.difficulty ? (
+              <div className={description ? "mt-12 w-full" : "w-full"}>
+                <PlantProductInfoGrid
+                  light={plant.light}
+                  water={water}
+                  difficulty={plant.difficulty}
+                  averageSize={plant.averageSize}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

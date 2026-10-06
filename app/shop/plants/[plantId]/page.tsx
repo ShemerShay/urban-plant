@@ -24,7 +24,7 @@ export default async function ShopPlantPage({ params }: PageProps) {
     <main
       id="main-content"
       tabIndex={-1}
-      className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 pt-10 pb-16"
+      className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-2xl flex-col px-6 pt-10 pb-16"
     >
       <TrackProductView plant_id={plant.id} plant_name={plant.name} inventory_type="plants" />
       <Link
@@ -34,7 +34,7 @@ export default async function ShopPlantPage({ params }: PageProps) {
         {t(locale, "shop.back")}
       </Link>
       <PlantPageHeader knownPartner="" />
-      <ShopPlantDetail plant={plant} locale={locale} />
+      <ShopPlantDetail key={plant.id} plant={plant} locale={locale} />
     </main>
   );
 }
