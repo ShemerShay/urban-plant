@@ -96,6 +96,10 @@ async function main(): Promise<void> {
     assert.ok(plantTitle?.[1]?.trim(), `${plantPath} did not render a plant name`);
   }
 
+  const cart = await fetchText("/cart");
+  assert.equal(cart.status, 404, `/cart returned ${cart.status}`);
+  assert.equal(isCustomerNotFoundPage(cart.status, cart.text), true);
+
   const missingPlant = await fetchText("/shop/plants/not-a-real-plant-id-zzzz");
   assert.equal(missingPlant.status, 404, "missing plant must 404");
   assert.equal(isCustomerNotFoundPage(missingPlant.status, missingPlant.text), true);
@@ -172,6 +176,8 @@ async function main(): Promise<void> {
   console.log("verify-routes-smoke: ok", {
     origin,
     shop: routes.shop.index(),
+    cart: "/cart",
+    cartStatus: 404,
     plant: plantHrefs[0],
     apiPlant: routes.api.plant(plantId),
     apiPlantStatus: 405,

@@ -1,12 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePostHog } from "posthog-js/react";
 
 import { PlantHero } from "@/components/plant/PlantHero";
 import { PlantImageGallery } from "@/components/plant/PlantImageGallery";
 import { PlantProductAbout } from "@/components/plant/PlantProductAbout";
 import { PlantProductInfoGrid } from "@/components/plant/PlantProductInfoGrid";
+import {
+  ANALYTICS_EVENTS,
+  captureAnalyticsEvent,
+} from "@/lib/analyticsEvents";
+import { addCatalogCartItem, catalogCartItemKey, catalogCartLineAmount } from "@/lib/catalogCart";
+import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
 import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
 import type { CatalogShopDetail, CatalogShopPotOption, CatalogShopSize } from "@/lib/catalogShop";
 import { retainCompatiblePotId } from "@/lib/catalogShopSelection";
@@ -124,9 +131,15 @@ function PotSelector({
   );
 }
 
+const ctaFocusClass =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
+
 export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; locale: Locale }) {
+  const posthog = usePostHog();
+  const cart = useCatalogCart();
   const [selectedSizeId, setSelectedSizeId] = useState(plant.sizes[0]?.id ?? "");
   const [selectedPotId, setSelectedPotId] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState(false);
 
   const name = localizedPlantText(locale, plant.name, plant.nameHe);
   const subtitle = localizedPlantText(locale, plant.subtitle, plant.subtitleHe);
@@ -135,11 +148,67 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   const showCare = Boolean(plant.light && plant.difficulty && water);
   const selectedSize = plant.sizes.find((size) => size.id === selectedSizeId) ?? plant.sizes[0];
   const compatiblePots = selectedSize?.pots ?? [];
+  const selectedPot = selectedPotId
+    ? compatiblePots.find((pot) => pot.id === selectedPotId)
+    : undefined;
+  const cartQty =
+    selectedSize == null
+      ? 0
+      : (cart.items.find(
+          (item) =>
+            catalogCartItemKey(item) ===
+            catalogCartItemKey({
+              plantId: plant.id,
+              plantVariantId: selectedSize.id,
+              potVariantId: selectedPotId,
+            }),
+        )?.quantity ?? 0);
+  const canAdd =
+    selectedSize != null && selectedSize.quantity > 0 && cartQty < selectedSize.quantity;
+
+  useEffect(() => {
+    if (!justAdded) return;
+    const timeout = window.setTimeout(() => setJustAdded(false), 1500);
+    return () => window.clearTimeout(timeout);
+  }, [justAdded]);
 
   function selectSize(id: string) {
     const nextSize = plant.sizes.find((size) => size.id === id);
     setSelectedSizeId(id);
     setSelectedPotId(retainCompatiblePotId(selectedPotId, nextSize?.pots ?? []));
+  }
+
+  function selectPot(id: string) {
+    setSelectedPotId((current) => (current === id ? null : id));
+  }
+
+  function addToCart() {
+    if (!selectedSize || !canAdd) return;
+    const result = addCatalogCartItem(
+      cart,
+      {
+        plantId: plant.id,
+        plantVariantId: selectedSize.id,
+        potVariantId: selectedPotId,
+      },
+      selectedSize.quantity,
+    );
+    if (!result.added) return;
+    writeCatalogCart(result.cart);
+    captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.addToCart, {
+      plant_id: plant.id,
+      plant_variant_id: selectedSize.id,
+      ...(selectedPotId ? { pot_variant_id: selectedPotId } : {}),
+      quantity: 1,
+      plant_price: selectedSize.catalogPrice,
+      ...(selectedPot ? { pot_price: selectedPot.catalogPrice } : {}),
+      amount: catalogCartLineAmount(
+        selectedSize.catalogPrice,
+        selectedPot?.catalogPrice,
+        1,
+      ),
+    });
+    setJustAdded(true);
   }
 
   return (
@@ -188,10 +257,25 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
               <PotSelector
                 pots={compatiblePots}
                 selectedId={selectedPotId}
-                onSelect={setSelectedPotId}
+                onSelect={selectPot}
                 locale={locale}
                 currency={plant.currency}
               />
+            ) : null}
+
+            {plant.sizes.length > 0 ? (
+              <button
+                type="button"
+                disabled={!canAdd}
+                onClick={addToCart}
+                className={`text-body flex min-h-12 w-full items-center justify-center rounded-2xl px-5 py-4 text-center font-semibold ${ctaFocusClass} ${
+                  canAdd
+                    ? "bg-brand text-white shadow-[0_6px_18px_rgba(27,67,50,0.14)] transition hover:bg-brand-soft active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100"
+                    : "cursor-not-allowed bg-neutral-300 text-neutral-600"
+                }`}
+              >
+                {justAdded ? t(locale, "shop.addedToCart") : t(locale, "shop.addToCart")}
+              </button>
             ) : null}
           </>
         ) : null}

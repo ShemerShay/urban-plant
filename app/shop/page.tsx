@@ -1,4 +1,5 @@
 import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
+import { ShopCatalogBar } from "@/components/shop/ShopCatalogBar";
 import { ShopPlantCard } from "@/components/shop/ShopPlantCard";
 import { readCatalogShopCards } from "@/lib/catalogShop";
 import { getLocale } from "@/lib/getLocale";
@@ -14,6 +15,7 @@ export default async function ShopPage() {
       tabIndex={-1}
       className="bg-background text-foreground mx-auto min-h-screen w-full max-w-5xl px-6 pt-10 pb-16"
     >
+      <ShopCatalogBar locale={locale} />
       <PlantPageHeader knownPartner="" />
       <h1 className="sr-only">{t(locale, "shop.title")}</h1>
       {plants.length === 0 ? (

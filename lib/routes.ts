@@ -101,6 +101,7 @@ export const routes = {
     adminLogin: () => "/api/admin-login",
     adminLogout: () => "/api/admin-logout",
     locale: () => "/api/locale",
+    shopCartResolve: () => "/api/shop/cart/resolve",
     order: (orderId: string) => `/api/orders/${encodeURIComponent(orderId.trim())}`,
     posSpots: () => "/api/pos-spots",
     posSpot: (posSpotId: string) =>

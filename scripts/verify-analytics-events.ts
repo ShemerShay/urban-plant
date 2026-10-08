@@ -17,8 +17,12 @@ assert.match(helpers, /pos_scan/);
 assert.match(helpers, /checkout_started/);
 assert.match(helpers, /payment_started/);
 assert.match(helpers, /purchase_completed/);
+assert.match(helpers, /product_view/);
+assert.match(helpers, /add_to_cart/);
+assert.match(helpers, /remove_from_cart/);
 assert.match(helpers, /inventory_type/);
 assert.match(helpers, /captureOncePerSession/);
+assert.match(helpers, /captureAnalyticsEvent/);
 assert.match(helpers, /shouldCaptureBusinessAnalytics/);
 assert.match(helpers, /NODE_ENV === ["']production["']/);
 
@@ -78,5 +82,23 @@ assert.match(provider, /up_internal/);
 assert.match(provider, /up_ph_internal/);
 assert.match(provider, /is_internal:\s*true/);
 assert.match(provider, /posthog\.register/);
+
+const productView = read("components/analytics/TrackProductView.tsx");
+assert.match(productView, /captureOncePerSession/);
+assert.match(productView, /ANALYTICS_EVENTS\.productView/);
+assert.doesNotMatch(productView, /add_to_cart/);
+assert.doesNotMatch(productView, /remove_from_cart/);
+
+const plantDetail = read("components/shop/ShopPlantDetail.tsx");
+assert.match(plantDetail, /ANALYTICS_EVENTS\.addToCart/);
+assert.match(plantDetail, /captureAnalyticsEvent/);
+assert.doesNotMatch(plantDetail, /captureOncePerSession/);
+assert.doesNotMatch(plantDetail, /ANALYTICS_EVENTS\.removeFromCart/);
+
+const shopCart = read("components/shop/ShopCart.tsx");
+assert.match(shopCart, /ANALYTICS_EVENTS\.removeFromCart/);
+assert.match(shopCart, /captureAnalyticsEvent/);
+assert.doesNotMatch(shopCart, /ANALYTICS_EVENTS\.addToCart/);
+assert.doesNotMatch(shopCart, /captureOncePerSession/);
 
 console.log("OK: analytics event wiring verified");

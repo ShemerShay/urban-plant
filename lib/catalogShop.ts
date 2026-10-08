@@ -4,6 +4,7 @@
  * Pots match a plant variant only when size_label is exactly the same.
  */
 
+import type { CatalogCartItem, CatalogCartResolvedLine } from "@/lib/catalogCart";
 import { sql } from "@/lib/db";
 import { getInventoryQuantities } from "@/lib/inventoryStorage";
 import type { PotSizeLabel } from "@/lib/potSizes";
@@ -354,4 +355,66 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
     ...(difficulty ? { difficulty } : {}),
     ...(averageSize ? { averageSize } : {}),
   };
+}
+
+/**
+ * Map stored Cart ids onto current published Catalog data.
+ * Drops unpublished plants, missing/unpriced Variants, qty 0, and incompatible pots.
+ * Clamps quantity to current central stock. Does not write inventory.
+ */
+export async function resolveCatalogCartLines(
+  items: CatalogCartItem[],
+): Promise<CatalogCartResolvedLine[]> {
+  const plants = new Map<string, CatalogShopDetail | null>();
+  const resolved: CatalogCartResolvedLine[] = [];
+
+  for (const item of items) {
+    if (!plants.has(item.plantId)) {
+      plants.set(item.plantId, await readCatalogShopDetail(item.plantId));
+    }
+    const plant = plants.get(item.plantId);
+    if (!plant) continue;
+
+    const size = plant.sizes.find((entry) => entry.id === item.plantVariantId);
+    if (!size || size.quantity <= 0) continue;
+
+    let pot: CatalogShopPotOption | undefined;
+    if (item.potVariantId) {
+      pot = size.pots.find((entry) => entry.id === item.potVariantId);
+      if (!pot) continue;
+    }
+
+    const quantity = Math.min(item.quantity, size.quantity);
+    if (quantity < 1) continue;
+
+    const nameHe = plant.nameHe;
+    const image = plant.images[0];
+    resolved.push({
+      plantId: plant.id,
+      plantVariantId: size.id,
+      potVariantId: pot?.id ?? null,
+      quantity,
+      availableQuantity: size.quantity,
+      name: plant.name,
+      plantPrice: size.catalogPrice,
+      currency: plant.currency,
+      ...(nameHe ? { nameHe } : {}),
+      ...(image ? { image } : {}),
+      ...(size.sizeLabel ? { sizeLabel: size.sizeLabel } : {}),
+      ...(size.nurseryPotDiameterCm != null
+        ? { nurseryPotDiameterCm: size.nurseryPotDiameterCm }
+        : {}),
+      ...(pot
+        ? {
+            potName: pot.name,
+            potColor: pot.color,
+            potPrice: pot.catalogPrice,
+            ...(pot.nameHe ? { potNameHe: pot.nameHe } : {}),
+            ...(pot.colorHe ? { potColorHe: pot.colorHe } : {}),
+          }
+        : {}),
+    });
+  }
+
+  return resolved;
 }
