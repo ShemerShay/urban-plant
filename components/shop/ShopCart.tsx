@@ -27,6 +27,82 @@ import { routes } from "@/lib/routes";
 const qtyButtonClass =
   "text-body flex h-10 w-10 items-center justify-center rounded-2xl bg-neutral-100 font-medium text-foreground transition hover:bg-neutral-200/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:text-neutral-400 disabled:hover:bg-neutral-100";
 
+function ShopCartSpinner({ label }: { label: string }) {
+  return (
+    <div
+      className="flex min-h-full flex-1 items-center justify-center"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <span className="sr-only">{label}</span>
+      <span className="shop-cart-spinner" aria-hidden />
+      <style>{`
+        .shop-cart-spinner {
+          width: 1rem;
+          height: 1rem;
+          flex-shrink: 0;
+          border-radius: 50%;
+          background: conic-gradient(
+            from 0deg,
+            rgb(255 255 255 / 0) 0%,
+            rgb(73 120 99 / 0.22) 38%,
+            var(--brand-muted) 72%,
+            var(--brand) 100%
+          );
+          -webkit-mask: radial-gradient(
+            farthest-side,
+            transparent calc(100% - 1.5px),
+            #000 calc(100% - 1.5px)
+          );
+          mask: radial-gradient(
+            farthest-side,
+            transparent calc(100% - 1.5px),
+            #000 calc(100% - 1.5px)
+          );
+          animation: shop-cart-spin 0.9s linear infinite;
+        }
+
+        @keyframes shop-cart-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .shop-cart-spinner {
+            animation: none;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function ShopCartEmpty({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-4 text-center">
+      <svg
+        className="size-16 text-brand-muted"
+        viewBox="0 0 64 64"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M32 34V16" />
+        <path d="M32 24c-6.5-1.5-10-7.5-8-12 6 1 9 7 8 12" />
+        <path d="M32 22c6.5-2 10-7.5 8-12-6 2-9 7-8 12" />
+        <path d="M14 28h36l-3.2 16H19.5L16 16h-6" />
+        <circle cx="25" cy="50" r="2.25" />
+        <circle cx="41" cy="50" r="2.25" />
+      </svg>
+      <p className="text-body text-neutral-600">{label}</p>
+    </div>
+  );
+}
+
 function sizeLabel(line: CatalogCartResolvedLine): string {
   const label = line.sizeLabel?.trim();
   if (label) return label;
@@ -184,11 +260,11 @@ export function ShopCart({
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-5">
           {loading ? (
-            <p className="text-body text-neutral-600">{t(locale, "common.loading")}</p>
+            <ShopCartSpinner label={t(locale, "common.loading")} />
           ) : error ? (
             <p className="text-body text-neutral-600">{t(locale, "common.networkError")}</p>
           ) : lines.length === 0 ? (
-            <p className="text-body text-neutral-600">{t(locale, "shop.cartEmpty")}</p>
+            <ShopCartEmpty label={t(locale, "shop.cartEmpty")} />
           ) : (
             <ul className="flex flex-col gap-6">
               {lines.map((line) => {

@@ -15,8 +15,8 @@ export default async function ShopPage() {
       tabIndex={-1}
       className="bg-background text-foreground mx-auto min-h-screen w-full max-w-5xl px-6 pt-10 pb-16"
     >
-      <ShopCatalogBar locale={locale} />
       <PlantPageHeader knownPartner="" />
+      <ShopCatalogBar locale={locale} />
       <h1 className="sr-only">{t(locale, "shop.title")}</h1>
       {plants.length === 0 ? (
         <p className="text-body text-neutral-600">{t(locale, "shop.empty")}</p>

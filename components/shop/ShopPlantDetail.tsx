@@ -59,7 +59,7 @@ function SizeSelector({
               role="radio"
               aria-checked={selected}
               onClick={() => onSelect(size.id)}
-              className={`text-body flex h-12 min-w-12 items-center justify-center rounded-2xl px-4 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
+              className={`text-body flex h-10 min-w-10 items-center justify-center rounded-2xl px-2.5 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
                 selected
                   ? "bg-brand text-white"
                   : "bg-neutral-100 text-foreground hover:bg-neutral-200/80"
