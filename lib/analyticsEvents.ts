@@ -9,6 +9,8 @@ export const ANALYTICS_EVENTS = {
   paymentStarted: "payment_started",
   purchaseCompleted: "purchase_completed",
   productView: "product_view",
+  addToCart: "add_to_cart",
+  removeFromCart: "remove_from_cart",
 } as const;
 
 /** Shared commerce context attached to funnel events when available. */
@@ -16,7 +18,12 @@ export type AnalyticsCommerceProps = {
   pos_spot_id?: string;
   spot_slug?: string;
   plant_id?: string;
+  plant_variant_id?: string;
+  pot_variant_id?: string;
   plant_name?: string;
+  plant_price?: number;
+  pot_price?: number;
+  quantity?: number;
   inventory_type?: string;
   offer_id?: string;
   partner_id?: string;

@@ -27,6 +27,8 @@ function assertShopWiring(): void {
   const shopPage = read("app/shop/page.tsx");
   assert.match(shopPage, /readCatalogShopCards/);
   assert.match(shopPage, /max-w-5xl/);
+  assert.match(shopPage, /ShopCatalogBar/);
+  assert.doesNotMatch(shopPage, /href=\"\/cart\"/);
   assert.doesNotMatch(shopPage, /TrackProductView/);
   assert.doesNotMatch(shopPage, /product_view/);
   assert.doesNotMatch(shopPage, /PosPlantLanding/);
@@ -36,6 +38,7 @@ function assertShopWiring(): void {
   assert.match(detailPage, /readCatalogShopDetail/);
   assert.match(detailPage, /notFound/);
   assert.match(detailPage, /TrackProductView/);
+  assert.match(detailPage, /ShopCatalogBar/);
   assert.match(detailPage, /max-w-2xl/);
   assert.doesNotMatch(detailPage, /max-w-5xl/);
   assert.doesNotMatch(detailPage, /PosPlantLanding/);
@@ -51,11 +54,15 @@ function assertShopWiring(): void {
   assert.match(detailUi, /import type \{ CatalogShopDetail/);
   assert.match(detailUi, /retainCompatiblePotId/);
   assert.match(detailUi, /compatiblePots\.length > 0/);
+  assert.match(detailUi, /shop\.addToCart/);
+  assert.match(detailUi, /ANALYTICS_EVENTS\.addToCart/);
+  assert.match(detailUi, /captureAnalyticsEvent/);
   assert.doesNotMatch(detailUi, /lg:grid/);
   assert.doesNotMatch(detailUi, /lg:grid-cols/);
   assert.doesNotMatch(detailUi, /FixedBottomCTA/);
   assert.doesNotMatch(detailUi, /startCardcom/);
   assert.doesNotMatch(detailUi, /routes\.checkout/);
+  assert.doesNotMatch(detailUi, /href=\"\/cart\"/);
   assert.doesNotMatch(detailUi, /routes\.cart/);
 
   const shopCard = read("components/shop/ShopPlantCard.tsx");

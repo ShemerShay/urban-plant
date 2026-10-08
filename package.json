@@ -58,6 +58,8 @@
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts",
     "verify:admin-catalog-inventory": "npx tsx scripts/verify-admin-catalog-inventory.ts",
     "verify:catalog-shop": "npx tsx scripts/verify-catalog-shop.ts",
+    "verify:catalog-cart": "npx tsx scripts/verify-catalog-cart.ts",
+    "verify:analytics-events": "npx tsx scripts/verify-analytics-events.ts",
     "verify:routes-smoke": "node --experimental-strip-types scripts/verify-routes-smoke.ts"
   },
   "dependencies": {
