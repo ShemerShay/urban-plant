@@ -1,6 +1,8 @@
 /**
- * English → Hebrew for plant careInstructions lines shown in purchase emails.
- * Exact-match only; unknown English lines are left unchanged.
+ * Existing plant care lines and the Hebrew wording previously used in purchase emails.
+ * Exact-match only. The customer email shows the English line.
+ * A known Hebrew line maps back to that existing English line.
+ * Unknown lines are left unchanged — no new care instructions are added.
  */
 
 const CARE_INSTRUCTION_HE: Record<string, string> = {
@@ -122,10 +124,35 @@ const CARE_INSTRUCTION_HE: Record<string, string> = {
     "הפחיתו השקיה בחורף. הימנעו מהשקיית יתר של השורשים הפקעתיים. תנו לרוב המצע להתייבש לפני השקיה חוזרת.",
 };
 
+const CARE_INSTRUCTION_EN_BY_HE = new Map<string, string>();
+for (const [english, hebrew] of Object.entries(CARE_INSTRUCTION_HE)) {
+  const existing = CARE_INSTRUCTION_EN_BY_HE.get(hebrew);
+  if (existing && existing !== english) {
+    throw new Error(
+      `Duplicate Hebrew care line maps to both "${existing}" and "${english}"`,
+    );
+  }
+  CARE_INSTRUCTION_EN_BY_HE.set(hebrew, english);
+}
+
 /** Translate English care instruction lines to Hebrew (exact match; else original). */
 export function translateCareInstructionsToHebrew(lines: string[]): string[] {
   return lines
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => CARE_INSTRUCTION_HE[line] ?? line);
+}
+
+/**
+ * Care line for the customer purchase email.
+ * Keeps an existing English line. Maps a known Hebrew line back to that English.
+ * Leaves any other line unchanged.
+ */
+export function englishCareInstructionForEmail(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return "";
+  if (Object.prototype.hasOwnProperty.call(CARE_INSTRUCTION_HE, trimmed)) {
+    return trimmed;
+  }
+  return CARE_INSTRUCTION_EN_BY_HE.get(trimmed) ?? trimmed;
 }

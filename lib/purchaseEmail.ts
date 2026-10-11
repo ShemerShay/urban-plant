@@ -1,13 +1,13 @@
 /**
  * Urban Plant purchase confirmation email (shared HTML + nodemailer send).
- * Keep copy identical to the historical send-purchase-email route.
+ * Customer-facing HTML is English, left to right.
  */
 
 import "server-only";
 
 import nodemailer from "nodemailer";
 
-import { translateCareInstructionsToHebrew } from "@/lib/careInstructionsHebrew";
+import { englishCareInstructionForEmail } from "@/lib/careInstructionsHebrew";
 import { PUBLIC_CONTACT_EMAIL } from "@/lib/publicContact";
 
 export type PurchaseEmailFulfillment = "delivery" | "pickup";
@@ -17,7 +17,7 @@ export type BuildPurchaseEmailHtmlParams = {
   plantName: string;
   priceDisplay: string;
   fulfillmentMethod: PurchaseEmailFulfillment;
-  /** English care instructions from plant data; rendered in Hebrew when present. */
+  /** Existing plant care lines, shown in English. */
   careInstructions?: string[];
 };
 
@@ -33,7 +33,7 @@ export type SendPurchaseEmailParams = {
   plantName: string;
   priceDisplay: string;
   fulfillmentMethod: PurchaseEmailFulfillment;
-  /** English care instructions from plant data; rendered in Hebrew when present. */
+  /** Existing plant care lines, shown in English. */
   careInstructions?: string[];
   attachments?: SendPurchaseEmailAttachment[];
   /** Optional correlation id for server logs (never shown to the customer). */
@@ -79,27 +79,30 @@ function normalizeCareInstructions(
 function buildCareInstructionsBlock(
   careInstructions: string[] | undefined,
 ): string {
-  const english = normalizeCareInstructions(careInstructions);
-  if (english.length === 0) return "";
+  const lines = normalizeCareInstructions(careInstructions)
+    .map((line) => englishCareInstructionForEmail(line))
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return "";
 
-  const hebrew = translateCareInstructionsToHebrew(english);
-  const items = hebrew
+  const items = lines
     .map(
       (line) =>
         `<li style="margin:0 0 4px;padding:0;">${escapeHtml(line)}</li>`,
     )
     .join("");
 
-  return `<ul style="margin:12px 0 0;padding:0 1.25em 0 0;font-size:15px;line-height:1.5;color:#374151;direction:rtl;text-align:right;list-style-position:inside;">
+  return `<ul dir="ltr" style="margin:12px 0 0;padding:0 0 0 1.25em;font-size:15px;line-height:1.5;color:#374151;direction:ltr;text-align:left;">
     ${items}
   </ul>`;
 }
 
 /**
- * Existing Urban Plant confirmation HTML — do not change English copy.
+ * Customer confirmation HTML. English copy, left to right.
  */
 export function buildPurchaseEmailHtml(params: BuildPurchaseEmailHtmlParams): string {
-  const greeting = params.fullName ? `Hi ${escapeHtml(params.fullName)},` : "Hi,";
+  const fullName = params.fullName.trim();
+  const greeting = fullName ? `Hi ${escapeHtml(fullName)},` : "Hi,";
   const priceLine = params.priceDisplay
     ? `<p style="margin:12px 0 0;font-size:15px;line-height:1.5;color:#374151;">Order total: <strong>${escapeHtml(params.priceDisplay)}</strong></p>`
     : "";
@@ -120,8 +123,8 @@ export function buildPurchaseEmailHtml(params: BuildPurchaseEmailHtmlParams): st
 
   return `
 <!DOCTYPE html>
-<html>
-<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;">
+<html lang="en" dir="ltr">
+<body dir="ltr" style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;direction:ltr;text-align:left;">
   <p style="margin:0 0 16px;font-size:16px;">${greeting}</p>
   <p style="margin:0;font-size:15px;line-height:1.5;color:#374151;">
     Thank you for your purchase from Urban Plant. Your order was received.
