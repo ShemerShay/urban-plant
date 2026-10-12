@@ -23,6 +23,7 @@ import {
   getOrderById,
   markPurchaseEmailFailed,
   markPurchaseEmailSent,
+  markPurchaseEmailSkipped,
   saveCardcomDocumentOnOrder,
 } from "@/lib/ordersStorage";
 import { getPlantById } from "@/lib/plantCatalog";
@@ -89,10 +90,8 @@ async function resolveDocument(
     throw new Error("Missing cardcom_transaction_id for CreateDocument");
   }
 
-  const email = order.customerEmail?.trim();
-  if (!email) {
-    throw new Error("Missing customer email for CreateDocument");
-  }
+  // Customer email is optional: plant orders without email still get a Cardcom document.
+  const email = order.customerEmail?.trim() || undefined;
 
   const catalogPlant = order.plantId ? await getPlantById(order.plantId) : undefined;
   const isFlower = inventoryTypeOrDefault(catalogPlant?.inventoryType) === "flowers";
@@ -150,6 +149,10 @@ export async function processOrderDocumentAndEmail(
   if (before.purchaseEmailSentAt || before.purchaseEmailStatus === "sent") {
     return { outcome: "already_sent" };
   }
+  if (before.purchaseEmailStatus === "skipped") {
+    // Plant order without customer email: document + internal notice already handled.
+    return { outcome: "skipped", error: "customer_email_skipped" };
+  }
 
   const catalogPlant = before.plantId
     ? await getPlantById(before.plantId)
@@ -178,15 +181,63 @@ export async function processOrderDocumentAndEmail(
 
   try {
     const document = await resolveDocument(order, deps);
+
+    const customerEmail = order.customerEmail?.trim();
+    if (!customerEmail) {
+      // No customer email (opt-in not chosen): document exists, skip the customer
+      // email and PDF fetch, still notify Urban Plant, then mark skipped.
+      const sendInternal =
+        deps.sendInternalNotification ?? sendInternalOrderNotificationEmail;
+      let publicPlantName = order.plantName || "your plant";
+      try {
+        const plant = order.plantId ? await getPlantById(order.plantId) : undefined;
+        if (inventoryTypeOrDefault(plant?.inventoryType) === "flowers") {
+          publicPlantName = CARDCOM_FLOWER_LINE_ITEM_NAME;
+        }
+      } catch (error) {
+        console.error("[cardcom-document-email] plant lookup failed", {
+          orderId: order.orderId,
+          error: safeErrorMessage(error),
+        });
+      }
+      try {
+        await sendInternal({
+          customerEmail: "",
+          fullName: order.fullName,
+          plantName: publicPlantName,
+          priceDisplay: formatPrice(order.price, "ILS"),
+          fulfillmentMethod: order.fulfillmentMethod,
+          phone: order.phone,
+          address: order.address,
+          apartmentOrNotes: order.apartmentOrNotes,
+          locationName: order.locationName ?? undefined,
+          locationAddress: order.locationAddress ?? undefined,
+          orderId: order.orderId,
+        });
+        console.info("[purchase-email] urban_plant_send_ok", {
+          role: "urban_plant",
+          orderId: order.orderId,
+          to: URBAN_PLANT_NOTIFICATION_TO,
+        });
+      } catch (error) {
+        console.error("[purchase-email] urban_plant_send_failed", {
+          role: "urban_plant",
+          orderId: order.orderId,
+          to: URBAN_PLANT_NOTIFICATION_TO,
+          error: safeErrorMessage(error),
+        });
+      }
+      const skipped = await markPurchaseEmailSkipped(order.orderId);
+      if (!skipped) {
+        throw new Error("Failed to mark purchase email as skipped");
+      }
+      return { outcome: "skipped", error: "no_customer_email" };
+    }
+
     const fetchPdf = deps.fetchPdf ?? fetchCardcomDocumentPdf;
     const pdf = await fetchPdf(document, {
       environment: resolveEnvironment(order),
     });
-
-    const customerEmail = order.customerEmail?.trim();
-    if (!customerEmail) {
-      throw new Error("Missing customer email for purchase confirmation");
-    }
 
     let careInstructions: string[] = [];
     let publicPlantName = order.plantName || "your plant";

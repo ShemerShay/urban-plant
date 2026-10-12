@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { usePostHog } from "posthog-js/react";
 
 import { CheckoutCustomerFields } from "@/components/checkout/CheckoutCustomerFields";
+import { CheckoutEmailOptIn } from "@/components/checkout/CheckoutEmailOptIn";
 import {
   DeliveryAddressFields,
   type DeliveryAddressFieldErrors,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/analyticsEvents";
 import {
   canSubmitCheckout,
+  getCheckoutCustomerFieldRequirements,
   getCheckoutFieldErrors,
   getVisibleCheckoutFieldErrors,
   type CheckoutFieldKey,
@@ -171,6 +173,16 @@ export function CheckoutForm({
     deliveryHouseNumber: paymentResume?.prefill.deliveryHouseNumber ?? "",
     apartmentOrNotes: paymentResume?.prefill.apartmentOrNotes ?? "",
   });
+  /** Email opt-in applies to plants only. Flowers keep the legacy required-fields form. */
+  const usesEmailOptIn = inventoryType !== "flowers";
+  const [emailOptIn, setEmailOptIn] = useState<boolean>(
+    Boolean(paymentResume?.prefill.email?.trim()),
+  );
+  const validationRules = usesEmailOptIn ? { emailOptIn } : undefined;
+  const customerFieldRequirements = getCheckoutCustomerFieldRequirements(
+    fulfillmentMethod,
+    validationRules,
+  );
   const [touched, setTouched] = useState<Partial<Record<CheckoutFieldKey, boolean>>>({});
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -195,6 +207,20 @@ export function CheckoutForm({
     setValidationSummary(null);
   }
 
+  function handleEmailOptInChange(next: boolean) {
+    setEmailOptIn(next);
+    if (!next) {
+      setTouched((prev) => {
+        const rest = { ...prev };
+        delete rest.email;
+        return rest;
+      });
+    }
+    setSubmitError(null);
+    setPrepMessage(null);
+    setValidationSummary(null);
+  }
+
   function handleFulfillmentChange(next: FulfillmentMethod) {
     if (hidePickup && next === "pickup") {
       return;
@@ -205,11 +231,9 @@ export function CheckoutForm({
     setFulfillmentMethod(next);
     if (next === "pickup") {
       setTouched((prev) => {
-        const {
-          deliveryStreet: _s,
-          deliveryHouseNumber: _h,
-          ...rest
-        } = prev;
+        const rest = { ...prev };
+        delete rest.deliveryStreet;
+        delete rest.deliveryHouseNumber;
         return rest;
       });
     }
@@ -234,7 +258,7 @@ export function CheckoutForm({
 
   function revealValidationErrors() {
     setShowAllErrors(true);
-    const nextErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
+    const nextErrors = getCheckoutFieldErrors(fields, fulfillmentMethod, validationRules);
     const count = Object.keys(nextErrors).length;
     setValidationSummary(
       count > 0
@@ -246,12 +270,12 @@ export function CheckoutForm({
     window.setTimeout(() => focusFirstInvalidField(nextErrors), 0);
   }
 
-  const fieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod);
+  const fieldErrors = getCheckoutFieldErrors(fields, fulfillmentMethod, validationRules);
   const errors = translateCheckoutFieldErrors(
     locale,
     getVisibleCheckoutFieldErrors(fieldErrors, touched, showAllErrors),
   );
-  const canSubmit = canSubmitCheckout(fields, fulfillmentMethod);
+  const canSubmit = canSubmitCheckout(fields, fulfillmentMethod, validationRules);
   const purchaseAllowed = isPosSpotPurchasable(posSpotStatus, { resumeHolder });
   const showHeldCheckoutMessage = shouldShowHeldForPaymentCheckoutMessage(posSpotStatus, {
     resumeHolder,
@@ -324,9 +348,19 @@ export function CheckoutForm({
           plantId,
           spotSlug,
           fulfillmentMethod,
-          fullName: fields.fullName.trim(),
-          customerEmail: fields.email.trim(),
-          phone: fields.phone.trim(),
+          ...(usesEmailOptIn
+            ? {
+                // Only send the fields the customer was asked for (POS Pickup: none by default).
+                emailOptIn,
+                fullName: customerFieldRequirements.fullName ? fields.fullName.trim() : "",
+                customerEmail: emailOptIn ? fields.email.trim() : "",
+                phone: customerFieldRequirements.phone ? fields.phone.trim() : "",
+              }
+            : {
+                fullName: fields.fullName.trim(),
+                customerEmail: fields.email.trim(),
+                phone: fields.phone.trim(),
+              }),
           ...(fulfillmentMethod === "delivery"
             ? {
                 deliveryStreet: fields.deliveryStreet.trim(),
@@ -410,7 +444,20 @@ export function CheckoutForm({
         </div>
       </fieldset>
 
+      {usesEmailOptIn ? (
+        <CheckoutEmailOptIn checked={emailOptIn} onChange={handleEmailOptInChange} />
+      ) : null}
+
       <CheckoutCustomerFields
+        show={
+          usesEmailOptIn
+            ? {
+                fullName: customerFieldRequirements.fullName,
+                email: customerFieldRequirements.email,
+                phone: customerFieldRequirements.phone,
+              }
+            : undefined
+        }
         values={{
           fullName: fields.fullName,
           email: fields.email,

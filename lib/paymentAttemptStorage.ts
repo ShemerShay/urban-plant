@@ -313,7 +313,8 @@ function mapOrderRowLite(row: OrderRow): SavedOrder {
     ...(row.purchase_email_status === "pending" ||
     row.purchase_email_status === "processing" ||
     row.purchase_email_status === "sent" ||
-    row.purchase_email_status === "failed"
+    row.purchase_email_status === "failed" ||
+    row.purchase_email_status === "skipped"
       ? { purchaseEmailStatus: row.purchase_email_status }
       : {}),
     ...(toIsoString(row.purchase_email_sent_at)

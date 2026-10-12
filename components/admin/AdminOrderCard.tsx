@@ -267,12 +267,16 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
 
       {/* 3. Customer details */}
       <section className="py-4">
-        <h3 className="text-base font-semibold text-emerald-950">{order.fullName}</h3>
+        <h3 className="text-base font-semibold text-emerald-950">
+          {order.fullName?.trim() || t(locale, "admin.common.notSpecified")}
+        </h3>
         <div className="mt-3 space-y-2.5">
           {order.customerEmail ? (
             <DetailRow icon={<IconMail className="size-4" />}>{order.customerEmail}</DetailRow>
           ) : null}
-          <DetailRow icon={<IconPhone className="size-4" />}>{order.phone}</DetailRow>
+          {order.phone?.trim() ? (
+            <DetailRow icon={<IconPhone className="size-4" />}>{order.phone}</DetailRow>
+          ) : null}
           {order.fulfillmentMethod === "delivery" &&
           (order.address.trim() || order.apartmentOrNotes.trim()) ? (
             <DetailRow icon={<IconMapPin className="size-4" />}>

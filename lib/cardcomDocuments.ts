@@ -22,7 +22,8 @@ const CARDCOM_PDF_FETCH_TIMEOUT_MS = 30_000;
 export type CreateCardcomDocumentInput = {
   dealNumber: number;
   name: string;
-  email: string;
+  /** Optional: documents are created without a customer email when none was provided. */
+  email?: string;
   phone: string;
   addressLine1?: string;
   productDescription: string;
@@ -119,7 +120,7 @@ export function buildCreateDocumentRequest(
     DocumentTypeToCreate: "Auto",
     IsSendByEmail: false,
     Name: input.name,
-    Email: input.email,
+    ...(input.email?.trim() ? { Email: input.email.trim() } : {}),
     Phone: input.phone,
     Products: [
       {

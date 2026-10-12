@@ -94,6 +94,8 @@ const en = {
   "checkout.field.phone": "Phone number",
   "checkout.placeholder.fullName": "Jane Doe",
   "checkout.placeholder.email": "jane.doe@example.com",
+  "checkout.emailOptIn.label":
+    "Would you like us to email you your receipt and plant care instructions?",
   "checkout.confirm.prefix": "Completing this order confirms purchase for ",
   "checkout.confirm.deliverySuffix": ". Delivery takes 1–3 business days.",
   "checkout.confirm.pickupSuffix": "immediate pickup.",
@@ -889,6 +891,7 @@ const he: { [K in keyof typeof en]: string } = {
   "checkout.field.phone": "טלפון",
   "checkout.placeholder.fullName": "ישראל ישראלי",
   "checkout.placeholder.email": "name@example.com",
+  "checkout.emailOptIn.label": "רוצים שנשלח לכם במייל את הקבלה ואת הוראות הטיפול בצמח?",
   "checkout.confirm.prefix": "השלמת ההזמנה מאשרת רכישה של ",
   "checkout.confirm.deliverySuffix": ". המשלוח לוקח 1–3 ימי עסקים.",
   "checkout.confirm.pickupSuffix": " לאיסוף מיידי.",
