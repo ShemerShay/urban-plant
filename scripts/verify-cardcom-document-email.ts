@@ -131,7 +131,7 @@ async function main(): Promise<void> {
     assert.equal(isPdfBuffer(Buffer.from("%PDF-1.4")), true);
   }
 
-  // --- Unit: existing Urban Plant email copy unchanged ---
+  // --- Unit: customer purchase email is English and left to right ---
   {
     const routeSrc = readFileSync(
       path.join(root, "app/api/send-purchase-email/route.ts"),
@@ -147,10 +147,26 @@ async function main(): Promise<void> {
       priceDisplay: "₪89",
       fulfillmentMethod: "pickup",
     });
+    assert.ok(htmlPickup.includes("Hi Ada,"));
+    assert.ok(htmlPickup.includes('lang="en"'));
+    assert.ok(htmlPickup.includes('dir="ltr"'));
     assert.ok(htmlPickup.includes("Thank you for your purchase from Urban Plant"));
     assert.ok(htmlPickup.includes("You may take the plant with you."));
     assert.ok(htmlPickup.includes("Order total:"));
+    assert.ok(htmlPickup.includes("<strong>₪89</strong>"));
+    assert.ok(htmlPickup.includes("— Urban Plant"));
     assert.ok(!htmlPickup.includes("direction:rtl"));
+    assert.ok(!/[\u0590-\u05FF]/.test(htmlPickup));
+
+    const htmlNoName = buildPurchaseEmailHtml({
+      fullName: "   ",
+      plantName: "Monstera",
+      priceDisplay: "₪89",
+      fulfillmentMethod: "pickup",
+    });
+    assert.ok(htmlNoName.includes(">Hi,</p>"));
+    assert.ok(!htmlNoName.includes("Hi    ,"));
+    assert.ok(!/[\u0590-\u05FF]/.test(htmlNoName));
 
     const htmlPickupCare = buildPurchaseEmailHtml({
       fullName: "Ada",
@@ -161,11 +177,30 @@ async function main(): Promise<void> {
         "Water when the top soil feels dry.",
         "",
         "  ",
+        "Wipe leaves occasionally for shine.",
       ],
     });
-    assert.ok(htmlPickupCare.includes("השקו כשהאדמה העליונה מורגשת יבשה."));
-    assert.ok(!htmlPickupCare.includes("Water when the top soil feels dry."));
+    const careItems = htmlPickupCare.match(/<li\b[^>]*>.*?<\/li>/g) ?? [];
+    assert.deepEqual(careItems, [
+      '<li style="margin:0 0 4px;padding:0;">Water when the top soil feels dry.</li>',
+      '<li style="margin:0 0 4px;padding:0;">Wipe leaves occasionally for shine.</li>',
+    ]);
     assert.ok(htmlPickupCare.includes("You may take the plant with you."));
+    assert.ok(htmlPickupCare.includes("<strong>₪89</strong>"));
+    assert.ok(!htmlPickupCare.includes("direction:rtl"));
+    assert.ok(!/[\u0590-\u05FF]/.test(htmlPickupCare));
+
+    const htmlHebrewCare = buildPurchaseEmailHtml({
+      fullName: "Ada",
+      plantName: "Monstera",
+      priceDisplay: "₪89",
+      fulfillmentMethod: "delivery",
+      careInstructions: ["השקו כשהאדמה העליונה מורגשת יבשה."],
+    });
+    assert.ok(htmlHebrewCare.includes("Water when the top soil feels dry."));
+    assert.ok(!htmlHebrewCare.includes("השקו כשהאדמה העליונה מורגשת יבשה."));
+    assert.ok(!/[\u0590-\u05FF]/.test(htmlHebrewCare));
+    assert.ok(!htmlHebrewCare.includes("direction:rtl"));
 
     const htmlDelivery = buildPurchaseEmailHtml({
       fullName: "Ada",
@@ -178,6 +213,8 @@ async function main(): Promise<void> {
         "we’ll contact you within the next 1–3 business days to coordinate delivery",
       ),
     );
+    assert.ok(!htmlDelivery.includes("direction:rtl"));
+    assert.ok(!/[\u0590-\u05FF]/.test(htmlDelivery));
     assert.equal(PURCHASE_EMAIL_SUBJECT, "Your Urban Plant order is confirmed");
 
     const helperSrc = readFileSync(
@@ -196,6 +233,9 @@ async function main(): Promise<void> {
     assert.ok(!/\bbcc\s*:/.test(helperSrc));
     assert.ok(helperSrc.includes("customer_send_failed"));
     assert.ok(helperSrc.includes("urban_plant_send_failed"));
+    assert.ok(helperSrc.includes("params.attachments.map"));
+    assert.ok(!helperSrc.includes("direction:rtl"));
+    assert.ok(!/[\u0590-\u05FF]/.test(helperSrc));
 
     const processSrc = readFileSync(
       path.join(root, "lib/processOrderDocumentAndEmail.ts"),
