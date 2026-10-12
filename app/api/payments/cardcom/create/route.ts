@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
     customerEmail: cleanString(record.customerEmail),
     phone: cleanString(record.phone),
     fulfillmentMethod,
+    // Absent/non-boolean -> legacy validation (all customer fields required).
+    ...(typeof record.emailOptIn === "boolean" ? { emailOptIn: record.emailOptIn } : {}),
     ...(fulfillmentMethod === "delivery"
       ? {
           deliveryStreet: cleanString(record.deliveryStreet),

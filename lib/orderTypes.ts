@@ -6,7 +6,13 @@ export type FulfillmentMethod = "delivery" | "pickup";
 export type OrderCardcomEnv = "test" | "production";
 
 /** Post-payment Urban Plant confirmation email lifecycle. */
-export type PurchaseEmailStatus = "pending" | "processing" | "sent" | "failed";
+export type PurchaseEmailStatus =
+  | "pending"
+  | "processing"
+  | "sent"
+  | "failed"
+  /** Plant order without a customer email: document created, customer email intentionally not sent. */
+  | "skipped";
 
 export interface OrderSnapshot {
   productId: string;

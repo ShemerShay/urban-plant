@@ -27,7 +27,8 @@ function isPurchaseEmailStatus(value: unknown): value is PurchaseEmailStatus {
     value === "pending" ||
     value === "processing" ||
     value === "sent" ||
-    value === "failed"
+    value === "failed" ||
+    value === "skipped"
   );
 }
 
@@ -1603,4 +1604,63 @@ export async function ensurePurchaseEmailPending(
   `;
   const row = (rows as OrderRow[])[0];
   return row ? mapOrderRow(row) : getOrderById(trimmedId);
+}
+
+/**
+ * Plant order without a customer email: document was created and the internal
+ * notification handled; the customer email is intentionally not sent.
+ * processing → skipped (purchase_email_sent_at stays NULL).
+ */
+export async function markPurchaseEmailSkipped(orderId: string): Promise<SavedOrder | null> {
+  const trimmedId = orderId.trim();
+  if (!trimmedId) return null;
+
+  const rows = await sql`
+    UPDATE orders
+    SET
+      purchase_email_status = 'skipped',
+      purchase_email_last_error = NULL
+    WHERE order_id = ${trimmedId}::uuid
+      AND purchase_email_sent_at IS NULL
+      AND purchase_email_status = 'processing'
+    RETURNING
+      order_id,
+      checkout_session_id,
+      cardcom_env,
+      payment_resume_token,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      channel,
+      partner_id,
+      commission_rate,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at,
+      cardcom_transaction_id,
+      cardcom_document_type,
+      cardcom_document_number,
+      purchase_email_status,
+      purchase_email_sent_at,
+      purchase_email_last_error
+  `;
+  const row = (rows as OrderRow[])[0];
+  return row ? mapOrderRow(row) : null;
 }

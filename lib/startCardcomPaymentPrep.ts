@@ -14,10 +14,7 @@ import {
   type CreateCardcomLowProfileInput,
 } from "@/lib/cardcom";
 import { resolveDeliveryAddressFromRequest } from "@/lib/deliveryAddress";
-import {
-  isValidEmail,
-  isValidIsraeliMobilePhone,
-} from "@/lib/formValidation";
+import { getCheckoutCustomerServerError } from "@/lib/checkoutValidation";
 import { getLocationById } from "@/lib/mockLocations";
 import { getOfferById } from "@/lib/offerStorage";
 import type { Offer } from "@/lib/offerTypes";
@@ -69,6 +66,13 @@ export type StartCardcomPaymentPrepInput = {
   customerEmail: string;
   phone: string;
   fulfillmentMethod: FulfillmentMethod;
+  /**
+   * Plant checkout email opt-in. Omitted -> legacy rules (name, email, phone all required).
+   * When provided: delivery needs name + phone (+ email only if true); pickup needs
+   * nothing (email only if true). Without opt-in no email is stored.
+   * Ignored for flowers.
+   */
+  emailOptIn?: boolean;
   deliveryStreet?: string;
   deliveryHouseNumber?: string;
   apartmentOrNotes?: string;
@@ -262,9 +266,9 @@ export async function startCardcomPaymentPrep(
   input: StartCardcomPaymentPrepInput,
   deps: StartCardcomPaymentPrepDeps = {},
 ): Promise<StartCardcomPaymentPrepResult> {
-  const nameStr = input.fullName.trim();
-  const emailTrim = input.customerEmail.trim().toLowerCase();
-  const phoneStr = input.phone.trim();
+  let nameStr = input.fullName.trim();
+  let emailTrim = input.customerEmail.trim().toLowerCase();
+  let phoneStr = input.phone.trim();
   const spotSlug = input.spotSlug.trim();
   const plantId = input.plantId.trim();
   const fulfillmentMethod: FulfillmentMethod =
@@ -289,24 +293,23 @@ export async function startCardcomPaymentPrep(
   const inventoryType = inventoryTypeOrDefault(catalogPlant.inventoryType);
 
   if (inventoryType !== "flowers") {
-    if (!nameStr) {
-      return { ok: false, code: "validation", error: "fullName is required", httpStatus: 400 };
+    const customerError = getCheckoutCustomerServerError({
+      fulfillmentMethod,
+      emailOptIn: input.emailOptIn,
+      fullName: nameStr,
+      email: emailTrim,
+      phone: phoneStr,
+    });
+    if (customerError) {
+      return { ok: false, code: "validation", error: customerError, httpStatus: 400 };
     }
-    if (!emailTrim || !isValidEmail(emailTrim)) {
-      return {
-        ok: false,
-        code: "validation",
-        error: "customerEmail is required and must be a valid email",
-        httpStatus: 400,
-      };
-    }
-    if (!phoneStr || !isValidIsraeliMobilePhone(phoneStr)) {
-      return {
-        ok: false,
-        code: "validation",
-        error: "Please enter a valid 10-digit Israeli phone number.",
-        httpStatus: 400,
-      };
+    if (typeof input.emailOptIn === "boolean") {
+      // Opt-in rules: store only what the customer was asked for.
+      if (!input.emailOptIn) emailTrim = "";
+      if (fulfillmentMethod === "pickup") {
+        nameStr = "";
+        phoneStr = "";
+      }
     }
   }
 
