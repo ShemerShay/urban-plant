@@ -391,6 +391,14 @@ async function processAttemptWebhook(
     };
   }
 
+  if (!attempt.posSpotId) {
+    return {
+      httpStatus: 200,
+      body: { ok: true },
+      outcome: "ignored_ineligible",
+    };
+  }
+
   await expireStalePaymentHold(attempt.posSpotId);
   const attemptAfterExpiry = await getPaymentAttemptByCheckoutSessionId(
     verified.lowProfileId,
@@ -437,6 +445,14 @@ async function processAttemptWebhook(
   }
 
   if (attemptAfterExpiry.status !== "awaiting_payment") {
+    return {
+      httpStatus: 200,
+      body: { ok: true },
+      outcome: "ignored_ineligible",
+    };
+  }
+
+  if (!attemptAfterExpiry.posSpotId) {
     return {
       httpStatus: 200,
       body: { ok: true },

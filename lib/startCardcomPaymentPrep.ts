@@ -426,6 +426,7 @@ export async function startCardcomPaymentPrep(
   const attempt: SavedPaymentAttempt = {
     id: attemptId,
     status: "created",
+    channel: "partner",
     posSpotId: posSpot.id,
     offerId: offer.id,
     productId: catalogPlant.id,

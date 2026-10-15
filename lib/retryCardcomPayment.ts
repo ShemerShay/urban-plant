@@ -110,6 +110,15 @@ async function retryAttemptPayment(
     };
   }
 
+  if (!attemptBefore.posSpotId) {
+    return {
+      ok: false,
+      code: "conflict",
+      error: "This plant is no longer held for your payment.",
+      httpStatus: 409,
+    };
+  }
+
   await expireStalePaymentHold(attemptBefore.posSpotId);
 
   const attempt = await getAwaitingPaymentAttemptForResume(attemptId, resumeToken);
@@ -119,6 +128,14 @@ async function retryAttemptPayment(
       code: "unauthorized",
       error: "Payment session is not available to retry.",
       httpStatus: 403,
+    };
+  }
+  if (!attempt.posSpotId) {
+    return {
+      ok: false,
+      code: "conflict",
+      error: "This plant is no longer held for your payment.",
+      httpStatus: 409,
     };
   }
 

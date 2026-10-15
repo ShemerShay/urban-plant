@@ -14,9 +14,18 @@ import {
   syncOpenMonthPlantCommission,
 } from "@/lib/orderCommission";
 import { saleIdentityFromRow } from "@/lib/orderSaleIdentity";
+import {
+  parseCatalogPaymentSnapshot,
+  snapshotCatalogPaymentPlantCosts,
+  type CatalogPaymentSnapshot,
+} from "./catalogCheckoutSnapshot";
 import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
-import type { PaymentAttemptStatus, SavedPaymentAttempt } from "./paymentAttemptTypes";
-import { isPaymentAttemptStatus } from "./paymentAttemptTypes";
+import type {
+  PaymentAttemptChannel,
+  PaymentAttemptStatus,
+  SavedPaymentAttempt,
+} from "./paymentAttemptTypes";
+import { isPaymentAttemptChannel, isPaymentAttemptStatus } from "./paymentAttemptTypes";
 
 function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -103,7 +112,9 @@ function isUniqueViolation(error: unknown): boolean {
 type PaymentAttemptRow = {
   id: string;
   status: string;
-  pos_spot_id: string;
+  pos_spot_id: string | null;
+  channel: string;
+  catalog_snapshot: unknown;
   offer_id: string | null;
   product_id: string;
   product_name: string;
@@ -134,11 +145,16 @@ function mapPaymentAttemptRow(row: PaymentAttemptRow): SavedPaymentAttempt {
   const fulfillmentMethod: FulfillmentMethod =
     row.fulfillment_method === "pickup" ? "pickup" : "delivery";
   const snapshot = normalizeSnapshot(row.snapshot);
+  const channel: PaymentAttemptChannel = isPaymentAttemptChannel(row.channel)
+    ? row.channel
+    : "partner";
+  const catalogSnapshot = parseCatalogPaymentSnapshot(row.catalog_snapshot);
 
   return {
     id: String(row.id),
     status,
-    posSpotId: row.pos_spot_id,
+    posSpotId: row.pos_spot_id ? String(row.pos_spot_id) : null,
+    channel,
     ...(row.offer_id ? { offerId: row.offer_id } : {}),
     productId: row.product_id,
     productName: row.product_name,
@@ -150,6 +166,7 @@ function mapPaymentAttemptRow(row: PaymentAttemptRow): SavedPaymentAttempt {
     fulfillmentMethod,
     amount: parseNumeric(row.amount),
     ...(snapshot ? { snapshot } : {}),
+    ...(catalogSnapshot ? { catalogSnapshot } : {}),
     ...(row.checkout_session_id ? { checkoutSessionId: row.checkout_session_id } : {}),
     ...(row.cardcom_env === "test" || row.cardcom_env === "production"
       ? { cardcomEnv: row.cardcom_env }
@@ -173,6 +190,8 @@ const PAYMENT_ATTEMPT_ROW_SQL = sql`
   id,
   status,
   pos_spot_id,
+  channel,
+  catalog_snapshot,
   offer_id,
   product_id,
   product_name,
@@ -356,13 +375,26 @@ export async function getPaymentAttemptByCheckoutSessionId(
   return row ? mapPaymentAttemptRow(row) : null;
 }
 
-/** Insert a payment attempt row. */
+/** Insert a payment attempt row. Omitted channel is partner. */
 export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promise<void> {
+  const channel: PaymentAttemptChannel = attempt.channel ?? "partner";
+  const posSpotId = attempt.posSpotId?.trim() ? attempt.posSpotId.trim() : null;
+  let catalogSnapshot: CatalogPaymentSnapshot | null = null;
+  if (channel === "catalog" && attempt.catalogSnapshot) {
+    const normalized = parseCatalogPaymentSnapshot(attempt.catalogSnapshot);
+    if (!normalized) {
+      throw new Error("Catalog payment snapshot is invalid");
+    }
+    catalogSnapshot = await snapshotCatalogPaymentPlantCosts(normalized);
+  }
+
   await sql`
     INSERT INTO payment_attempts (
       id,
       status,
       pos_spot_id,
+      channel,
+      catalog_snapshot,
       offer_id,
       product_id,
       product_name,
@@ -388,7 +420,9 @@ export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promis
     VALUES (
       ${attempt.id}::uuid,
       ${attempt.status},
-      ${attempt.posSpotId}::uuid,
+      ${posSpotId}::uuid,
+      ${channel},
+      ${catalogSnapshot ? JSON.stringify(catalogSnapshot) : null}::jsonb,
       ${attempt.offerId ?? null},
       ${attempt.productId},
       ${attempt.productName},
