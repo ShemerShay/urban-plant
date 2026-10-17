@@ -13,6 +13,8 @@ import {
   type CardcomLowProfileResult,
 } from "@/lib/cardcom";
 import { parseCardcomWebhookLowProfileResult } from "@/lib/cardcomWebhookParse";
+import { expireStaleCatalogStockHolds } from "@/lib/catalogStockHolds";
+import { finalizeCatalogVerifiedPayment } from "@/lib/finalizeCatalogPayment";
 import { getLocationById } from "@/lib/mockLocations";
 import {
   finalizeVerifiedPaymentAttemptAtomic,
@@ -243,6 +245,57 @@ async function fetchLpResult(
   }
 }
 
+async function processCatalogAttemptWebhook(
+  attempt: SavedPaymentAttempt,
+  verified: CardcomLowProfileResult,
+): Promise<ProcessCardcomWebhookResult> {
+  const cardcomTransactionId = resolveVerifiedTransactionId(verified);
+  await expireStaleCatalogStockHolds({ attemptId: attempt.id });
+  try {
+    const finalized = await finalizeCatalogVerifiedPayment({
+      attemptId: attempt.id,
+      checkoutSessionId: verified.lowProfileId,
+      cardcomTransactionId,
+    });
+    if (finalized.outcome === "finalized") {
+      logWebhookOp("catalog_finalized", {
+        attemptId: attempt.id,
+        orderId: finalized.orderId,
+        lowProfileId: verified.lowProfileId,
+        cardcomTransactionId: cardcomTransactionId ?? null,
+      });
+      return { httpStatus: 200, body: { ok: true }, outcome: "finalized" };
+    }
+    if (finalized.outcome === "already_finalized") {
+      return { httpStatus: 200, body: { ok: true }, outcome: "already_finalized" };
+    }
+    if (finalized.outcome === "needs_reconciliation") {
+      logWebhookOp("catalog_needs_reconciliation", {
+        attemptId: attempt.id,
+        lowProfileId: verified.lowProfileId,
+        cardcomTransactionId: cardcomTransactionId ?? null,
+      });
+      return { httpStatus: 200, body: { ok: true }, outcome: "needs_reconciliation" };
+    }
+    logWebhookOp("catalog_finalize_ineligible", {
+      attemptId: attempt.id,
+      lowProfileId: verified.lowProfileId,
+    });
+    return { httpStatus: 200, body: { ok: true }, outcome: "ignored_ineligible" };
+  } catch (error) {
+    logWebhookOp("catalog_finalize_threw", {
+      attemptId: attempt.id,
+      lowProfileId: verified.lowProfileId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
+    return {
+      httpStatus: 500,
+      body: { ok: false, error: "Internal error" },
+      outcome: "server_error",
+    };
+  }
+}
+
 async function processAttemptWebhook(
   lowProfileId: string,
   attemptBeforeVerify: SavedPaymentAttempt,
@@ -259,7 +312,9 @@ async function processAttemptWebhook(
         lowProfileId,
         attemptStatus: attemptBeforeVerify.status,
       });
-      await runPostPaymentDocumentEmail(attemptBeforeVerify.finalizedOrderId, deps);
+      if (attemptBeforeVerify.channel !== "catalog") {
+        await runPostPaymentDocumentEmail(attemptBeforeVerify.finalizedOrderId, deps);
+      }
       return {
         httpStatus: 200,
         body: { ok: true },
@@ -327,7 +382,9 @@ async function processAttemptWebhook(
   }
 
   if (attempt.status === "finalized" && attempt.finalizedOrderId) {
-    await runPostPaymentDocumentEmail(attempt.finalizedOrderId, deps);
+    if (attempt.channel !== "catalog") {
+      await runPostPaymentDocumentEmail(attempt.finalizedOrderId, deps);
+    }
     return {
       httpStatus: 200,
       body: { ok: true },
@@ -389,6 +446,10 @@ async function processAttemptWebhook(
       body: { ok: true },
       outcome: "ignored_verification",
     };
+  }
+
+  if (attempt.channel === "catalog") {
+    return processCatalogAttemptWebhook(attempt, verified);
   }
 
   if (!attempt.posSpotId) {

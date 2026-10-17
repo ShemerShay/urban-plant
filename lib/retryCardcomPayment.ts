@@ -30,6 +30,7 @@ import {
   inventoryTypeOrDefault,
 } from "@/lib/inventoryType";
 import { posAllowsVerifiedPaymentFinalize } from "@/lib/posSpotHold";
+import { retryCatalogCardcomPayment } from "@/lib/catalogPaymentPrep";
 import { buildCardcomCallbackUrls, getPublicAppOrigin } from "@/lib/routes";
 
 const CARDCOM_PRODUCT_NAME_MAX_LENGTH = 50;
@@ -108,6 +109,10 @@ async function retryAttemptPayment(
       error: "Payment session is not available to retry.",
       httpStatus: 403,
     };
+  }
+
+  if (attemptBefore.channel === "catalog") {
+    return retryCatalogCardcomPayment(attemptId, resumeToken, deps);
   }
 
   if (!attemptBefore.posSpotId) {
