@@ -412,6 +412,7 @@ async function assertDbMutations(): Promise<void> {
       id: flowerId,
       name: "Verify Flower Hold",
       inventoryType: "flowers",
+      catalogPublished: false,
       createdAt: new Date().toISOString(),
     });
     try {

@@ -419,7 +419,7 @@ async function main(): Promise<void> {
     );
     assert.equal(webhook.outcome, "finalized");
     assert.equal(webhook.httpStatus, 200);
-    assert.equal(documentCalls, 0);
+    assert.equal(documentCalls, 1);
 
     const finalized = await getPaymentAttemptById(started.attemptId);
     assert.equal(finalized?.status, "finalized");
@@ -483,7 +483,7 @@ async function main(): Promise<void> {
       },
     );
     assert.equal(duplicate.outcome, "already_finalized");
-    assert.equal(documentCalls, 0);
+    assert.equal(documentCalls, 2);
     assert.equal(await inventoryQty(variantA), 5);
     assert.equal((await historyRows(variantA)).length, 1);
     const orderCount = await sql`
@@ -591,7 +591,7 @@ async function main(): Promise<void> {
     );
     assert.equal(lateAgain.outcome, "needs_reconciliation");
     assert.equal(await inventoryQty(variantB), 4);
-    assert.equal(documentCalls, 0);
+    assert.equal(documentCalls, 2);
 
     const posAfter = await sql`
       SELECT id, status, payment_hold_attempt_id

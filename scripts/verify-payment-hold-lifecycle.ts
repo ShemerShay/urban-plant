@@ -362,6 +362,7 @@ async function main(): Promise<void> {
         id: flowerId,
         name: "Verify Flower Lifecycle",
         inventoryType: "flowers",
+        catalogPublished: false,
         createdAt: new Date().toISOString(),
       });
       try {
@@ -420,6 +421,7 @@ async function main(): Promise<void> {
         id: flowerId,
         name: "Verify Flower Finalize",
         inventoryType: "flowers",
+        catalogPublished: false,
         createdAt: new Date().toISOString(),
       });
 

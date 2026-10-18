@@ -818,6 +818,7 @@ async function main(): Promise<void> {
         id: flowerId,
         name: "Verify Flower No Email",
         inventoryType: "flowers",
+        catalogPublished: false,
         createdAt: new Date().toISOString(),
       });
       const orderId = randomUUID();
