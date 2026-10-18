@@ -248,6 +248,7 @@ async function fetchLpResult(
 async function processCatalogAttemptWebhook(
   attempt: SavedPaymentAttempt,
   verified: CardcomLowProfileResult,
+  deps: ProcessCardcomWebhookDeps,
 ): Promise<ProcessCardcomWebhookResult> {
   const cardcomTransactionId = resolveVerifiedTransactionId(verified);
   await expireStaleCatalogStockHolds({ attemptId: attempt.id });
@@ -257,17 +258,17 @@ async function processCatalogAttemptWebhook(
       checkoutSessionId: verified.lowProfileId,
       cardcomTransactionId,
     });
-    if (finalized.outcome === "finalized") {
-      logWebhookOp("catalog_finalized", {
-        attemptId: attempt.id,
-        orderId: finalized.orderId,
-        lowProfileId: verified.lowProfileId,
-        cardcomTransactionId: cardcomTransactionId ?? null,
-      });
-      return { httpStatus: 200, body: { ok: true }, outcome: "finalized" };
-    }
-    if (finalized.outcome === "already_finalized") {
-      return { httpStatus: 200, body: { ok: true }, outcome: "already_finalized" };
+    if (finalized.outcome === "finalized" || finalized.outcome === "already_finalized") {
+      if (finalized.outcome === "finalized") {
+        logWebhookOp("catalog_finalized", {
+          attemptId: attempt.id,
+          orderId: finalized.orderId,
+          lowProfileId: verified.lowProfileId,
+          cardcomTransactionId: cardcomTransactionId ?? null,
+        });
+      }
+      await runPostPaymentDocumentEmail(finalized.orderId, deps);
+      return { httpStatus: 200, body: { ok: true }, outcome: finalized.outcome };
     }
     if (finalized.outcome === "needs_reconciliation") {
       logWebhookOp("catalog_needs_reconciliation", {
@@ -312,9 +313,7 @@ async function processAttemptWebhook(
         lowProfileId,
         attemptStatus: attemptBeforeVerify.status,
       });
-      if (attemptBeforeVerify.channel !== "catalog") {
-        await runPostPaymentDocumentEmail(attemptBeforeVerify.finalizedOrderId, deps);
-      }
+      await runPostPaymentDocumentEmail(attemptBeforeVerify.finalizedOrderId, deps);
       return {
         httpStatus: 200,
         body: { ok: true },
@@ -382,9 +381,7 @@ async function processAttemptWebhook(
   }
 
   if (attempt.status === "finalized" && attempt.finalizedOrderId) {
-    if (attempt.channel !== "catalog") {
-      await runPostPaymentDocumentEmail(attempt.finalizedOrderId, deps);
-    }
+    await runPostPaymentDocumentEmail(attempt.finalizedOrderId, deps);
     return {
       httpStatus: 200,
       body: { ok: true },
@@ -449,7 +446,7 @@ async function processAttemptWebhook(
   }
 
   if (attempt.channel === "catalog") {
-    return processCatalogAttemptWebhook(attempt, verified);
+    return processCatalogAttemptWebhook(attempt, verified, deps);
   }
 
   if (!attempt.posSpotId) {
