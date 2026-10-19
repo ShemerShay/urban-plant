@@ -57,6 +57,7 @@ export const routes = {
     index: () => "/shop",
     plant: (plantId: string) =>
       `/shop/plants/${encodeURIComponent(plantId.trim())}`,
+    checkout: () => "/checkout/shop",
   },
   customer: {
     accessibility: () => "/accessibility",
@@ -102,6 +103,7 @@ export const routes = {
     adminLogout: () => "/api/admin-logout",
     locale: () => "/api/locale",
     shopCartResolve: () => "/api/shop/cart/resolve",
+    shopCheckout: () => "/api/shop/checkout",
     order: (orderId: string) => `/api/orders/${encodeURIComponent(orderId.trim())}`,
     posSpots: () => "/api/pos-spots",
     posSpot: (posSpotId: string) =>

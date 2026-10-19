@@ -57,7 +57,9 @@ function assertCartWiring(): void {
   assert.match(cartUi, /captureAnalyticsEvent/);
   assert.doesNotMatch(cartUi, /ANALYTICS_EVENTS\.addToCart/);
   assert.doesNotMatch(cartUi, /startCardcom/);
-  assert.doesNotMatch(cartUi, /checkout\/shop/);
+  assert.match(cartUi, /routes\.shop\.checkout\(\)/);
+  assert.doesNotMatch(cartUi, /shopCheckout\(/);
+  assert.doesNotMatch(cartUi, /startCatalogCardcomPayment/);
   assert.doesNotMatch(cartUi, /href=\"\/cart\"/);
   assert.doesNotMatch(cartUi, /href=\{routes\.shop\.index/);
 
@@ -95,7 +97,7 @@ function assertCartWiring(): void {
   assert.doesNotMatch(routes, /cart: \(\) => "\/cart"/);
   assert.match(routes, /shopCartResolve: \(\) => "\/api\/shop\/cart\/resolve"/);
 
-  console.log("verify-catalog-cart: wiring leaves POS, checkout, and inventory writers unchanged");
+  console.log("verify-catalog-cart: drawer links to checkout without starting payment");
 }
 
 async function assertCartHelpers(): Promise<void> {
@@ -202,8 +204,12 @@ async function main(): Promise<void> {
   const testPlantId = randomUUID();
   const variantIds: string[] = [];
   const potIds: string[] = [];
+  const attemptIds: string[] = [];
 
   async function cleanup(): Promise<void> {
+    if (attemptIds.length > 0) {
+      await sql`DELETE FROM payment_attempts WHERE id = ANY(${attemptIds}::uuid[])`;
+    }
     if (variantIds.length > 0) {
       await sql`DELETE FROM inventory_history WHERE variant_id = ANY(${variantIds}::uuid[])`;
       await sql`DELETE FROM inventory WHERE variant_id = ANY(${variantIds}::uuid[])`;
@@ -280,6 +286,62 @@ async function main(): Promise<void> {
     assert.equal(clamped[0]?.quantity, 2);
     assert.equal(clamped[0]?.availableQuantity, 2);
     assert.equal(clamped[0]?.plantPrice, 90);
+
+    const holdAttemptId = randomUUID();
+    attemptIds.push(holdAttemptId);
+    await sql`
+      INSERT INTO payment_attempts (
+        id, status, pos_spot_id, channel, product_id, product_name,
+        full_name, customer_email, phone, fulfillment_method, amount,
+        payment_resume_token, created_at, updated_at, expires_at
+      ) VALUES (
+        ${holdAttemptId}::uuid,
+        'awaiting_payment',
+        NULL,
+        'catalog',
+        ${testPlantId},
+        ${tag},
+        'Hold Test',
+        '',
+        '0500000000',
+        'delivery',
+        90,
+        ${`cart-hold-${holdAttemptId}`},
+        now(),
+        now(),
+        now() + interval '17 minutes'
+      )
+    `;
+    await sql`
+      INSERT INTO catalog_stock_holds (
+        attempt_id, plant_variant_id, quantity, status, expires_at
+      ) VALUES (
+        ${holdAttemptId}::uuid,
+        ${medium.id}::uuid,
+        1,
+        'active',
+        now() + interval '17 minutes'
+      )
+    `;
+    const held = await resolveCatalogCartLines([
+      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 5 },
+    ]);
+    assert.equal(held.length, 1);
+    assert.equal(held[0]?.quantity, 1);
+    assert.equal(held[0]?.availableQuantity, 1);
+    assert.equal(await getInventoryQuantity(medium.id), qtyBefore);
+
+    await sql`
+      UPDATE catalog_stock_holds
+      SET expires_at = now() - interval '1 minute', updated_at = now()
+      WHERE attempt_id = ${holdAttemptId}::uuid
+    `;
+    const expiredHold = await resolveCatalogCartLines([
+      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 5 },
+    ]);
+    assert.equal(expiredHold[0]?.availableQuantity, 2);
+    await sql`DELETE FROM payment_attempts WHERE id = ${holdAttemptId}::uuid`;
+    attemptIds.pop();
     assert.equal(clamped[0]?.potVariantId, null);
     assert.equal(clamped[0]?.name, tag);
 

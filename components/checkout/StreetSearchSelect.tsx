@@ -109,7 +109,7 @@ export function StreetSearchSelect({ id, value, error, onChange, onBlur }: Stree
         autoComplete="off"
         className={`${baseInputClass} ${error ? invalidInputClass : ""}`}
         value={query}
-        placeholder={t(locale, "checkout.placeholder.street")}
+        placeholder={t(locale, "checkout.address.street")}
         onChange={(event) => {
           const next = event.target.value;
           setDraftQuery(next);

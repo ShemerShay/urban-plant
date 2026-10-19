@@ -196,8 +196,8 @@ async function main(): Promise<void> {
     assert.equal(withEmail.Email, "a@b.co");
   }
 
-  // Callers of the shared validators: only the POS CheckoutForm opts in. No admin
-  // manual-order caller exists on this branch (removed in 6c85777); none may opt in.
+  // Callers of the shared validators: POS CheckoutForm and Catalog shop checkout.
+  // No admin manual-order caller exists on this branch (removed in 6c85777).
   {
     const { readdirSync, statSync } = await import("node:fs");
     const callers: string[] = [];
@@ -218,6 +218,7 @@ async function main(): Promise<void> {
     for (const dir of ["app", "components", "lib"]) walk(path.join(root, dir));
     assert.deepEqual(callers.sort(), [
       "components/checkout/CheckoutForm.tsx",
+      "components/shop/ShopCheckout.tsx",
       "lib/checkoutValidation.ts",
     ]);
   }

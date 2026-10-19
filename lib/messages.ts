@@ -177,6 +177,12 @@ const en = {
   "payment.verify.verifyingBody":
     "We received your payment request and are waiting for final confirmation. This usually takes a few moments.",
   "payment.verify.checkAgain": "Check again",
+  "payment.verify.catalogFailedTitle": "Payment wasn’t completed",
+  "payment.verify.catalogFailedBody":
+    "Payment failed. Your cart is unchanged. You can try again from the shop.",
+  "payment.verify.confirmationTitle": "Payment received",
+  "payment.verify.confirmationBody":
+    "We received your payment. Your order needs confirmation before it is complete. Urban Plant will follow up with you.",
   "payment.verify.whatsapp.withOrder":
     "Hi Urban Plant — I’m waiting on payment verification for order {orderId}.",
   "payment.verify.whatsapp.withoutOrder":
@@ -659,6 +665,22 @@ const en = {
   "shop.cartQuantity": "Quantity",
   "shop.decreaseQuantity": "Decrease quantity",
   "shop.increaseQuantity": "Increase quantity",
+  "shop.checkout": "Checkout",
+  "shop.deliveryOnly": "Delivery only",
+  "shop.deliveryFee": "Delivery",
+  "shop.orderSummary": "Order summary",
+  "shop.cartChanged": "Your cart changed. Review the updated order before paying.",
+  "shop.reviewUpdatedOrder": "I've reviewed the updated order",
+  "shop.insufficientStock": "Some items are no longer available in the quantity you selected.",
+  "shop.checkoutEmpty": "Your cart is empty.",
+  "shop.backToShop": "Back to shop",
+  "shop.paymentReturn": "Payment wasn’t completed. You can try the same order again.",
+  "shop.continuePayment": "Try payment again",
+  "shop.resumePaymentNote":
+    "This continues the payment you already started. It does not start a new order.",
+  "shop.startNewCheckout": "Start a new checkout",
+  "shop.error.orderNoLongerHeld":
+    "This order is no longer held for payment. You can review your cart and start again.",
   "admin.inventoryTypes.intro": "Choose Plants or Flowers. Inventory type is set by this section, not by a form field.",
   "admin.inventoryTypes.plants": "Plants",
   "admin.inventoryTypes.plantsDesc": "Unique catalog items. A successful purchase marks the POS as sold.",
@@ -971,6 +993,11 @@ const he: { [K in keyof typeof en]: string } = {
   "payment.verify.verifyingBody":
     "קיבלנו את בקשת התשלום וממתינים לאישור סופי. זה בדרך כלל לוקח כמה רגעים.",
   "payment.verify.checkAgain": "בדקו שוב",
+  "payment.verify.catalogFailedTitle": "התשלום לא הושלם",
+  "payment.verify.catalogFailedBody": "התשלום נכשל. העגלה נשארה כמו שהיא. אפשר לנסות שוב מהחנות.",
+  "payment.verify.confirmationTitle": "התשלום התקבל",
+  "payment.verify.confirmationBody":
+    "קיבלנו את התשלום. ההזמנה צריכה אישור לפני שהיא מושלמת. Urban Plant יחזרו אליכם.",
   "payment.verify.whatsapp.withOrder":
     "שלום Urban Plant — אני ממתין לאימות תשלום עבור הזמנה {orderId}.",
   "payment.verify.whatsapp.withoutOrder":
@@ -1211,6 +1238,21 @@ const he: { [K in keyof typeof en]: string } = {
   "shop.cartQuantity": "כמות",
   "shop.decreaseQuantity": "הפחתת כמות",
   "shop.increaseQuantity": "הגדלת כמות",
+  "shop.checkout": "לתשלום",
+  "shop.deliveryOnly": "משלוח בלבד",
+  "shop.deliveryFee": "משלוח",
+  "shop.orderSummary": "סיכום הזמנה",
+  "shop.cartChanged": "העגלה השתנתה. בדקו את ההזמנה המעודכנת לפני התשלום.",
+  "shop.reviewUpdatedOrder": "בדקתי את ההזמנה המעודכנת",
+  "shop.insufficientStock": "חלק מהפריטים אינם זמינים בכמות שבחרתם.",
+  "shop.checkoutEmpty": "העגלה ריקה.",
+  "shop.backToShop": "חזרה לחנות",
+  "shop.paymentReturn": "התשלום לא הושלם. אפשר לנסות שוב את אותה הזמנה.",
+  "shop.continuePayment": "נסו שוב את התשלום",
+  "shop.resumePaymentNote": "זה ממשיך את התשלום שכבר התחלתם. לא נפתחת הזמנה חדשה.",
+  "shop.startNewCheckout": "התחילו הזמנה חדשה",
+  "shop.error.orderNoLongerHeld":
+    "ההזמנה כבר לא שמורה לתשלום. אפשר לבדוק את העגלה ולהתחיל מחדש.",
   "admin.inventoryTypes.intro": "בחרו צמחים או פרחים. סוג המלאי נקבע לפי המקטע, לא לפי שדה בטופס.",
   "admin.inventoryTypes.plants": "צמחים",
   "admin.inventoryTypes.plantsDesc": "פריטי קטלוג ייחודיים. רכישה מוצלחת מסמנת את נקודת המכירה כנמכרה.",
