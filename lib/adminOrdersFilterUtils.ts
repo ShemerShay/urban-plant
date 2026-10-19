@@ -1,10 +1,18 @@
+import {
+  isCatalogAdminOrder,
+  type AdminCatalogLineView,
+} from "@/lib/adminOrderDisplay";
+import type { OrderChannel } from "@/lib/orderSaleIdentity";
 import type { SavedOrder } from "@/lib/orderTypes";
 import { routes } from "@/lib/routes";
 import { isOrderStatus, type OrderStatus } from "@/lib/status";
 import { toIsoDateString } from "@/lib/storageUtils";
 
+export type OrdersChannelFilter = "all" | OrderChannel;
+
 export interface OrdersFilterState {
   statuses: OrderStatus[];
+  channel: OrdersChannelFilter;
   location: string | "all" | "__none__";
   plant: string | "all";
   dateFrom?: string;
@@ -33,16 +41,48 @@ export function parsePlant(raw: string | undefined): string | "all" {
   return "all";
 }
 
+export function parseChannel(raw: string | undefined): OrdersChannelFilter {
+  if (raw === "catalog" || raw === "partner") return raw;
+  return "all";
+}
+
 function orderCreatedDate(order: SavedOrder): string | undefined {
   return toIsoDateString(order.createdAt);
 }
 
-export function filterOrders(allOrders: SavedOrder[], filters: OrdersFilterState): SavedOrder[] {
-  return allOrders.filter((order) => {
-    if (filters.statuses.length > 0 && !filters.statuses.includes(order.orderStatus)) return false;
+function headerProductId(order: SavedOrder): string {
+  return order.snapshot?.productId ?? order.plantId;
+}
 
-    const productId = order.snapshot?.productId ?? order.plantId;
-    if (filters.plant !== "all" && productId !== filters.plant) return false;
+function orderMatchesPlant(
+  order: SavedOrder,
+  plantFilter: string | "all",
+  catalogItemsByOrderId: Readonly<Record<string, AdminCatalogLineView[]>>,
+): boolean {
+  if (plantFilter === "all") return true;
+  if (isCatalogAdminOrder(order)) {
+    const lines = catalogItemsByOrderId[order.orderId] ?? [];
+    if (lines.some((line) => line.plantId === plantFilter)) return true;
+    if (lines.length === 0) return headerProductId(order) === plantFilter;
+    return false;
+  }
+  return headerProductId(order) === plantFilter;
+}
+
+export function filterOrders(
+  allOrders: SavedOrder[],
+  filters: OrdersFilterState,
+  catalogItemsByOrderId: Readonly<Record<string, AdminCatalogLineView[]>> = {},
+): SavedOrder[] {
+  return allOrders.filter((order) => {
+    if (filters.statuses.length > 0 && !filters.statuses.includes(order.orderStatus)) {
+      return false;
+    }
+
+    if (filters.channel === "catalog" && !isCatalogAdminOrder(order)) return false;
+    if (filters.channel === "partner" && isCatalogAdminOrder(order)) return false;
+
+    if (!orderMatchesPlant(order, filters.plant, catalogItemsByOrderId)) return false;
 
     const locationId = order.snapshot?.partnerLocationId ?? order.locationId;
     if (filters.location !== "all") {
@@ -63,6 +103,7 @@ export function ordersQueryUrl(filters: OrdersFilterState): string {
   for (const status of filters.statuses) {
     params.append("status", status);
   }
+  if (filters.channel !== "all") params.set("channel", filters.channel);
   if (filters.location !== "all") {
     params.set("location", filters.location === "__none__" ? "__none__" : filters.location);
   }

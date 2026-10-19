@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { AdminOrdersExportButton } from "@/components/admin/AdminOrdersExportButton";
 import { useLocale } from "@/components/locale/LocaleProvider";
+import type { AdminCatalogLineView } from "@/lib/adminOrderDisplay";
 import { t } from "@/lib/messages";
 import type { SavedOrder } from "@/lib/orderTypes";
 
@@ -26,9 +27,13 @@ function IconMoreVertical({ className }: { className?: string }) {
 
 interface AdminOrdersHeaderMenuProps {
   filteredOrders: SavedOrder[];
+  catalogItemsByOrderId?: Record<string, AdminCatalogLineView[]>;
 }
 
-export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuProps) {
+export function AdminOrdersHeaderMenu({
+  filteredOrders,
+  catalogItemsByOrderId = {},
+}: AdminOrdersHeaderMenuProps) {
   const locale = useLocale();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -72,6 +77,7 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
         >
           <AdminOrdersExportButton
             orders={filteredOrders}
+            catalogItemsByOrderId={catalogItemsByOrderId}
             menuItem
             onExport={() => setOpen(false)}
           />

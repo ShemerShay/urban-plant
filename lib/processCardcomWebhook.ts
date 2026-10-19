@@ -16,9 +16,12 @@ import { parseCardcomWebhookLowProfileResult } from "@/lib/cardcomWebhookParse";
 import { expireStaleCatalogStockHolds } from "@/lib/catalogStockHolds";
 import { finalizeCatalogVerifiedPayment } from "@/lib/finalizeCatalogPayment";
 import { getLocationById } from "@/lib/mockLocations";
+import { notifyCatalogNeedsReconciliation } from "@/lib/catalogReconciliationAlert";
 import {
   finalizeVerifiedPaymentAttemptAtomic,
   getPaymentAttemptByCheckoutSessionId,
+  getPaymentAttemptById,
+  markCatalogLateSuccessNeedsReconciliation,
   markPaymentAttemptNeedsReconciliation,
 } from "@/lib/paymentAttemptStorage";
 import type { SavedPaymentAttempt } from "@/lib/paymentAttemptTypes";
@@ -46,6 +49,8 @@ export type ProcessCardcomWebhookDeps = {
   ) => Promise<CardcomLowProfileResult>;
   processDocumentAndEmail?: (orderId: string) => Promise<unknown>;
   documentEmailDeps?: ProcessOrderDocumentAndEmailDeps;
+  /** Catalog recon alert. Defaults to the Urban Plant inbox send; tests stub this. */
+  notifyCatalogReconciliation?: (attempt: SavedPaymentAttempt) => Promise<void>;
 };
 
 export type ProcessCardcomWebhookResult = {
@@ -69,6 +74,25 @@ function logWebhookOp(
   context: Record<string, string | number | boolean | null | undefined>,
 ): void {
   console.error(`[cardcom-webhook] ${message}`, context);
+}
+
+async function alertCatalogReconciliation(
+  attempt: SavedPaymentAttempt,
+  firstTransition: boolean,
+  deps: ProcessCardcomWebhookDeps,
+): Promise<void> {
+  if (!firstTransition) return;
+  if (attempt.channel === "catalog") {
+    const notify = deps.notifyCatalogReconciliation ?? notifyCatalogNeedsReconciliation;
+    try {
+      await notify(attempt);
+    } catch (error) {
+      logWebhookOp("catalog_reconciliation_alert_failed", {
+        attemptId: attempt.id,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
 }
 
 function resolveAttemptCardcomEnv(attempt: SavedPaymentAttempt): CardcomEnvironment {
@@ -276,6 +300,8 @@ async function processCatalogAttemptWebhook(
         lowProfileId: verified.lowProfileId,
         cardcomTransactionId: cardcomTransactionId ?? null,
       });
+      const current = (await getPaymentAttemptById(attempt.id)) ?? attempt;
+      await alertCatalogReconciliation(current, finalized.firstTransition, deps);
       return { httpStatus: 200, body: { ok: true }, outcome: "needs_reconciliation" };
     }
     logWebhookOp("catalog_finalize_ineligible", {
@@ -404,18 +430,29 @@ async function processAttemptWebhook(
       };
     }
     const cardcomTransactionId = resolveVerifiedTransactionId(verified);
-    const marked = await markPaymentAttemptNeedsReconciliation({
-      attemptId: attempt.id,
-      checkoutSessionId: verified.lowProfileId,
-      cardcomTransactionId,
-      reason: `late_cardcom_success_after_${attempt.status}`,
-    });
+    const marked =
+      attempt.channel === "catalog"
+        ? await markCatalogLateSuccessNeedsReconciliation({
+            attemptId: attempt.id,
+            checkoutSessionId: verified.lowProfileId,
+            cardcomTransactionId,
+            reason: `late_cardcom_success_after_${attempt.status}`,
+          })
+        : await markPaymentAttemptNeedsReconciliation({
+            attemptId: attempt.id,
+            checkoutSessionId: verified.lowProfileId,
+            cardcomTransactionId,
+            reason: `late_cardcom_success_after_${attempt.status}`,
+          });
     logWebhookOp("needs_reconciliation", {
       attemptId: attempt.id,
       lowProfileId: verified.lowProfileId,
       priorStatus: attempt.status,
       marked: Boolean(marked),
     });
+    if (marked) {
+      await alertCatalogReconciliation(marked, true, deps);
+    }
     return {
       httpStatus: 200,
       body: { ok: true },

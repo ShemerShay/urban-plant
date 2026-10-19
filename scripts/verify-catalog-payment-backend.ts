@@ -415,6 +415,7 @@ async function main(): Promise<void> {
           documentCalls += 1;
           return { outcome: "sent" };
         },
+        notifyCatalogReconciliation: async () => {},
       },
     );
     assert.equal(webhook.outcome, "finalized");
@@ -480,6 +481,7 @@ async function main(): Promise<void> {
           documentCalls += 1;
           return { outcome: "sent" };
         },
+        notifyCatalogReconciliation: async () => {},
       },
     );
     assert.equal(duplicate.outcome, "already_finalized");
@@ -564,6 +566,7 @@ async function main(): Promise<void> {
           documentCalls += 1;
           return { outcome: "sent" };
         },
+        notifyCatalogReconciliation: async () => {},
       },
     );
     assert.equal(lateWebhook.outcome, "needs_reconciliation");
@@ -587,6 +590,7 @@ async function main(): Promise<void> {
         getLpResult: async () => {
           throw new Error("reconciled webhook must not sell");
         },
+        notifyCatalogReconciliation: async () => {},
       },
     );
     assert.equal(lateAgain.outcome, "needs_reconciliation");
