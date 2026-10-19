@@ -47,14 +47,8 @@ export function CheckoutCustomerFields({
     <>
       {shown("fullName") ? (
         <div className="space-y-2">
-          <label className="text-body font-medium text-slate-700" htmlFor="fullName">
+          <label className="sr-only" htmlFor="fullName">
             {t(locale, "checkout.field.fullName")}
-            {isRequired("fullName") ? (
-              <span aria-hidden="true" className="text-red-700">
-                {" "}
-                *
-              </span>
-            ) : null}
           </label>
           <input
             id="fullName"
@@ -69,7 +63,7 @@ export function CheckoutCustomerFields({
             value={values.fullName}
             onChange={(event) => onChange("fullName", event.target.value)}
             onBlur={() => onFieldBlur("fullName")}
-            placeholder={t(locale, "checkout.placeholder.fullName")}
+            placeholder={t(locale, "checkout.field.fullName")}
           />
           {errors.fullName ? (
             <p id="fullName-error" className="text-caption text-red-700">
@@ -80,14 +74,8 @@ export function CheckoutCustomerFields({
       ) : null}
       {shown("email") ? (
         <div className="space-y-2">
-          <label className="text-body font-medium text-slate-700" htmlFor="email">
+          <label className="sr-only" htmlFor="email">
             {t(locale, "checkout.field.email")}
-            {isRequired("email") ? (
-              <span aria-hidden="true" className="text-red-700">
-                {" "}
-                *
-              </span>
-            ) : null}
           </label>
           <input
             id="email"
@@ -102,7 +90,7 @@ export function CheckoutCustomerFields({
             value={values.email}
             onChange={(event) => onChange("email", event.target.value)}
             onBlur={() => onFieldBlur("email")}
-            placeholder={t(locale, "checkout.placeholder.email")}
+            placeholder={t(locale, "checkout.field.email")}
           />
           {errors.email ? (
             <p id="email-error" className="text-caption text-red-700">
@@ -113,14 +101,8 @@ export function CheckoutCustomerFields({
       ) : null}
       {shown("phone") ? (
         <div className="space-y-2">
-          <label className="text-body font-medium text-slate-700" htmlFor="phone">
+          <label className="sr-only" htmlFor="phone">
             {t(locale, "checkout.field.phone")}
-            {isRequired("phone") ? (
-              <span aria-hidden="true" className="text-red-700">
-                {" "}
-                *
-              </span>
-            ) : null}
           </label>
           <input
             id="phone"
@@ -138,7 +120,7 @@ export function CheckoutCustomerFields({
               onChange("phone", normalized);
             }}
             onBlur={() => onFieldBlur("phone")}
-            placeholder="0521234567"
+            placeholder={t(locale, "checkout.field.phone")}
             maxLength={10}
           />
           {errors.phone ? (

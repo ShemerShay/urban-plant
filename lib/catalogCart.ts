@@ -197,6 +197,28 @@ export function updateCatalogCartQuantity(
   };
 }
 
+/** Remove only the purchased quantities. Extra quantity added later stays in the Cart. */
+export function subtractPurchasedCatalogItems(
+  cart: CatalogCart,
+  purchased: CatalogCartItem[],
+): CatalogCart {
+  const items = cart.items.map((item) => ({ ...item }));
+  for (const bought of purchased) {
+    if (!Number.isInteger(bought.quantity) || bought.quantity < 1) continue;
+    const key = catalogCartItemKey(bought);
+    const index = items.findIndex((item) => catalogCartItemKey(item) === key);
+    const current = index >= 0 ? items[index] : undefined;
+    if (!current) continue;
+    const nextQty = current.quantity - bought.quantity;
+    if (nextQty < 1) {
+      items.splice(index, 1);
+    } else {
+      items[index] = { ...current, quantity: nextQty };
+    }
+  }
+  return items.length === 0 ? EMPTY_CATALOG_CART : { v: 1, items };
+}
+
 export function removeCatalogCartItem(
   cart: CatalogCart,
   input: Pick<CatalogCartItem, "plantId" | "plantVariantId" | "potVariantId">,

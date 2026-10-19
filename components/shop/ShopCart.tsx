@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { usePostHog } from "posthog-js/react";
 
@@ -23,60 +24,10 @@ import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
+import { ShopSoftSpinner } from "@/components/shop/ShopSoftSpinner";
 
 const qtyButtonClass =
   "text-body flex h-10 w-10 items-center justify-center rounded-2xl bg-neutral-100 font-medium text-foreground transition hover:bg-neutral-200/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:text-neutral-400 disabled:hover:bg-neutral-100";
-
-function ShopCartSpinner({ label }: { label: string }) {
-  return (
-    <div
-      className="flex min-h-full flex-1 items-center justify-center"
-      aria-busy="true"
-      aria-live="polite"
-    >
-      <span className="sr-only">{label}</span>
-      <span className="shop-cart-spinner" aria-hidden />
-      <style>{`
-        .shop-cart-spinner {
-          width: 1rem;
-          height: 1rem;
-          flex-shrink: 0;
-          border-radius: 50%;
-          background: conic-gradient(
-            from 0deg,
-            rgb(255 255 255 / 0) 0%,
-            rgb(73 120 99 / 0.22) 38%,
-            var(--brand-muted) 72%,
-            var(--brand) 100%
-          );
-          -webkit-mask: radial-gradient(
-            farthest-side,
-            transparent calc(100% - 1.5px),
-            #000 calc(100% - 1.5px)
-          );
-          mask: radial-gradient(
-            farthest-side,
-            transparent calc(100% - 1.5px),
-            #000 calc(100% - 1.5px)
-          );
-          animation: shop-cart-spin 0.9s linear infinite;
-        }
-
-        @keyframes shop-cart-spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .shop-cart-spinner {
-            animation: none;
-          }
-        }
-      `}</style>
-    </div>
-  );
-}
 
 function ShopCartEmpty({ label }: { label: string }) {
   return (
@@ -260,7 +211,7 @@ export function ShopCart({
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-5">
           {loading ? (
-            <ShopCartSpinner label={t(locale, "common.loading")} />
+            <ShopSoftSpinner label={t(locale, "common.loading")} className="min-h-full" />
           ) : error ? (
             <p className="text-body text-neutral-600">{t(locale, "common.networkError")}</p>
           ) : lines.length === 0 ? (
@@ -350,13 +301,29 @@ export function ShopCart({
             </ul>
           )}
         </div>
-        {!loading && !error && lines.length > 0 ? (
-          <div className="border-t border-neutral-200 px-5 py-4">
-            <p className="text-heading-sm font-medium text-foreground">
+        <div className="border-t border-neutral-200 px-5 py-4">
+          {!loading && !error && lines.length > 0 ? (
+            <p className="text-heading-sm mb-3 font-medium text-foreground">
               {t(locale, "shop.cartTotal")} {formatCatalogPrice(total, currency, locale)}
             </p>
-          </div>
-        ) : null}
+          ) : null}
+          {cart.items.length > 0 && !loading && !error && lines.length > 0 ? (
+            <Link
+              href={routes.shop.checkout()}
+              className="text-body flex min-h-12 w-full items-center justify-center rounded-2xl bg-brand px-5 py-4 text-center font-semibold text-white shadow-[0_6px_18px_rgba(27,67,50,0.14)] transition hover:bg-brand-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2"
+            >
+              {t(locale, "shop.checkout")}
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="text-body flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-2xl bg-neutral-300 px-5 py-4 text-center font-semibold text-neutral-600"
+            >
+              {t(locale, "shop.checkout")}
+            </button>
+          )}
+        </div>
       </aside>
     </div>
   );

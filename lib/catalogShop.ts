@@ -357,10 +357,45 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
   };
 }
 
+function variantKey(id: string): string {
+  return id.trim().toLowerCase();
+}
+
+/**
+ * Stock another Catalog checkout can still buy.
+ * Matches payment preparation: central quantity minus active unexpired holds.
+ * Does not write inventory or holds.
+ */
+async function catalogAvailableQuantities(
+  central: Map<string, number>,
+): Promise<Map<string, number>> {
+  const available = new Map<string, number>();
+  const ids = [...central.keys()];
+  for (const id of ids) available.set(id, Math.max(0, central.get(id) ?? 0));
+  if (ids.length === 0) return available;
+
+  const rows = await sql`
+    SELECT plant_variant_id::text AS plant_variant_id, COALESCE(SUM(quantity), 0)::int AS quantity
+    FROM catalog_stock_holds
+    WHERE plant_variant_id = ANY(${ids}::uuid[])
+      AND status = 'active'
+      AND expires_at > now()
+    GROUP BY plant_variant_id
+  `;
+  for (const row of rows as { plant_variant_id: string; quantity: number | string }[]) {
+    const id = variantKey(row.plant_variant_id);
+    const held = Number(row.quantity);
+    if (!Number.isFinite(held)) continue;
+    available.set(id, Math.max(0, (central.get(id) ?? 0) - held));
+  }
+  return available;
+}
+
 /**
  * Map stored Cart ids onto current published Catalog data.
  * Drops unpublished plants, missing/unpriced Variants, qty 0, and incompatible pots.
- * Clamps quantity to current central stock. Does not write inventory.
+ * Clamps quantity to central stock minus active unexpired catalog holds.
+ * Does not write inventory.
  */
 export async function resolveCatalogCartLines(
   items: CatalogCartItem[],
@@ -372,11 +407,23 @@ export async function resolveCatalogCartLines(
     if (!plants.has(item.plantId)) {
       plants.set(item.plantId, await readCatalogShopDetail(item.plantId));
     }
+  }
+
+  const central = new Map<string, number>();
+  for (const plant of plants.values()) {
+    if (!plant) continue;
+    for (const size of plant.sizes) central.set(variantKey(size.id), size.quantity);
+  }
+  const availableByVariant = await catalogAvailableQuantities(central);
+
+  for (const item of items) {
     const plant = plants.get(item.plantId);
     if (!plant) continue;
 
-    const size = plant.sizes.find((entry) => entry.id === item.plantVariantId);
-    if (!size || size.quantity <= 0) continue;
+    const size = plant.sizes.find((entry) => variantKey(entry.id) === variantKey(item.plantVariantId));
+    if (!size) continue;
+    const available = availableByVariant.get(variantKey(size.id)) ?? 0;
+    if (available <= 0) continue;
 
     let pot: CatalogShopPotOption | undefined;
     if (item.potVariantId) {
@@ -384,7 +431,7 @@ export async function resolveCatalogCartLines(
       if (!pot) continue;
     }
 
-    const quantity = Math.min(item.quantity, size.quantity);
+    const quantity = Math.min(item.quantity, available);
     if (quantity < 1) continue;
 
     const nameHe = plant.nameHe;
@@ -394,7 +441,7 @@ export async function resolveCatalogCartLines(
       plantVariantId: size.id,
       potVariantId: pot?.id ?? null,
       quantity,
-      availableQuantity: size.quantity,
+      availableQuantity: available,
       name: plant.name,
       plantPrice: size.catalogPrice,
       currency: plant.currency,

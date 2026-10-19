@@ -70,8 +70,9 @@ async function main(): Promise<void> {
     "/success must not call readOrders()",
   );
 
-  // 3. no new checkout page
+  // 3. POS checkout stays; catalog shop checkout is separate. No Cardcom-specific checkout page.
   assert.ok(exists("app/checkout/pos/[spotSlug]/page.tsx"));
+  assert.ok(exists("app/checkout/shop/page.tsx"));
   assert.ok(exists("components/checkout/CheckoutForm.tsx"));
   assert.equal(exists("app/checkout/cardcom"), false);
   assert.equal(exists("app/checkout/payment"), false);
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
     .readdirSync(path.join(root, "app/checkout"), { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name);
-  assert.deepEqual(checkoutPages, ["pos"]);
+  assert.deepEqual(checkoutPages, ["pos", "shop"]);
 
   // 4–5. missing / invalid orderId handling (page + parser)
   const paymentSuccessSrc = read("app/payment/success/page.tsx");

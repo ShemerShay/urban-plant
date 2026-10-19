@@ -100,6 +100,13 @@ async function main(): Promise<void> {
   assert.equal(cart.status, 404, `/cart returned ${cart.status}`);
   assert.equal(isCustomerNotFoundPage(cart.status, cart.text), true);
 
+  const shopCheckout = await fetchText(routes.shop.checkout());
+  assert.equal(shopCheckout.status, 200, `${routes.shop.checkout()} returned ${shopCheckout.status}`);
+  assert.equal(isCustomerNotFoundPage(shopCheckout.status, shopCheckout.text), false);
+  assert.equal(shopCheckout.text.includes('data-page="shop-checkout"'), true);
+  assert.equal(shopCheckout.text.includes('data-page="checkout-page"'), false);
+  assert.equal(shopCheckout.text.includes("You are ordering flowers"), false);
+
   const missingPlant = await fetchText("/shop/plants/not-a-real-plant-id-zzzz");
   assert.equal(missingPlant.status, 404, "missing plant must 404");
   assert.equal(isCustomerNotFoundPage(missingPlant.status, missingPlant.text), true);
