@@ -339,7 +339,13 @@ export async function readOrders(): Promise<SavedOrder[]> {
       delivered_at,
       picked_up_at,
       snapshot,
-      created_at
+      created_at,
+      cardcom_transaction_id,
+      cardcom_document_type,
+      cardcom_document_number,
+      purchase_email_status,
+      purchase_email_sent_at,
+      purchase_email_last_error
     FROM orders
     ORDER BY created_at DESC
   `;

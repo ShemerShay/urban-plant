@@ -3,10 +3,20 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { AdminCatalogOrderLines } from "@/components/admin/AdminCatalogOrderLines";
 import { AdminOrderStatusSelect } from "@/components/admin/AdminOrderStatusSelect";
 import { useLocale } from "@/components/locale/LocaleProvider";
+import {
+  isCatalogAdminOrder,
+  type AdminCatalogLineView,
+} from "@/lib/adminOrderDisplay";
 import { formatOrderDeliveryAddressDisplay } from "@/lib/deliveryAddress";
-import { displayApiError, orderStatusLabel } from "@/lib/displayLabels";
+import {
+  displayApiError,
+  orderChannelLabel,
+  orderStatusLabel,
+  purchaseEmailStatusLabel,
+} from "@/lib/displayLabels";
 import type { Locale } from "@/lib/locale";
 import { formatPrice, getPlantById } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
@@ -17,6 +27,7 @@ import { canAdminCancelOrder } from "@/lib/status";
 
 interface AdminOrderCardProps {
   order: SavedOrder;
+  catalogItems?: AdminCatalogLineView[];
 }
 
 function intlLocale(locale: Locale): string {
@@ -162,15 +173,18 @@ function SectionDivider() {
   return <div className="border-t border-slate-100" role="presentation" />;
 }
 
-export function AdminOrderCard({ order }: AdminOrderCardProps) {
+export function AdminOrderCard({ order, catalogItems = [] }: AdminOrderCardProps) {
   const locale = useLocale();
   const router = useRouter();
   const [busy, setBusy] = useState<"cancel" | "patch" | null>(null);
+  const isCatalog = isCatalogAdminOrder(order);
 
   const productId = order.snapshot?.productId ?? order.plantId;
   const plantName = order.snapshot?.productName ?? order.plantName;
   const price = order.snapshot?.consumerPrice ?? order.price;
-  const currency = getPlantById(productId)?.currency ?? "ILS";
+  const currency = isCatalog
+    ? (catalogItems[0]?.currency ?? "ILS")
+    : (getPlantById(productId)?.currency ?? "ILS");
   const locationId = order.snapshot?.partnerLocationId ?? order.locationId;
   const locationName = order.snapshot?.partnerLocationName ?? order.locationName;
   const posSpotDescription = order.snapshot?.posSpotDescription;
@@ -232,11 +246,24 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
     <li className="rounded-2xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
       {/* 1. Header */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
-          <IconCalendar className="size-4 shrink-0 text-slate-400" />
-          <time className="min-w-0 break-words font-medium" dateTime={order.createdAt}>
-            {createdLabel}
-          </time>
+        <div className="min-w-0">
+          {isCatalog ? (
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-800">
+              {orderChannelLabel(locale, "catalog")}
+            </p>
+          ) : null}
+          <div className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
+            <IconCalendar className="size-4 shrink-0 text-slate-400" />
+            <time className="min-w-0 break-words font-medium" dateTime={order.createdAt}>
+              {createdLabel}
+            </time>
+          </div>
+          {isCatalog ? (
+            <p className="mt-1 font-mono text-xs text-slate-600 [overflow-wrap:anywhere]">
+              <span className="font-sans text-slate-500">{t(locale, "admin.orders.orderId")} </span>
+              {order.orderId}
+            </p>
+          ) : null}
         </div>
         <span
           className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(status)}`}
@@ -262,6 +289,12 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
         {status === "pending_payment" ? (
           <p className="mt-2 text-xs text-amber-800">{t(locale, "admin.orders.pendingHint")}</p>
         ) : null}
+        {isCatalog && order.purchaseEmailStatus ? (
+          <p className="mt-2 text-xs text-slate-600">
+            {t(locale, "admin.orders.emailStatus")}:{" "}
+            {purchaseEmailStatusLabel(locale, order.purchaseEmailStatus)}
+          </p>
+        ) : null}
       </section>
 
 
@@ -286,9 +319,10 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
         </div>
       </section>
 
-      <SectionDivider />
+      {isCatalog ? null : <SectionDivider />}
 
       {/* 4. Partner location */}
+      {isCatalog ? null : (
       <section className="py-4">
         <div className="flex items-center gap-2">
           <IconMapPin className="size-4 shrink-0 text-emerald-600" />
@@ -334,15 +368,22 @@ export function AdminOrderCard({ order }: AdminOrderCardProps) {
           )}
         </div>
       </section>
+      )}
 
       <SectionDivider />
 
       {/* 5. Plant and price */}
       <section className="space-y-2.5 py-4">
-        <DetailRow icon={<IconLeaf className="size-4" />}>{plantName}</DetailRow>
-        <DetailRow icon={<IconTag className="size-4" />}>
-          {formatPrice(price, currency, locale)}
-        </DetailRow>
+        {isCatalog ? (
+          <AdminCatalogOrderLines lines={catalogItems} total={order.price} />
+        ) : (
+          <>
+            <DetailRow icon={<IconLeaf className="size-4" />}>{plantName}</DetailRow>
+            <DetailRow icon={<IconTag className="size-4" />}>
+              {formatPrice(price, currency, locale)}
+            </DetailRow>
+          </>
+        )}
       </section>
 
       {/* 6. Footer */}

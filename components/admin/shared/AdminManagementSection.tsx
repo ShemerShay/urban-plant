@@ -5,6 +5,8 @@ import { useState, type ReactNode } from "react";
 type AdminManagementSectionProps = {
   id?: string;
   title: string;
+  /** Optional muted count or label shown after a middle dot in the heading. */
+  titleMeta?: ReactNode;
   description?: string;
   actions?: ReactNode;
   /** When set, the title toggles the body open/closed. */
@@ -17,6 +19,7 @@ type AdminManagementSectionProps = {
 export function AdminManagementSection({
   id,
   title,
+  titleMeta,
   description,
   actions,
   collapsible = false,
@@ -27,8 +30,18 @@ export function AdminManagementSection({
   const bodyId = id ? `${id}-body` : undefined;
 
   const heading = (
-    <div>
-      <h2 className="text-lg font-semibold text-emerald-950">{title}</h2>
+    <div className="min-w-0">
+      <h2 className="flex flex-wrap items-baseline text-lg font-semibold text-emerald-950">
+        <span>{title}</span>
+        {titleMeta ? (
+          <span className="font-normal text-slate-600">
+            <span className="mx-1.5 text-slate-400" aria-hidden="true">
+              ·
+            </span>
+            <span className="whitespace-nowrap">{titleMeta}</span>
+          </span>
+        ) : null}
+      </h2>
       {description ? (
         <p className="mt-1 text-sm leading-relaxed text-slate-600">{description}</p>
       ) : null}
@@ -70,7 +83,7 @@ export function AdminManagementSection({
         ) : (
           heading
         )}
-        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+        {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
       </div>
       {isOpen ? <div id={bodyId}>{children}</div> : null}
     </section>

@@ -10,6 +10,8 @@ import {
   PLANT_IMAGE_UPLOAD_FAILED_MESSAGE,
 } from "@/lib/plantImageUpload";
 import type { CheckoutFieldErrors, CheckoutFieldKey } from "@/lib/checkoutValidation";
+import type { OrderChannel } from "@/lib/orderSaleIdentity";
+import type { PurchaseEmailStatus } from "@/lib/orderTypes";
 import type { InventoryStatus, OrderStatus, PlantStatus } from "@/lib/status";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
@@ -104,6 +106,30 @@ export function fulfillmentLabel(locale: Locale, method: "delivery" | "pickup"):
   return method === "pickup"
     ? t(locale, "checkout.fulfillment.pickup")
     : t(locale, "checkout.fulfillment.delivery");
+}
+
+export function orderChannelLabel(locale: Locale, channel: OrderChannel): string {
+  return channel === "catalog"
+    ? t(locale, "admin.orders.channelCatalog")
+    : t(locale, "admin.orders.channelPartner");
+}
+
+export function purchaseEmailStatusLabel(
+  locale: Locale,
+  status: PurchaseEmailStatus,
+): string {
+  switch (status) {
+    case "pending":
+      return t(locale, "admin.orders.emailStatus.pending");
+    case "processing":
+      return t(locale, "admin.orders.emailStatus.processing");
+    case "sent":
+      return t(locale, "admin.orders.emailStatus.sent");
+    case "failed":
+      return t(locale, "admin.orders.emailStatus.failed");
+    case "skipped":
+      return t(locale, "admin.orders.emailStatus.skipped");
+  }
 }
 
 export function productPageCtaDisplay(

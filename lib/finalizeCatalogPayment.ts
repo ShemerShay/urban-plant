@@ -16,7 +16,12 @@ const RECONCILE_REASON = "catalog_holds_unsafe";
 export type FinalizeCatalogVerifiedPaymentResult =
   | { outcome: "finalized"; orderId: string; attemptId: string }
   | { outcome: "already_finalized"; orderId: string; attemptId: string }
-  | { outcome: "needs_reconciliation"; attemptId: string }
+  | {
+      outcome: "needs_reconciliation";
+      attemptId: string;
+      /** True only when this call performed the status transition. */
+      firstTransition: boolean;
+    }
   | { outcome: "ineligible" };
 
 type WriteRow = {
@@ -84,7 +89,11 @@ async function readTerminalOutcome(
     };
   }
   if (current.status === "needs_reconciliation") {
-    return { outcome: "needs_reconciliation", attemptId: current.id };
+    return {
+      outcome: "needs_reconciliation",
+      attemptId: current.id,
+      firstTransition: false,
+    };
   }
   return { outcome: "ineligible" };
 }
@@ -261,6 +270,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
             payment_retry_lock_at = NULL,
             updated_at = now()
           WHERE a.id = (SELECT id FROM locked)
+            AND a.status = 'awaiting_payment'
             AND NOT (SELECT ok FROM safe)
           RETURNING a.id
         ),
@@ -449,19 +459,23 @@ export async function finalizeCatalogVerifiedPayment(input: {
     row = written[0];
   } catch (error) {
     if (!isUnsafeFulfillmentError(error)) throw error;
-    await markCatalogNeedsReconciliation({
+    const claimed = await markCatalogNeedsReconciliation({
       attemptId,
       checkoutSessionId,
       cardcomTransactionId,
     });
-    return readTerminalOutcome(attemptId);
+    const terminal = await readTerminalOutcome(attemptId);
+    if (terminal.outcome === "needs_reconciliation") {
+      return { ...terminal, firstTransition: claimed };
+    }
+    return terminal;
   }
 
   if (row?.finalized_attempt_id && row.order_id) {
     return { outcome: "finalized", orderId: String(row.order_id), attemptId };
   }
   if (row?.recon_id) {
-    return { outcome: "needs_reconciliation", attemptId };
+    return { outcome: "needs_reconciliation", attemptId, firstTransition: true };
   }
   return readTerminalOutcome(attemptId);
 }

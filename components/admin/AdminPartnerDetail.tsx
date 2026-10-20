@@ -187,14 +187,6 @@ function PocketSpotRow({
   );
 }
 
-function formatIls(locale: Locale, value: number): string {
-  return new Intl.NumberFormat(locale === "he" ? "he-IL" : "en-IL", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 function plantCountLabel({ active, total }: PlantCounts): string {
   return `${active}/${total}`;
 }
@@ -367,8 +359,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [monthlyRevenueDraft, setMonthlyRevenueDraft] = useState("0");
-  const [setupCostDraft, setSetupCostDraft] = useState("0");
   const [notesDraft, setNotesDraft] = useState("");
 
   const pocketNameById = useMemo(() => {
@@ -536,8 +526,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
 
   function openProfile() {
     if (!partner) return;
-    setMonthlyRevenueDraft(String(partner.monthlyRevenue));
-    setSetupCostDraft(String(partner.setupCost));
     setNotesDraft(partner.notes);
     setProfileError(null);
     setProfileOpen(true);
@@ -545,16 +533,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
 
   async function saveProfile() {
     if (!partner) return;
-    const monthlyRevenue = Number(monthlyRevenueDraft);
-    if (!Number.isFinite(monthlyRevenue) || monthlyRevenue < 0) {
-      setProfileError(t(locale, "admin.partners.detail.monthlyRevenueInvalid"));
-      return;
-    }
-    const setupCost = Number(setupCostDraft);
-    if (!Number.isFinite(setupCost) || setupCost < 0) {
-      setProfileError(t(locale, "admin.partners.detail.setupCostInvalid"));
-      return;
-    }
     setProfileBusy(true);
     setProfileError(null);
     try {
@@ -567,8 +545,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
           type: partner.type,
           payments: partner.payments,
           pickupDisabled: partner.pickupDisabled,
-          monthlyRevenue,
-          setupCost,
           notes: notesDraft,
         }),
       });
@@ -581,7 +557,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
         return;
       }
       if (data.partner) setPartner(data.partner);
-      else setPartner({ ...partner, monthlyRevenue, setupCost, notes: notesDraft });
+      else setPartner({ ...partner, notes: notesDraft });
       setProfileOpen(false);
     } catch {
       setProfileError(displayApiError(locale, undefined, "admin.partners.saveFailed"));
@@ -947,42 +923,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
 
       {loadError ? <p className="text-sm text-red-700">{loadError}</p> : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            {t(locale, "admin.partners.detail.monthlyRevenue")}
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-950">
-            {formatIls(locale, partner.monthlyRevenue)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {t(locale, "admin.partners.detail.manualValue")}
-          </p>
-        </div>
-        <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            {t(locale, "admin.partners.detail.setupCost")}
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-950">
-            {formatIls(locale, partner.setupCost)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {t(locale, "admin.partners.detail.manualValue")}
-          </p>
-        </div>
-        <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            {t(locale, "admin.partners.detail.activePlants")}
-          </p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-950">
-            {plantCountLabel(locationCounts)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {t(locale, "admin.partners.detail.activePlantsHint")}
-          </p>
-        </div>
-      </div>
-
       <AdminManagementSection
         id="notes"
         title={t(locale, "admin.partners.detail.notes")}
@@ -1119,32 +1059,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       >
         <label className="block space-y-1">
           <span className="text-sm font-medium text-slate-700">
-            {t(locale, "admin.partners.detail.monthlyRevenue")}
-          </span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={monthlyRevenueDraft}
-            onChange={(event) => setMonthlyRevenueDraft(event.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
-          />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">
-            {t(locale, "admin.partners.detail.setupCost")}
-          </span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={setupCostDraft}
-            onChange={(event) => setSetupCostDraft(event.target.value)}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
-          />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">
             {t(locale, "admin.partners.detail.notes")}
           </span>
           <textarea
@@ -1161,6 +1075,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
         collapsible
         defaultOpen={false}
         title={t(locale, "admin.partners.detail.posSpots")}
+        titleMeta={`${t(locale, "admin.partners.detail.activePlants")} ${plantCountLabel(locationCounts)}`}
         description={t(locale, "admin.partners.detail.posSpotsDesc", { name: partner.name })}
         actions={
           <button

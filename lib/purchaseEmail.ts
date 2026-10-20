@@ -81,12 +81,28 @@ export type SendInternalOrderNotificationParams = {
   orderId?: string;
 };
 
+export type SendInternalCatalogReconciliationAlertParams = {
+  attemptId: string;
+  fullName: string;
+  customerEmail: string;
+  amountDisplay: string;
+  phone?: string;
+  address?: string;
+  apartmentOrNotes?: string;
+  failureReason?: string;
+  cardcomTransactionId?: number;
+  checkoutSessionId?: string;
+  lines: PurchaseEmailOrderLine[];
+};
+
 export const PURCHASE_EMAIL_SUBJECT = "Your Urban Plant order is confirmed";
 export const PURCHASE_EMAIL_REPLY_TO = PUBLIC_CONTACT_EMAIL;
 
 /** Independent Urban Plant inbox — never CC/BCC on the customer confirmation. */
 export const URBAN_PLANT_NOTIFICATION_TO = PUBLIC_CONTACT_EMAIL;
 export const URBAN_PLANT_NOTIFICATION_SUBJECT = "New Urban Plant order";
+export const URBAN_PLANT_RECONCILIATION_SUBJECT =
+  "Catalog payment needs reconciliation";
 
 function escapeHtml(text: string): string {
   return text
@@ -441,6 +457,124 @@ export async function sendInternalOrderNotificationEmail(
       role: "urban_plant",
       to,
       ...(orderId ? { orderId } : {}),
+      error: mailErrorMessage(error),
+    });
+    throw error;
+  }
+}
+
+function reconciliationLineText(line: PurchaseEmailOrderLine): string {
+  const plant = line.plantName.trim() || "Plant";
+  const pot = line.potName?.trim();
+  const name = pot ? `${plant} + ${pot}` : plant;
+  return `${name} × ${line.quantity}`;
+}
+
+/**
+ * Internal staff HTML for a Catalog payment that needs reconciliation.
+ * Never used for the customer confirmation.
+ */
+export function buildInternalCatalogReconciliationAlertHtml(
+  params: SendInternalCatalogReconciliationAlertParams,
+): string {
+  const row = (label: string, value: string): string => {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    return `<tr>
+      <td style="padding:6px 12px 6px 0;vertical-align:top;color:#6b7280;white-space:nowrap;">${escapeHtml(label)}</td>
+      <td style="padding:6px 0;vertical-align:top;color:#111827;">${escapeHtml(trimmed)}</td>
+    </tr>`;
+  };
+  const addressLine = [params.address?.trim(), params.apartmentOrNotes?.trim()]
+    .filter(Boolean)
+    .join(", ");
+  const lineItems = params.lines
+    .map(
+      (line) =>
+        `<li style="margin:0 0 4px;padding:0;">${escapeHtml(reconciliationLineText(line))}</li>`,
+    )
+    .join("");
+  const linesBlock =
+    lineItems.length > 0
+      ? `<p style="margin:16px 0 8px;font-size:15px;line-height:1.5;color:#374151;">Purchased lines</p>
+  <ul dir="ltr" style="margin:0;padding:0 0 0 1.25em;font-size:15px;line-height:1.5;color:#374151;">
+    ${lineItems}
+  </ul>`
+      : "";
+
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;">
+  <p style="margin:0 0 16px;font-size:16px;">A Catalog payment was verified but no order was created. Review this attempt in Admin orders.</p>
+  <table style="border-collapse:collapse;font-size:15px;line-height:1.5;">
+    ${row("Attempt ID", params.attemptId)}
+    ${row("Customer name", params.fullName)}
+    ${row("Customer email", params.customerEmail)}
+    ${row("Phone", params.phone ?? "")}
+    ${row("Delivery address", addressLine)}
+    ${row("Amount", params.amountDisplay)}
+    ${row("Reason", params.failureReason ?? "")}
+    ${row("Cardcom transaction", params.cardcomTransactionId != null ? String(params.cardcomTransactionId) : "")}
+    ${row("Checkout session", params.checkoutSessionId ?? "")}
+  </table>
+  ${linesBlock}
+  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">This notice was sent only to Urban Plant. The customer was not copied.</p>
+</body>
+</html>
+`.trim();
+}
+
+/**
+ * One-shot Urban Plant alert when a Catalog attempt first needs reconciliation.
+ * Uses the existing Gmail sender and Urban Plant inbox. Independent of payment state.
+ */
+export async function sendInternalCatalogReconciliationAlert(
+  params: SendInternalCatalogReconciliationAlertParams,
+): Promise<{ messageId: string | null }> {
+  const to = URBAN_PLANT_NOTIFICATION_TO.trim();
+  if (!to || !isValidPurchaseEmailAddress(to)) {
+    throw new Error("Urban Plant notification address is not configured");
+  }
+
+  const { gmailUser, gmailAppPassword } = requireGmailAuth();
+  const attemptId = params.attemptId.trim();
+  const customerEmail = params.customerEmail.trim();
+  const fullName = params.fullName.trim();
+  const amountDisplay = params.amountDisplay.trim();
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
+    },
+  });
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"Urban Plant" <${gmailUser}>`,
+      to,
+      ...(customerEmail && isValidPurchaseEmailAddress(customerEmail)
+        ? { replyTo: customerEmail }
+        : {}),
+      subject: attemptId
+        ? `${URBAN_PLANT_RECONCILIATION_SUBJECT} (${attemptId})`
+        : URBAN_PLANT_RECONCILIATION_SUBJECT,
+      html: buildInternalCatalogReconciliationAlertHtml({
+        ...params,
+        attemptId,
+        customerEmail,
+        fullName,
+        amountDisplay,
+      }),
+    });
+    return { messageId: info.messageId ?? null };
+  } catch (error) {
+    console.error("[purchase-email] catalog_reconciliation_alert_failed", {
+      role: "urban_plant",
+      to,
+      attemptId,
       error: mailErrorMessage(error),
     });
     throw error;

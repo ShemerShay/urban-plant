@@ -375,6 +375,20 @@ export async function getPaymentAttemptByCheckoutSessionId(
   return row ? mapPaymentAttemptRow(row) : null;
 }
 
+/** Catalog attempts with verified payment and no order. Newest first. */
+export async function listCatalogPaymentAttemptsNeedingReconciliation(): Promise<
+  SavedPaymentAttempt[]
+> {
+  const rows = await sql`
+    SELECT ${PAYMENT_ATTEMPT_ROW_SQL}
+    FROM payment_attempts
+    WHERE channel = 'catalog'
+      AND status = 'needs_reconciliation'
+    ORDER BY created_at DESC, id DESC
+  `;
+  return (rows as PaymentAttemptRow[]).map(mapPaymentAttemptRow);
+}
+
 /** Insert a payment attempt row. Omitted channel is partner. */
 export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promise<void> {
   const channel: PaymentAttemptChannel = attempt.channel ?? "partner";
@@ -700,6 +714,48 @@ export async function markPaymentAttemptNeedsReconciliation(input: {
     WHERE id = ${attemptId}::uuid
       AND checkout_session_id = ${sessionId}
       AND status IN ('expired', 'cancelled', 'failed', 'needs_reconciliation')
+    RETURNING ${PAYMENT_ATTEMPT_ROW_SQL}
+  `;
+  const row = (rows as PaymentAttemptRow[])[0];
+  return row ? mapPaymentAttemptRow(row) : null;
+}
+
+/**
+ * Catalog-only late success: first transition from expired/cancelled/failed.
+ * Already-reconciled rows are left unchanged so duplicate webhooks cannot claim the alert.
+ */
+export async function markCatalogLateSuccessNeedsReconciliation(input: {
+  attemptId: string;
+  checkoutSessionId: string;
+  cardcomTransactionId?: number;
+  reason: string;
+}): Promise<SavedPaymentAttempt | null> {
+  const attemptId = input.attemptId.trim();
+  const sessionId = input.checkoutSessionId.trim();
+  const reason = input.reason.trim() || "late_cardcom_success";
+  if (!attemptId || !sessionId) return null;
+
+  const txId =
+    typeof input.cardcomTransactionId === "number" &&
+    Number.isFinite(input.cardcomTransactionId)
+      ? Math.trunc(input.cardcomTransactionId)
+      : null;
+
+  const rows = await sql`
+    UPDATE payment_attempts
+    SET
+      status = 'needs_reconciliation',
+      failure_reason = ${reason},
+      cardcom_transaction_id = COALESCE(
+        ${txId}::bigint,
+        cardcom_transaction_id
+      ),
+      payment_retry_lock_at = NULL,
+      updated_at = now()
+    WHERE id = ${attemptId}::uuid
+      AND channel = 'catalog'
+      AND checkout_session_id = ${sessionId}
+      AND status IN ('expired', 'cancelled', 'failed')
     RETURNING ${PAYMENT_ATTEMPT_ROW_SQL}
   `;
   const row = (rows as PaymentAttemptRow[])[0];
