@@ -320,9 +320,14 @@ export function parsePlantBody(
   const descriptionHe = cleanString(body.descriptionHe ?? body.description_he);
   const waterHe = cleanString(body.waterHe ?? body.water_he);
 
-  const difficultyRaw = cleanString(body.difficulty);
-  if (!DIFFICULTIES.has(difficultyRaw as CareLevel)) {
-    return { ok: false, error: "difficulty must be Easy, Moderate, or Advanced" };
+  let difficulty: CareLevel | undefined;
+  const difficultyField = readBodyField(body, "difficulty", "difficulty");
+  if (!difficultyField.omitted && difficultyField.value !== null) {
+    const difficultyRaw = cleanString(difficultyField.value);
+    if (!difficultyRaw || !DIFFICULTIES.has(difficultyRaw as CareLevel)) {
+      return { ok: false, error: "difficulty must be Easy, Moderate, or Advanced" };
+    }
+    difficulty = difficultyRaw as CareLevel;
   }
 
   const lightRaw = cleanString(body.light);
@@ -372,7 +377,6 @@ export function parsePlantBody(
     labels,
     light: lightRaw as LightLevel,
     water: water.value,
-    difficulty: difficultyRaw as CareLevel,
     location: location.value,
     petFriendly,
     careInstructions,
@@ -382,6 +386,7 @@ export function parsePlantBody(
     ...(subtitleHe ? { subtitleHe } : {}),
     ...(descriptionHe ? { descriptionHe } : {}),
     ...(waterHe ? { waterHe } : {}),
+    ...(difficulty ? { difficulty } : {}),
     ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),

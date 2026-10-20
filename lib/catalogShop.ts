@@ -8,7 +8,7 @@ import type { CatalogCartItem, CatalogCartResolvedLine } from "@/lib/catalogCart
 import { sql } from "@/lib/db";
 import { getInventoryQuantities } from "@/lib/inventoryStorage";
 import type { PotSizeLabel } from "@/lib/potSizes";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel, PlantProduct } from "@/lib/types";
 
 export type CatalogShopCard = {
   id: string;
@@ -19,6 +19,7 @@ export type CatalogShopCard = {
   priceMin: number | null;
   priceMax: number | null;
   unavailable: boolean;
+  sizes: CatalogShopSize[];
 };
 
 export type CatalogShopPotOption = {
@@ -55,7 +56,7 @@ export type CatalogShopDetail = {
   light?: LightLevel;
   water?: string;
   waterHe?: string;
-  difficulty?: CareLevel;
+  petFriendly: boolean;
   averageSize?: PlantProduct["averageSize"];
   sizes: CatalogShopSize[];
 };
@@ -74,7 +75,7 @@ type PlantShopRow = {
   water: string | null;
   water_he: string | null;
   average_size: string | null;
-  difficulty: string | null;
+  pet_friendly: boolean | null;
 };
 
 type VariantShopRow = {
@@ -142,12 +143,6 @@ function parseLight(value: string | null): LightLevel | undefined {
   return undefined;
 }
 
-function parseDifficulty(value: string | null): CareLevel | undefined {
-  const raw = optionalTrimmed(value);
-  if (raw === "Easy" || raw === "Moderate" || raw === "Advanced") return raw;
-  return undefined;
-}
-
 function parseAverageSize(value: string | null): PlantProduct["averageSize"] | undefined {
   const raw = optionalTrimmed(value);
   if (raw === "small" || raw === "medium" || raw === "large" || raw === "x-large") return raw;
@@ -176,7 +171,7 @@ async function readPublishedPlantRows(): Promise<PlantShopRow[]> {
   const rows = await sql`
     SELECT
       id, name, name_he, subtitle, subtitle_he, description, description_he,
-      currency, images, light, water, water_he, average_size, difficulty
+      currency, images, light, water, water_he, average_size, pet_friendly
     FROM plants
     WHERE catalog_published = true
       AND inventory_type = 'plants'
@@ -274,9 +269,13 @@ export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
   const plants = await readPublishedPlantRows();
   const variants = await readVariantRows(plants.map((plant) => plant.id));
   const quantities = await getInventoryQuantities(variants.map((variant) => variant.id));
+  const labels = variants
+    .map((variant) => optionalTrimmed(variant.size_label))
+    .filter((label): label is string => Boolean(label));
+  const potsByLabel = await readPotsForLabels(labels);
   const byPlant = new Map<string, CatalogShopSize[]>();
   for (const variant of variants) {
-    const size = toSize(variant, quantities.get(variant.id) ?? 0, new Map());
+    const size = toSize(variant, quantities.get(variant.id) ?? 0, potsByLabel);
     if (!size) continue;
     const list = byPlant.get(variant.plant_id) ?? [];
     list.push(size);
@@ -286,7 +285,8 @@ export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
   return plants.map((plant) => {
     const nameHe = optionalTrimmed(plant.name_he);
     const image = parseImages(plant.images)[0];
-    const summary = summarize(byPlant.get(plant.id) ?? []);
+    const sizes = (byPlant.get(plant.id) ?? []).sort(compareSizes);
+    const summary = summarize(sizes);
     return {
       id: plant.id,
       name: plant.name,
@@ -294,6 +294,7 @@ export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
       priceMin: summary.priceMin,
       priceMax: summary.priceMax,
       unavailable: summary.unavailable,
+      sizes,
       ...(nameHe ? { nameHe } : {}),
       ...(image ? { image } : {}),
     };
@@ -306,7 +307,7 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
   const rows = await sql`
     SELECT
       id, name, name_he, subtitle, subtitle_he, description, description_he,
-      currency, images, light, water, water_he, average_size, difficulty
+      currency, images, light, water, water_he, average_size, pet_friendly
     FROM plants
     WHERE id = ${trimmed}
       AND catalog_published = true
@@ -335,7 +336,6 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
   const water = optionalTrimmed(plant.water);
   const waterHe = optionalTrimmed(plant.water_he);
   const light = parseLight(plant.light);
-  const difficulty = parseDifficulty(plant.difficulty);
   const averageSize = parseAverageSize(plant.average_size);
 
   return {
@@ -344,6 +344,7 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
     currency: parseCurrency(plant.currency),
     images: parseImages(plant.images),
     sizes,
+    petFriendly: plant.pet_friendly === true,
     ...(nameHe ? { nameHe } : {}),
     ...(subtitle ? { subtitle } : {}),
     ...(subtitleHe ? { subtitleHe } : {}),
@@ -352,7 +353,6 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
     ...(water ? { water } : {}),
     ...(waterHe ? { waterHe } : {}),
     ...(light ? { light } : {}),
-    ...(difficulty ? { difficulty } : {}),
     ...(averageSize ? { averageSize } : {}),
   };
 }

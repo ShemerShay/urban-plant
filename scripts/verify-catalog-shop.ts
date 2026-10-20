@@ -54,6 +54,8 @@ function assertShopWiring(): void {
   assert.match(detailUi, /import type \{ CatalogShopDetail/);
   assert.match(detailUi, /retainCompatiblePotId/);
   assert.match(detailUi, /compatiblePots\.length > 0/);
+  assert.doesNotMatch(detailUi, /difficulty/);
+  assert.match(detailUi, /petFriendly=\{plant\.petFriendly\}/);
   assert.match(detailUi, /shop\.addToCart/);
   assert.match(detailUi, /ANALYTICS_EVENTS\.addToCart/);
   assert.match(detailUi, /captureAnalyticsEvent/);
@@ -66,8 +68,14 @@ function assertShopWiring(): void {
   assert.doesNotMatch(detailUi, /routes\.cart/);
 
   const shopCard = read("components/shop/ShopPlantCard.tsx");
-  assert.match(shopCard, /formatCatalogPriceSummary/);
-  assert.doesNotMatch(shopCard, /selectedSizeId/);
+  assert.match(shopCard, /formatCatalogPrice/);
+  assert.match(shopCard, /CatalogSizeOptions/);
+  assert.match(shopCard, /CatalogPotColorOptions/);
+  assert.match(shopCard, /addCatalogCartItem/);
+  assert.match(shopCard, /retainCompatiblePotId/);
+  assert.match(shopCard, /selectedSizeId/);
+  assert.doesNotMatch(shopCard, /ANALYTICS_EVENTS/);
+  assert.doesNotMatch(shopCard, /startCardcom/);
 
   const tracker = read("components/analytics/TrackProductView.tsx");
   assert.match(tracker, /captureOncePerSession/);
@@ -85,6 +93,8 @@ function assertShopWiring(): void {
   assert.doesNotMatch(landing, /product_view/);
   assert.doesNotMatch(landing, /TrackProductView/);
   assert.match(landing, /TrackPosScan/);
+  assert.doesNotMatch(landing, /!plant\.difficulty/);
+  assert.match(landing, /!plant\.light \|\| !plant\.images\?\.length/);
 
   const paymentPrep = read("lib/startCardcomPaymentPrep.ts");
   assert.doesNotMatch(paymentPrep, /product_view/);
@@ -113,10 +123,86 @@ function assertShopWiring(): void {
 async function main(): Promise<void> {
   assertShopWiring();
 
-  const { retainCompatiblePotId } = await import("../lib/catalogShopSelection");
+  const { retainCompatiblePotId, catalogSizeChoices, uniquePotColorChoices } = await import(
+    "../lib/catalogShopSelection"
+  );
   assert.equal(retainCompatiblePotId(null, [{ id: "pot-a" }]), null);
   assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-a" }, { id: "pot-b" }]), "pot-a");
   assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-b" }]), null);
+  assert.deepEqual(
+    catalogSizeChoices([
+      { sizeLabel: "L" },
+      { sizeLabel: "S" },
+      { sizeLabel: "XL" },
+      { sizeLabel: "M" },
+    ]).map((size) => size.sizeLabel),
+    ["S", "M", "L"],
+  );
+  assert.deepEqual(
+    catalogSizeChoices([{ sizeLabel: "S" }, { sizeLabel: "S" }]),
+    [],
+  );
+  const uniqueColors = uniquePotColorChoices([
+    { id: "white", color: "White" },
+    { id: "black", color: "Black" },
+  ]);
+  assert.deepEqual(
+    uniqueColors.choices.map((pot) => pot.id),
+    ["white", "black"],
+  );
+  assert.deepEqual(uniqueColors.ambiguousColors, []);
+  const sharedColor = uniquePotColorChoices([
+    { id: "clay-white", color: "White" },
+    { id: "stone-white", color: "white" },
+    { id: "black", color: "Black" },
+  ]);
+  assert.deepEqual(
+    sharedColor.choices.map((pot) => pot.id),
+    ["black"],
+  );
+  assert.deepEqual(sharedColor.ambiguousColors, ["White"]);
+
+  const plantsManager = read("components/admin/AdminPlantsManager.tsx");
+  assert.doesNotMatch(plantsManager, /draft\.difficulty/);
+  assert.doesNotMatch(plantsManager, /admin\.plants\.difficulty/);
+  assert.match(plantsManager, /admin\.plants\.labelsHint/);
+  assert.match(plantsManager, /draft\.petFriendly/);
+  const infoGrid = read("components/plant/PlantProductInfoGrid.tsx");
+  assert.match(infoGrid, /plant\.info\.petFriendly/);
+  assert.doesNotMatch(infoGrid, /difficulty/);
+  assert.doesNotMatch(infoGrid, /careLabel/);
+  assert.match(plantsManager, /admin\.common\.yes/);
+  assert.match(plantsManager, /admin\.common\.no/);
+  const section = read("components/admin/shared/AdminManagementSection.tsx");
+  assert.match(section, /text-sm font-normal text-slate-600/);
+  const plantUpdate = read("app/api/plants/[plantId]/route.ts");
+  assert.match(plantUpdate, /existing\.difficulty/);
+
+  const { parsePlantBody } = await import("../lib/plantValidation");
+  const plantWithoutDifficulty = parsePlantBody(
+    {
+      id: "verify-plant-options",
+      name: "Monstera",
+      subtitle: "A leafy plant",
+      description: "A description",
+      supplierPrice: 20,
+      currency: "ILS",
+      images: ["https://example.com/p.jpg"],
+      labels: ["indoor"],
+      light: "Medium light",
+      water: "Weekly",
+      location: "Indoor",
+      petFriendly: true,
+      careInstructions: ["Water weekly"],
+      inventoryType: "plants",
+    },
+    { requireId: true },
+  );
+  assert.equal(plantWithoutDifficulty.ok, true);
+  if (plantWithoutDifficulty.ok) {
+    assert.equal(plantWithoutDifficulty.plant.difficulty, undefined);
+    assert.equal(plantWithoutDifficulty.plant.petFriendly, true);
+  }
 
   await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");
@@ -166,6 +252,17 @@ async function main(): Promise<void> {
       catalogPublished: false,
       createdAt: new Date().toISOString(),
     });
+    const nextPetFriendly = createdPlant.petFriendly !== true;
+    const petSaved = await updatePlant(testPlantId, {
+      ...createdPlant,
+      petFriendly: nextPetFriendly,
+    });
+    assert.equal(petSaved?.petFriendly, nextPetFriendly);
+    assert.equal(petSaved?.difficulty, createdPlant.difficulty);
+    const petReloaded = await getPlantByIdAsync(testPlantId);
+    assert.equal(petReloaded?.petFriendly, nextPetFriendly);
+    assert.equal(petReloaded?.difficulty, createdPlant.difficulty);
+
     assert.equal(
       (await readCatalogShopCards()).some((card) => card.id === testPlantId),
       false,
@@ -287,6 +384,21 @@ async function main(): Promise<void> {
       assert.equal(error.code, "invalid_size_label");
     }
     assert.equal(badSize, true);
+
+    const cardWithPots = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
+    assert.ok(cardWithPots);
+    assert.equal(cardWithPots.sizes.some((size) => size.sizeLabel === "XL"), true);
+    const cardSizes = catalogSizeChoices(cardWithPots.sizes);
+    assert.deepEqual(
+      cardSizes.map((size) => size.sizeLabel),
+      ["S", "M", "L"],
+    );
+    assert.equal(cardSizes.find((size) => size.sizeLabel === "S")?.pots[0]?.id, white.id);
+    assert.equal(cardSizes.find((size) => size.sizeLabel === "M")?.pots[0]?.color, "Black");
+    assert.deepEqual(
+      uniquePotColorChoices(cardSizes.find((size) => size.sizeLabel === "S")?.pots ?? []).ambiguousColors,
+      [],
+    );
 
     const detail = await readCatalogShopDetail(testPlantId);
     assert.ok(detail);

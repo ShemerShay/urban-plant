@@ -61,6 +61,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const plant = await updatePlant(plantId, {
       ...parsed.plant,
+      difficulty: Object.prototype.hasOwnProperty.call(record, "difficulty")
+        ? parsed.plant.difficulty
+        : existing.difficulty,
       nameHe: localizedFieldFromBody(record, existing.nameHe, "nameHe", "name_he"),
       subtitleHe: localizedFieldFromBody(
         record,

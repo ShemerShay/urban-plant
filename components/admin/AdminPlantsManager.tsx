@@ -9,7 +9,6 @@ import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { useLocale } from "@/components/locale/LocaleProvider";
 import {
-  careLabel,
   displayApiError,
   lightLabel,
   sizeLabel,
@@ -19,7 +18,7 @@ import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 import type { InventoryType } from "@/lib/inventoryType";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel, PlantProduct } from "@/lib/types";
 
 type PlantsApiResponse = {
   plants?: PlantProduct[];
@@ -47,7 +46,6 @@ type PlantDraft = {
   averageSize: PlantProduct["averageSize"] | "";
   supplierName: string;
   baseSupplierPrice: string;
-  difficulty: CareLevel;
   location: string;
   petFriendly: boolean;
   careInstructionsText: string;
@@ -60,8 +58,6 @@ const LIGHT_OPTIONS: LightLevel[] = [
   "Bright indirect light",
   "Direct sun",
 ];
-
-const DIFFICULTY_OPTIONS: CareLevel[] = ["Easy", "Moderate", "Advanced"];
 
 const CURRENCY_OPTIONS: PlantProduct["currency"][] = ["ILS", "USD", "EUR"];
 
@@ -104,7 +100,6 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     supplierName: plant.supplierName ?? "",
     baseSupplierPrice:
       typeof plant.baseSupplierPrice === "number" ? String(plant.baseSupplierPrice) : "",
-    difficulty: plant.difficulty ?? "Easy",
     location: plant.location ?? "",
     petFriendly: plant.petFriendly ?? false,
     careInstructionsText: linesFromArray(plant.careInstructions ?? []),
@@ -132,7 +127,6 @@ function emptyDraft(): PlantDraft {
     averageSize: "",
     supplierName: "",
     baseSupplierPrice: "",
-    difficulty: "Easy",
     location: "",
     petFriendly: false,
     careInstructionsText: "",
@@ -179,7 +173,6 @@ function draftToPayload(
     ...(baseSupplierPrice !== undefined && Number.isFinite(baseSupplierPrice)
       ? { baseSupplierPrice }
       : {}),
-    difficulty: draft.difficulty,
     location: draft.location.trim(),
     petFriendly: draft.petFriendly,
     careInstructions: arrayFromLines(draft.careInstructionsText),
@@ -265,7 +258,6 @@ function plantMatchesSearch(plant: PlantProduct, query: string): boolean {
     plant.light,
     plant.water,
     plant.waterHe,
-    plant.difficulty,
     plant.location,
     plant.supplierName,
     ...(plant.labels ?? []),
@@ -507,20 +499,37 @@ function PlantFieldsForm({
             dir="rtl"
           />
         </label>
-        <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.plants.difficulty")}</span>
-          <select
-            className={inputClassName}
-            value={draft.difficulty}
-            onChange={(e) => patch({ difficulty: e.target.value as CareLevel })}
+        <div className="block">
+          <span className={labelClassName}>{t(locale, "admin.plants.petFriendly")}</span>
+          <div
+            className="mt-1 inline-flex rounded-full bg-slate-100 p-0.5"
+            role="radiogroup"
+            aria-label={t(locale, "admin.plants.petFriendly")}
           >
-            {DIFFICULTY_OPTIONS.map((difficulty) => (
-              <option key={difficulty} value={difficulty}>
-                {careLabel(locale, difficulty)}
-              </option>
-            ))}
-          </select>
-        </label>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={draft.petFriendly}
+              onClick={() => patch({ petFriendly: true })}
+              className={`rounded-full px-3 py-1 text-sm font-medium ${
+                draft.petFriendly ? "bg-emerald-800 text-white" : "text-slate-600"
+              }`}
+            >
+              {t(locale, "admin.common.yes")}
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!draft.petFriendly}
+              onClick={() => patch({ petFriendly: false })}
+              className={`rounded-full px-3 py-1 text-sm font-medium ${
+                !draft.petFriendly ? "bg-emerald-800 text-white" : "text-slate-600"
+              }`}
+            >
+              {t(locale, "admin.common.no")}
+            </button>
+          </div>
+        </div>
         <label className="block">
           <span className={labelClassName}>{t(locale, "admin.plants.averageSizeOptional")}</span>
           <select
@@ -545,15 +554,6 @@ function PlantFieldsForm({
             value={draft.location}
             onChange={(e) => patch({ location: e.target.value })}
           />
-        </label>
-        <label className="flex items-center gap-2 sm:col-span-2">
-          <input
-            type="checkbox"
-            checked={draft.petFriendly}
-            onChange={(e) => patch({ petFriendly: e.target.checked })}
-            className={adminCheckboxClassName}
-          />
-          <span className="text-sm text-slate-800">{t(locale, "admin.plants.petFriendly")}</span>
         </label>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.plants.careInstructionsHint")}</span>
@@ -683,12 +683,6 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
             {plant.waterHe}
           </dd>
         </div>
-      ) : null}
-      {plant.difficulty ? (
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.difficulty")}</dt>
-        <dd className="text-slate-900">{careLabel(locale, plant.difficulty)}</dd>
-      </div>
       ) : null}
       {plant.averageSize ? (
         <div className="flex flex-wrap gap-x-2">

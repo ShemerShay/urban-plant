@@ -38,7 +38,7 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
   const { offer, plant, partner: knownPartner, pocket } = await getPosLandingDetails(posSpot);
   if (!offer || offer.status !== "active") notFound();
   if (!plant) notFound();
-  if (!plant.light || !plant.difficulty || !plant.images?.length) notFound();
+  if (!plant.light || !plant.images?.length) notFound();
 
   const partnerName = knownPartner?.name?.trim() ?? "";
   const displayName = localizedPlantText(locale, plant.name, plant.nameHe);
@@ -116,7 +116,7 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
           <PlantProductInfoGrid
             light={plant.light}
             water={displayWater}
-            difficulty={plant.difficulty}
+            petFriendly={plant.petFriendly === true}
             averageSize={plant.averageSize}
           />
         </div>
