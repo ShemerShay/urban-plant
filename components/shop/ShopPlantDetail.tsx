@@ -249,7 +249,6 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
                   light={plant.light}
                   water={water}
                   petFriendly={plant.petFriendly}
-                  averageSize={plant.averageSize}
                 />
               </div>
             ) : null}

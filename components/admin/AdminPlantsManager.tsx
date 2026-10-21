@@ -8,12 +8,7 @@ import { AdminPlantVariantsPanel } from "@/components/admin/AdminPlantVariantsPa
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { useLocale } from "@/components/locale/LocaleProvider";
-import {
-  displayApiError,
-  lightLabel,
-  sizeLabel,
-  yesNoLabel,
-} from "@/lib/displayLabels";
+import { displayApiError, lightLabel, yesNoLabel } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
@@ -43,7 +38,6 @@ type PlantDraft = {
   light: LightLevel;
   water: string;
   waterHe: string;
-  averageSize: PlantProduct["averageSize"] | "";
   supplierName: string;
   baseSupplierPrice: string;
   location: string;
@@ -60,13 +54,6 @@ const LIGHT_OPTIONS: LightLevel[] = [
 ];
 
 const CURRENCY_OPTIONS: PlantProduct["currency"][] = ["ILS", "USD", "EUR"];
-
-const SIZE_VALUES: NonNullable<PlantProduct["averageSize"]>[] = [
-  "small",
-  "medium",
-  "large",
-  "x-large",
-];
 
 function linesFromArray(values: string[]): string {
   return values.join("\n");
@@ -96,7 +83,6 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     light: plant.light ?? "Bright indirect light",
     water: plant.water ?? "",
     waterHe: plant.waterHe ?? "",
-    averageSize: plant.averageSize ?? "",
     supplierName: plant.supplierName ?? "",
     baseSupplierPrice:
       typeof plant.baseSupplierPrice === "number" ? String(plant.baseSupplierPrice) : "",
@@ -124,7 +110,6 @@ function emptyDraft(): PlantDraft {
     light: "Bright indirect light",
     water: "",
     waterHe: "",
-    averageSize: "",
     supplierName: "",
     baseSupplierPrice: "",
     location: "",
@@ -168,7 +153,6 @@ function draftToPayload(
     light: draft.light,
     water: draft.water.trim(),
     waterHe: draft.waterHe.trim(),
-    ...(draft.averageSize ? { averageSize: draft.averageSize } : {}),
     ...(draft.supplierName.trim() ? { supplierName: draft.supplierName.trim() } : {}),
     ...(baseSupplierPrice !== undefined && Number.isFinite(baseSupplierPrice)
       ? { baseSupplierPrice }
@@ -530,23 +514,6 @@ function PlantFieldsForm({
             </button>
           </div>
         </div>
-        <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.plants.averageSizeOptional")}</span>
-          <select
-            className={inputClassName}
-            value={draft.averageSize}
-            onChange={(e) =>
-              patch({ averageSize: e.target.value as PlantDraft["averageSize"] })
-            }
-          >
-            <option value="">—</option>
-            {SIZE_VALUES.map((size) => (
-              <option key={size} value={size}>
-                {sizeLabel(locale, size)}
-              </option>
-            ))}
-          </select>
-        </label>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.common.location")}</span>
           <input
@@ -682,12 +649,6 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           <dd className="text-slate-900" dir="rtl">
             {plant.waterHe}
           </dd>
-        </div>
-      ) : null}
-      {plant.averageSize ? (
-        <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.averageSize")}</dt>
-          <dd className="text-slate-900">{sizeLabel(locale, plant.averageSize)}</dd>
         </div>
       ) : null}
       {plant.location ? (

@@ -3,15 +3,14 @@
 import type { ReactNode } from "react";
 
 import { useLocale } from "@/components/locale/LocaleProvider";
-import { lightLabel, sizeLabel, yesNoLabel } from "@/lib/displayLabels";
+import { lightLabel, yesNoLabel } from "@/lib/displayLabels";
 import { t } from "@/lib/messages";
-import type { LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel } from "@/lib/types";
 
 interface PlantProductInfoGridProps {
   light: LightLevel;
   water: string;
   petFriendly: boolean;
-  averageSize?: PlantProduct["averageSize"];
 }
 
 /** Soft sage panel — keep in sync with premium plant page tone */
@@ -82,28 +81,8 @@ function IconCat({ slashed = false }: { slashed?: boolean }) {
   );
 }
 
-function IconRuler() {
-  return (
-    <svg
-      className="shrink-0 text-white"
-      width={QUADRANT_ICON_SIZE}
-      height={QUADRANT_ICON_SIZE}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
-      <path d="M11 7h3M11 11h3M11 15h2" />
-    </svg>
-  );
-}
-
 const cellBase =
-  "flex min-h-[5.5rem] flex-col items-center justify-center gap-2.5 px-3 py-5 text-center sm:min-h-[6rem] sm:px-4";
+  "flex min-h-[5.5rem] min-w-0 flex-col items-center justify-center gap-2.5 px-2 py-5 text-center sm:min-h-[6rem] sm:px-3";
 
 function Quadrant({
   icon,
@@ -141,36 +120,29 @@ export function PlantProductInfoGrid({
   light,
   water,
   petFriendly,
-  averageSize,
 }: PlantProductInfoGridProps) {
   const locale = useLocale();
   return (
     <section id="plant-info-grid" className={PANEL_CLASS} aria-label={t(locale, "plant.info.aria")}>
-      <div className="grid grid-cols-2">
+      <div className="grid grid-cols-3">
         <Quadrant
           icon={<IconSun />}
           text={lightLabel(locale, light)}
           label={t(locale, "plant.info.light")}
-          borders="border-b [border-inline-end-width:1px] border-white/30"
+          borders="[border-inline-end-width:1px] border-white/30"
         />
         <Quadrant
           icon={<IconWater />}
           text={water}
           label={t(locale, "plant.info.water")}
-          borders="border-b border-white/30"
+          borders="[border-inline-end-width:1px] border-white/30"
         />
         <Quadrant
           icon={<IconCat slashed={!petFriendly} />}
           text={yesNoLabel(locale, petFriendly)}
           label={t(locale, "plant.info.petFriendly")}
-          borders="[border-inline-end-width:1px] border-white/30"
-          hideText
-        />
-        <Quadrant
-          icon={<IconRuler />}
-          text={sizeLabel(locale, averageSize)}
-          label={t(locale, "plant.info.size")}
           borders=""
+          hideText
         />
       </div>
     </section>

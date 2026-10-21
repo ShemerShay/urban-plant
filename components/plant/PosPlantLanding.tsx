@@ -117,7 +117,6 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
             light={plant.light}
             water={displayWater}
             petFriendly={plant.petFriendly === true}
-            averageSize={plant.averageSize}
           />
         </div>
 

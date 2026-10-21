@@ -24,7 +24,6 @@ export type PlantRow = {
   light: string | null;
   water: string | null;
   water_he: string | null;
-  average_size: string | null;
   supplier_name: string | null;
   location: string | null;
   pet_friendly: boolean | null;
@@ -81,14 +80,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
   const subtitleHe = optionalTrimmed(row.subtitle_he);
   const descriptionHe = optionalTrimmed(row.description_he);
   const waterHe = optionalTrimmed(row.water_he);
-  const averageSizeRaw = row.average_size?.trim();
-  const averageSize =
-    averageSizeRaw === "small" ||
-    averageSizeRaw === "medium" ||
-    averageSizeRaw === "large" ||
-    averageSizeRaw === "x-large"
-      ? averageSizeRaw
-      : undefined;
 
   const subtitle = optionalTrimmed(row.subtitle);
   const description = optionalTrimmed(row.description);
@@ -127,7 +118,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     ...(subtitleHe ? { subtitleHe } : {}),
     ...(descriptionHe ? { descriptionHe } : {}),
     ...(waterHe ? { waterHe } : {}),
-    ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(createdAt ? { createdAt } : {}),
     inventoryType: inventoryTypeOrDefault(row.inventory_type),
@@ -161,7 +151,7 @@ export async function readPlants(filter?: {
     ? await sql`
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-          supplier_price, currency, images, labels, light, water, water_he, average_size,
+          supplier_price, currency, images, labels, light, water, water_he,
           supplier_name, location, pet_friendly,
           care_instructions, created_at, inventory_type, catalog_published
         FROM plants
@@ -171,7 +161,7 @@ export async function readPlants(filter?: {
     : await sql`
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-          supplier_price, currency, images, labels, light, water, water_he, average_size,
+          supplier_price, currency, images, labels, light, water, water_he,
           supplier_name, location, pet_friendly,
           care_instructions, created_at, inventory_type, catalog_published
         FROM plants
@@ -193,7 +183,7 @@ export async function getPlantByIdAsync(id: string): Promise<PlantProduct | unde
   const rows = await sql`
     SELECT
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
+      supplier_price, currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
     FROM plants
@@ -219,7 +209,7 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
   const rows = await sql`
     INSERT INTO plants (
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
+      supplier_price, currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
     )
@@ -239,7 +229,6 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.light ?? null},
       ${plant.water ?? null},
       ${plant.waterHe ?? null},
-      ${plant.averageSize ?? null},
       ${plant.supplierName ?? null},
       ${plant.location ?? null},
       ${plant.petFriendly ?? null},
@@ -250,7 +239,7 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
     )
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
+      supplier_price, currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
   `;
@@ -291,7 +280,6 @@ export async function updatePlant(
       light = ${plant.light ?? null},
       water = ${plant.water ?? null},
       water_he = ${plant.waterHe ?? null},
-      average_size = ${plant.averageSize ?? null},
       supplier_name = ${plant.supplierName ?? null},
       location = ${plant.location ?? null},
       pet_friendly = ${plant.petFriendly ?? null},
@@ -300,7 +288,7 @@ export async function updatePlant(
     WHERE id = ${trimmed}
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
+      supplier_price, currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
   `;

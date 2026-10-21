@@ -1,10 +1,14 @@
 /**
- * Plant variants: physical configuration plus Catalog price.
+ * Plant sizes (table: plant_variants): physical configuration plus Catalog price.
+ * New and changed size labels must be S, M, or L.
+ * An existing label outside that set can be loaded and saved unchanged.
+ * No database check is added: historical rows may keep other labels.
  * POS occupancy still keys off variant id / size fields only.
  */
 
 import { sql } from "@/lib/db";
 import { getInventoryQuantities } from "@/lib/inventoryStorage";
+import { isPlantSizeLabel } from "@/lib/plantSizes";
 import { getPlantByIdAsync } from "@/lib/plantStorage";
 
 export type PlantVariant = {
@@ -24,6 +28,7 @@ export type PlantVariantWriteCode =
   | "not_found"
   | "flower_plant"
   | "identity_required"
+  | "invalid_size_label"
   | "duplicate_size_label"
   | "invalid_catalog_price"
   | "plant_id_immutable"
@@ -85,7 +90,7 @@ export function plantVariantOptionLabel(variant: PlantVariant): string {
   if (size && cm != null) return `${size} (${cm} cm)`;
   if (size) return size;
   if (cm != null) return `${cm} cm`;
-  return "Variant";
+  return "Size";
 }
 
 export async function getPlantVariantById(id: string): Promise<PlantVariant | undefined> {
@@ -183,6 +188,20 @@ function assertVariantIdentity(sizeLabel: string | null, diameter: number | null
   }
 }
 
+/**
+ * Create requires S/M/L.
+ * Update allows the stored label to stay, including a legacy label.
+ * A changed label must be S, M, or L. Labels are not rewritten automatically.
+ */
+function assertCanonicalPlantSize(
+  sizeLabel: string | null,
+  previous: string | null | undefined,
+): void {
+  if (previous !== undefined && sizeLabel === previous) return;
+  if (sizeLabel !== null && isPlantSizeLabel(sizeLabel)) return;
+  throw new PlantVariantWriteError("invalid_size_label", "sizeLabel must be S, M, or L");
+}
+
 async function assertPlantAcceptsVariants(plantId: string): Promise<void> {
   const plant = await getPlantByIdAsync(plantId);
   if (!plant) {
@@ -191,7 +210,7 @@ async function assertPlantAcceptsVariants(plantId: string): Promise<void> {
   if (plant.inventoryType === "flowers") {
     throw new PlantVariantWriteError(
       "flower_plant",
-      "Flower plants cannot have Catalog variants",
+      "Flower plants cannot have plant sizes",
     );
   }
 }
@@ -250,6 +269,7 @@ export async function createPlantVariant(input: {
   const sizeLabel = trimSizeLabel(input.sizeLabel);
   const diameter = parseDiameter(input.nurseryPotDiameterCm);
   assertVariantIdentity(sizeLabel, diameter);
+  assertCanonicalPlantSize(sizeLabel, undefined);
   await assertUniqueSizeLabel({ plantId, sizeLabel });
   const catalogPrice = parseCatalogPriceInput(input.catalogPrice);
 
@@ -294,13 +314,15 @@ export async function updatePlantVariant(input: {
     throw new PlantVariantWriteError("not_found", "Variant not found");
   }
 
+  const previousSize = existing.sizeLabel ?? null;
   const sizeLabel =
-    input.sizeLabel === undefined ? existing.sizeLabel ?? null : trimSizeLabel(input.sizeLabel);
+    input.sizeLabel === undefined ? previousSize : trimSizeLabel(input.sizeLabel);
   const diameter =
     input.nurseryPotDiameterCm === undefined
       ? existing.nurseryPotDiameterCm ?? null
       : parseDiameter(input.nurseryPotDiameterCm);
   assertVariantIdentity(sizeLabel, diameter);
+  assertCanonicalPlantSize(sizeLabel, previousSize);
   await assertUniqueSizeLabel({ plantId, sizeLabel, excludeId: variantId });
   const catalogPrice =
     input.catalogPrice === undefined

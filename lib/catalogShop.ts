@@ -7,6 +7,7 @@
 import type { CatalogCartItem, CatalogCartResolvedLine } from "@/lib/catalogCart";
 import { sql } from "@/lib/db";
 import { getInventoryQuantities } from "@/lib/inventoryStorage";
+import { catalogPlantSizeCodes, type PlantSizeLabel } from "@/lib/plantSizes";
 import type { PotSizeLabel } from "@/lib/potSizes";
 import type { LightLevel, PlantProduct } from "@/lib/types";
 
@@ -19,6 +20,8 @@ export type CatalogShopCard = {
   priceMin: number | null;
   priceMax: number | null;
   unavailable: boolean;
+  /** Distinct S/M/L rows, including unpriced sizes. Legacy labels are omitted. */
+  plantSizeCodes: PlantSizeLabel[];
   sizes: CatalogShopSize[];
 };
 
@@ -57,7 +60,6 @@ export type CatalogShopDetail = {
   water?: string;
   waterHe?: string;
   petFriendly: boolean;
-  averageSize?: PlantProduct["averageSize"];
   sizes: CatalogShopSize[];
 };
 
@@ -74,7 +76,6 @@ type PlantShopRow = {
   light: string | null;
   water: string | null;
   water_he: string | null;
-  average_size: string | null;
   pet_friendly: boolean | null;
 };
 
@@ -143,12 +144,6 @@ function parseLight(value: string | null): LightLevel | undefined {
   return undefined;
 }
 
-function parseAverageSize(value: string | null): PlantProduct["averageSize"] | undefined {
-  const raw = optionalTrimmed(value);
-  if (raw === "small" || raw === "medium" || raw === "large" || raw === "x-large") return raw;
-  return undefined;
-}
-
 function sizeRank(label: string | undefined): number {
   if (label === "S") return 0;
   if (label === "M") return 1;
@@ -171,7 +166,7 @@ async function readPublishedPlantRows(): Promise<PlantShopRow[]> {
   const rows = await sql`
     SELECT
       id, name, name_he, subtitle, subtitle_he, description, description_he,
-      currency, images, light, water, water_he, average_size, pet_friendly
+      currency, images, light, water, water_he, pet_friendly
     FROM plants
     WHERE catalog_published = true
       AND inventory_type = 'plants'
@@ -273,8 +268,12 @@ export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
     .map((variant) => optionalTrimmed(variant.size_label))
     .filter((label): label is string => Boolean(label));
   const potsByLabel = await readPotsForLabels(labels);
+  const variantsByPlant = new Map<string, VariantShopRow[]>();
   const byPlant = new Map<string, CatalogShopSize[]>();
   for (const variant of variants) {
+    const raw = variantsByPlant.get(variant.plant_id) ?? [];
+    raw.push(variant);
+    variantsByPlant.set(variant.plant_id, raw);
     const size = toSize(variant, quantities.get(variant.id) ?? 0, potsByLabel);
     if (!size) continue;
     const list = byPlant.get(variant.plant_id) ?? [];
@@ -294,6 +293,9 @@ export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
       priceMin: summary.priceMin,
       priceMax: summary.priceMax,
       unavailable: summary.unavailable,
+      plantSizeCodes: catalogPlantSizeCodes(
+        (variantsByPlant.get(plant.id) ?? []).map((row) => row.size_label),
+      ),
       sizes,
       ...(nameHe ? { nameHe } : {}),
       ...(image ? { image } : {}),
@@ -307,7 +309,7 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
   const rows = await sql`
     SELECT
       id, name, name_he, subtitle, subtitle_he, description, description_he,
-      currency, images, light, water, water_he, average_size, pet_friendly
+      currency, images, light, water, water_he, pet_friendly
     FROM plants
     WHERE id = ${trimmed}
       AND catalog_published = true
@@ -336,7 +338,6 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
   const water = optionalTrimmed(plant.water);
   const waterHe = optionalTrimmed(plant.water_he);
   const light = parseLight(plant.light);
-  const averageSize = parseAverageSize(plant.average_size);
 
   return {
     id: plant.id,
@@ -353,7 +354,6 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
     ...(water ? { water } : {}),
     ...(waterHe ? { waterHe } : {}),
     ...(light ? { light } : {}),
-    ...(averageSize ? { averageSize } : {}),
   };
 }
 

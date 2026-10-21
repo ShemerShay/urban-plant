@@ -1,4 +1,4 @@
-import { POT_SIZE_LABELS } from "@/lib/potSizes";
+import { PLANT_SIZE_LABELS, type PlantSizeLabel } from "@/lib/plantSizes";
 
 /** Keep the selected pot only when it still matches the current plant Variant. */
 export function retainCompatiblePotId(
@@ -9,14 +9,23 @@ export function retainCompatiblePotId(
   return pots.some((pot) => pot.id === selectedPotId) ? selectedPotId : null;
 }
 
-/** Real S/M/L plant variants, in that order. A repeated label is omitted. */
+/** Real S/M/L plant sizes, in that order. A repeated label is omitted. */
 export function catalogSizeChoices<T extends { sizeLabel?: string }>(sizes: T[]): T[] {
   const choices: T[] = [];
-  for (const label of POT_SIZE_LABELS) {
+  for (const label of PLANT_SIZE_LABELS) {
     const matches = sizes.filter((size) => size.sizeLabel === label);
     if (matches.length === 1 && matches[0]) choices.push(matches[0]);
   }
   return choices;
+}
+
+/** Listing filter. "all" keeps every plant. A size matches only that plant-size row. */
+export function plantMatchesCatalogSizeFilter(
+  plantSizeCodes: readonly string[],
+  filter: "all" | PlantSizeLabel,
+): boolean {
+  if (filter === "all") return true;
+  return plantSizeCodes.includes(filter);
 }
 
 /**

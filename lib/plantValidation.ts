@@ -16,12 +16,6 @@ const LIGHT_LEVELS = new Set<LightLevel>([
   "Bright indirect light",
   "Direct sun",
 ]);
-const AVERAGE_SIZES = new Set<NonNullable<PlantProduct["averageSize"]>>([
-  "small",
-  "medium",
-  "large",
-  "x-large",
-]);
 
 export type PlantParseResult =
   | { ok: true; plant: PlantProduct }
@@ -190,14 +184,6 @@ export function parsePlantBody(
   const family = cleanString(body.family);
   const supplierName = cleanString(body.supplierName);
   const baseSupplierPrice = parseOptionalNumber(body.baseSupplierPrice);
-  const averageSizeRaw = cleanString(body.averageSize);
-  let averageSize: PlantProduct["averageSize"];
-  if (averageSizeRaw) {
-    if (!AVERAGE_SIZES.has(averageSizeRaw as NonNullable<PlantProduct["averageSize"]>)) {
-      return { ok: false, error: "averageSize must be small, medium, large, or x-large" };
-    }
-    averageSize = averageSizeRaw as PlantProduct["averageSize"];
-  }
 
   if (inventoryType === "flowers") {
     const subtitle = optionalFlowerText(body, "subtitle", "subtitle");
@@ -281,7 +267,6 @@ export function parsePlantBody(
       ...(location.value ? { location: location.value } : {}),
       ...(petFriendly !== undefined ? { petFriendly } : {}),
       ...(careInstructions.value ? { careInstructions: careInstructions.value } : {}),
-      ...(averageSize ? { averageSize } : {}),
       ...(supplierName ? { supplierName } : {}),
       ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
     };
@@ -357,7 +342,6 @@ export function parsePlantBody(
     ...(subtitleHe ? { subtitleHe } : {}),
     ...(descriptionHe ? { descriptionHe } : {}),
     ...(waterHe ? { waterHe } : {}),
-    ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
   };

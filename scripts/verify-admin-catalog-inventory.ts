@@ -220,7 +220,7 @@ async function main(): Promise<void> {
 
     const created = await createPlantVariant({
       plantId: testPlantId,
-      sizeLabel: `${tag}-m`,
+      sizeLabel: "M",
       catalogPrice: 120,
     });
     variantA = created.id;
@@ -260,7 +260,7 @@ async function main(): Promise<void> {
     const second = await createPlantVariant({
       plantId: testPlantId,
       nurseryPotDiameterCm: 14,
-      sizeLabel: `${tag}-l`,
+      sizeLabel: "L",
     });
     variantB = second.id;
 
@@ -268,7 +268,7 @@ async function main(): Promise<void> {
     try {
       await createPlantVariant({
         plantId: testPlantId,
-        sizeLabel: `${tag}-m`,
+        sizeLabel: "M",
       });
     } catch (error) {
       duplicate = true;
