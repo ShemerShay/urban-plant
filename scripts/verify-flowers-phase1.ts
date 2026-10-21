@@ -36,7 +36,6 @@ const plantRequired = {
   labels: ["indoor"],
   light: "Medium light",
   water: "Weekly",
-  difficulty: "Easy",
   location: "Indoor",
   petFriendly: false,
   careInstructions: ["Water weekly"],
@@ -318,7 +317,7 @@ async function assertNullableFlowerStorage(): Promise<void> {
     assert.equal(created.description, undefined);
 
     const rows = (await sql`
-      SELECT subtitle, description, images, labels, light, water, difficulty,
+      SELECT subtitle, description, images, labels, light, water,
              location, pet_friendly, care_instructions
       FROM plants
       WHERE id = ${flowerId}
@@ -332,7 +331,6 @@ async function assertNullableFlowerStorage(): Promise<void> {
       "labels",
       "light",
       "water",
-      "difficulty",
       "location",
       "pet_friendly",
       "care_instructions",

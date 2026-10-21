@@ -180,13 +180,13 @@ async function main(): Promise<void> {
     await sql`
       INSERT INTO plants (
         id, name, name_he, subtitle, description, supplier_price, currency,
-        images, labels, light, water, difficulty, location, pet_friendly,
+        images, labels, light, water, location, pet_friendly,
         care_instructions, inventory_type, catalog_published, created_at
       )
       VALUES (
         ${plantId}, ${`Catalog Pay ${tag}`}, 'צמח', 'Verify subtitle', 'Verify description',
         18.50, 'ILS', '["https://example.com/catalog-pay.jpg"]'::jsonb, '["verify"]'::jsonb,
-        'Low light', 'Moderate', 'Easy', 'Indoor', false, '["water"]'::jsonb,
+        'Low light', 'Moderate', 'Indoor', false, '["water"]'::jsonb,
         'plants', true, now()
       )
     `;

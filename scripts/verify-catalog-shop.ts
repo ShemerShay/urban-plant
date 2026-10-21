@@ -93,7 +93,7 @@ function assertShopWiring(): void {
   assert.doesNotMatch(landing, /product_view/);
   assert.doesNotMatch(landing, /TrackProductView/);
   assert.match(landing, /TrackPosScan/);
-  assert.doesNotMatch(landing, /!plant\.difficulty/);
+  assert.doesNotMatch(landing, /difficulty/);
   assert.match(landing, /!plant\.light \|\| !plant\.images\?\.length/);
 
   const paymentPrep = read("lib/startCardcomPaymentPrep.ts");
@@ -176,7 +176,11 @@ async function main(): Promise<void> {
   const section = read("components/admin/shared/AdminManagementSection.tsx");
   assert.match(section, /text-sm font-normal text-slate-600/);
   const plantUpdate = read("app/api/plants/[plantId]/route.ts");
-  assert.match(plantUpdate, /existing\.difficulty/);
+  assert.doesNotMatch(plantUpdate, /difficulty/);
+  const plantStorage = read("lib/plantStorage.ts");
+  assert.doesNotMatch(plantStorage, /difficulty/);
+  const dropDifficulty = read("db/migrations/045_plants_drop_difficulty.sql");
+  assert.match(dropDifficulty, /DROP COLUMN IF EXISTS difficulty/);
 
   const { parsePlantBody } = await import("../lib/plantValidation");
   const plantWithoutDifficulty = parsePlantBody(
@@ -200,8 +204,8 @@ async function main(): Promise<void> {
   );
   assert.equal(plantWithoutDifficulty.ok, true);
   if (plantWithoutDifficulty.ok) {
-    assert.equal(plantWithoutDifficulty.plant.difficulty, undefined);
     assert.equal(plantWithoutDifficulty.plant.petFriendly, true);
+    assert.equal("difficulty" in plantWithoutDifficulty.plant, false);
   }
 
   await import("./stub-server-only.mjs");
@@ -258,10 +262,10 @@ async function main(): Promise<void> {
       petFriendly: nextPetFriendly,
     });
     assert.equal(petSaved?.petFriendly, nextPetFriendly);
-    assert.equal(petSaved?.difficulty, createdPlant.difficulty);
+    assert.equal("difficulty" in (petSaved ?? {}), false);
     const petReloaded = await getPlantByIdAsync(testPlantId);
     assert.equal(petReloaded?.petFriendly, nextPetFriendly);
-    assert.equal(petReloaded?.difficulty, createdPlant.difficulty);
+    assert.equal("difficulty" in (petReloaded ?? {}), false);
 
     assert.equal(
       (await readCatalogShopCards()).some((card) => card.id === testPlantId),

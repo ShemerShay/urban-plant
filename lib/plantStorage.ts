@@ -6,7 +6,7 @@ import { sql } from "@/lib/db";
 import { inventoryTypeOrDefault, type InventoryType } from "@/lib/inventoryType";
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel, PlantProduct } from "@/lib/types";
 
 export type PlantRow = {
   id: string;
@@ -26,7 +26,6 @@ export type PlantRow = {
   water_he: string | null;
   average_size: string | null;
   supplier_name: string | null;
-  difficulty: string | null;
   location: string | null;
   pet_friendly: boolean | null;
   care_instructions: unknown;
@@ -106,12 +105,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     lightRaw === "Direct sun"
       ? (lightRaw as LightLevel)
       : undefined;
-  const difficultyRaw = optionalTrimmed(row.difficulty);
-  const difficulty =
-    difficultyRaw === "Easy" || difficultyRaw === "Moderate" || difficultyRaw === "Advanced"
-      ? (difficultyRaw as CareLevel)
-      : undefined;
-
   return {
     id: row.id,
     name: row.name,
@@ -124,7 +117,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     ...(labels ? { labels } : {}),
     ...(light ? { light } : {}),
     ...(water ? { water } : {}),
-    ...(difficulty ? { difficulty } : {}),
     ...(location ? { location } : {}),
     ...(row.pet_friendly === true || row.pet_friendly === false
       ? { petFriendly: row.pet_friendly }
@@ -170,7 +162,7 @@ export async function readPlants(filter?: {
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
           supplier_price, currency, images, labels, light, water, water_he, average_size,
-          supplier_name, difficulty, location, pet_friendly,
+          supplier_name, location, pet_friendly,
           care_instructions, created_at, inventory_type, catalog_published
         FROM plants
         WHERE inventory_type = ${filter.inventoryType}
@@ -180,7 +172,7 @@ export async function readPlants(filter?: {
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
           supplier_price, currency, images, labels, light, water, water_he, average_size,
-          supplier_name, difficulty, location, pet_friendly,
+          supplier_name, location, pet_friendly,
           care_instructions, created_at, inventory_type, catalog_published
         FROM plants
         ORDER BY name ASC
@@ -202,7 +194,7 @@ export async function getPlantByIdAsync(id: string): Promise<PlantProduct | unde
     SELECT
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
+      supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
     FROM plants
     WHERE id = ${trimmed}
@@ -228,7 +220,7 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
     INSERT INTO plants (
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
+      supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
     )
     VALUES (
@@ -249,7 +241,6 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.waterHe ?? null},
       ${plant.averageSize ?? null},
       ${plant.supplierName ?? null},
-      ${plant.difficulty ?? null},
       ${plant.location ?? null},
       ${plant.petFriendly ?? null},
       ${careJson}::jsonb,
@@ -260,7 +251,7 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
+      supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
   `;
   const row = (rows as PlantRow[])[0];
@@ -302,7 +293,6 @@ export async function updatePlant(
       water_he = ${plant.waterHe ?? null},
       average_size = ${plant.averageSize ?? null},
       supplier_name = ${plant.supplierName ?? null},
-      difficulty = ${plant.difficulty ?? null},
       location = ${plant.location ?? null},
       pet_friendly = ${plant.petFriendly ?? null},
       care_instructions = ${careJson}::jsonb,
@@ -311,7 +301,7 @@ export async function updatePlant(
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
       supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
+      supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
   `;
   const row = (rows as PlantRow[])[0];

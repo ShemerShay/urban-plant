@@ -1,6 +1,5 @@
 import type { InventoryType } from "@/lib/inventoryType";
 
-export type CareLevel = "Easy" | "Moderate" | "Advanced";
 export type LightLevel =
   | "Low light"
   | "Medium light"
@@ -30,7 +29,6 @@ export interface PlantProduct {
   supplierName?: string;
   baseSupplierPrice?: number;
   createdAt?: string;
-  difficulty?: CareLevel;
   location?: string;
   petFriendly?: boolean;
   careInstructions?: string[];

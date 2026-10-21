@@ -60,7 +60,6 @@ function normalizePlant(raw) {
   if (!careInstructions) throw new Error(`Plant ${id}: careInstructions required`);
 
   const currency = typeof raw.currency === "string" ? raw.currency.trim() : "";
-  const difficulty = typeof raw.difficulty === "string" ? raw.difficulty.trim() : "";
   const light = typeof raw.light === "string" ? raw.light.trim() : "";
 
   return {
@@ -83,7 +82,6 @@ function normalizePlant(raw) {
       typeof raw.supplierName === "string" && raw.supplierName.trim()
         ? raw.supplierName.trim()
         : null,
-    difficulty,
     location: typeof raw.location === "string" ? raw.location.trim() : "",
     petFriendly: raw.petFriendly === true,
     careInstructions,
@@ -129,7 +127,7 @@ for (const item of parsed) {
     INSERT INTO plants (
       id, name, family, subtitle, description, supplier_price, currency,
       images, labels, light, water, average_size,
-      supplier_name, difficulty, location, pet_friendly,
+      supplier_name, location, pet_friendly,
       care_instructions, created_at
     )
     VALUES (
@@ -146,7 +144,6 @@ for (const item of parsed) {
       ${plant.water},
       ${plant.averageSize},
       ${plant.supplierName},
-      ${plant.difficulty},
       ${plant.location},
       ${plant.petFriendly},
       ${careJson}::jsonb,
@@ -165,7 +162,6 @@ for (const item of parsed) {
       water = EXCLUDED.water,
       average_size = EXCLUDED.average_size,
       supplier_name = EXCLUDED.supplier_name,
-      difficulty = EXCLUDED.difficulty,
       location = EXCLUDED.location,
       pet_friendly = EXCLUDED.pet_friendly,
       care_instructions = EXCLUDED.care_instructions,
