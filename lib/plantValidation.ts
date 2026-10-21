@@ -1,5 +1,5 @@
 import { parseInventoryType } from "@/lib/inventoryType";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel, PlantProduct } from "@/lib/types";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -10,7 +10,6 @@ function isValidPlantId(id: string): boolean {
   return UUID_PATTERN.test(id) || LEGACY_PLANT_ID_PATTERN.test(id);
 }
 const CURRENCIES = new Set<PlantProduct["currency"]>(["ILS", "USD", "EUR"]);
-const DIFFICULTIES = new Set<CareLevel>(["Easy", "Moderate", "Advanced"]);
 const LIGHT_LEVELS = new Set<LightLevel>([
   "Low light",
   "Medium light",
@@ -244,23 +243,6 @@ export function parsePlantBody(
       }
     }
 
-    let difficulty: CareLevel | undefined;
-    const difficultyField = readBodyField(body, "difficulty", "difficulty");
-    if (!difficultyField.omitted) {
-      if (difficultyField.value === null) {
-        difficulty = undefined;
-      } else {
-        const difficultyRaw = cleanString(difficultyField.value);
-        if (!difficultyRaw) {
-          return { ok: false, error: "difficulty must be omitted, null, or Easy, Moderate, or Advanced" };
-        }
-        if (!DIFFICULTIES.has(difficultyRaw as CareLevel)) {
-          return { ok: false, error: "difficulty must be Easy, Moderate, or Advanced" };
-        }
-        difficulty = difficultyRaw as CareLevel;
-      }
-    }
-
     let petFriendly: boolean | undefined;
     const petField = readBodyField(body, "petFriendly", "pet_friendly");
     if (!petField.omitted) {
@@ -296,7 +278,6 @@ export function parsePlantBody(
       ...(light ? { light } : {}),
       ...(water.value ? { water: water.value } : {}),
       ...(waterHe.value ? { waterHe: waterHe.value } : {}),
-      ...(difficulty ? { difficulty } : {}),
       ...(location.value ? { location: location.value } : {}),
       ...(petFriendly !== undefined ? { petFriendly } : {}),
       ...(careInstructions.value ? { careInstructions: careInstructions.value } : {}),
@@ -319,11 +300,6 @@ export function parsePlantBody(
   const subtitleHe = cleanString(body.subtitleHe ?? body.subtitle_he);
   const descriptionHe = cleanString(body.descriptionHe ?? body.description_he);
   const waterHe = cleanString(body.waterHe ?? body.water_he);
-
-  const difficultyRaw = cleanString(body.difficulty);
-  if (!DIFFICULTIES.has(difficultyRaw as CareLevel)) {
-    return { ok: false, error: "difficulty must be Easy, Moderate, or Advanced" };
-  }
 
   const lightRaw = cleanString(body.light);
   if (!LIGHT_LEVELS.has(lightRaw as LightLevel)) {
@@ -372,7 +348,6 @@ export function parsePlantBody(
     labels,
     light: lightRaw as LightLevel,
     water: water.value,
-    difficulty: difficultyRaw as CareLevel,
     location: location.value,
     petFriendly,
     careInstructions,

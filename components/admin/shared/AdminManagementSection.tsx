@@ -34,7 +34,7 @@ export function AdminManagementSection({
       <h2 className="flex flex-wrap items-baseline text-lg font-semibold text-emerald-950">
         <span>{title}</span>
         {titleMeta ? (
-          <span className="font-normal text-slate-600">
+          <span className="text-sm font-normal text-slate-600">
             <span className="mx-1.5 text-slate-400" aria-hidden="true">
               ·
             </span>

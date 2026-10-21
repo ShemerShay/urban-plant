@@ -8,6 +8,7 @@ import { PlantHero } from "@/components/plant/PlantHero";
 import { PlantImageGallery } from "@/components/plant/PlantImageGallery";
 import { PlantProductAbout } from "@/components/plant/PlantProductAbout";
 import { PlantProductInfoGrid } from "@/components/plant/PlantProductInfoGrid";
+import { CatalogSizeOptions } from "@/components/shop/CatalogSizeOptions";
 import {
   ANALYTICS_EVENTS,
   captureAnalyticsEvent,
@@ -15,64 +16,11 @@ import {
 import { addCatalogCartItem, catalogCartItemKey, catalogCartLineAmount } from "@/lib/catalogCart";
 import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
 import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
-import type { CatalogShopDetail, CatalogShopPotOption, CatalogShopSize } from "@/lib/catalogShop";
-import { retainCompatiblePotId } from "@/lib/catalogShopSelection";
+import type { CatalogShopDetail, CatalogShopPotOption } from "@/lib/catalogShop";
+import { catalogSizeChoices, retainCompatiblePotId } from "@/lib/catalogShopSelection";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
 import type { Locale } from "@/lib/locale";
-
-function sizeButtonLabel(size: CatalogShopSize): string {
-  const label = size.sizeLabel?.trim();
-  if (label) return label;
-  if (size.nurseryPotDiameterCm != null) return String(size.nurseryPotDiameterCm);
-  return "";
-}
-
-function SizeSelector({
-  sizes,
-  selectedId,
-  onSelect,
-  locale,
-}: {
-  sizes: CatalogShopSize[];
-  selectedId: string;
-  onSelect: (id: string) => void;
-  locale: Locale;
-}) {
-  return (
-    <section className="w-full">
-      <h2 id="shop-size-heading" className="text-heading-sm font-medium text-foreground">
-        {t(locale, "shop.sizes")}
-      </h2>
-      <div
-        className="mt-4 flex flex-wrap items-center justify-center gap-2"
-        role="radiogroup"
-        aria-labelledby="shop-size-heading"
-      >
-        {sizes.map((size) => {
-          const selected = size.id === selectedId;
-          const label = sizeButtonLabel(size);
-          return (
-            <button
-              key={size.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              onClick={() => onSelect(size.id)}
-              className={`text-body flex h-10 min-w-10 items-center justify-center rounded-2xl px-2.5 font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
-                selected
-                  ? "bg-brand text-white"
-                  : "bg-neutral-100 text-foreground hover:bg-neutral-200/80"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
 
 function PotSelector({
   pots,
@@ -137,7 +85,8 @@ const ctaFocusClass =
 export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; locale: Locale }) {
   const posthog = usePostHog();
   const cart = useCatalogCart();
-  const [selectedSizeId, setSelectedSizeId] = useState(plant.sizes[0]?.id ?? "");
+  const sizeOptions = catalogSizeChoices(plant.sizes);
+  const [selectedSizeId, setSelectedSizeId] = useState(sizeOptions[0]?.id ?? "");
   const [selectedPotId, setSelectedPotId] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
 
@@ -145,8 +94,8 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   const subtitle = localizedPlantText(locale, plant.subtitle, plant.subtitleHe);
   const description = localizedPlantText(locale, plant.description, plant.descriptionHe);
   const water = localizedPlantText(locale, plant.water, plant.waterHe);
-  const showCare = Boolean(plant.light && plant.difficulty && water);
-  const selectedSize = plant.sizes.find((size) => size.id === selectedSizeId) ?? plant.sizes[0];
+  const showCare = Boolean(plant.light && water);
+  const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId) ?? sizeOptions[0];
   const compatiblePots = selectedSize?.pots ?? [];
   const selectedPot = selectedPotId
     ? compatiblePots.find((pot) => pot.id === selectedPotId)
@@ -173,7 +122,7 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   }, [justAdded]);
 
   function selectSize(id: string) {
-    const nextSize = plant.sizes.find((size) => size.id === id);
+    const nextSize = sizeOptions.find((size) => size.id === id);
     setSelectedSizeId(id);
     setSelectedPotId(retainCompatiblePotId(selectedPotId, nextSize?.pots ?? []));
   }
@@ -232,12 +181,18 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
 
         {selectedSize ? (
           <>
-            <SizeSelector
-              sizes={plant.sizes}
-              selectedId={selectedSize.id}
-              onSelect={selectSize}
-              locale={locale}
-            />
+            <section className="w-full">
+              <h2 id="shop-size-heading" className="text-heading-sm font-medium text-foreground">
+                {t(locale, "shop.sizes")}
+              </h2>
+              <CatalogSizeOptions
+                sizes={plant.sizes}
+                selectedId={selectedSize.id}
+                onSelect={selectSize}
+                locale={locale}
+                labelledBy="shop-size-heading"
+              />
+            </section>
 
             <div className="w-full">
               <p className="text-heading-sm font-medium text-foreground">
@@ -280,7 +235,7 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
           </>
         ) : null}
 
-        {description || (showCare && plant.light && plant.difficulty) ? (
+        {description || (showCare && plant.light) ? (
           <div className="mt-8 w-full border-t border-neutral-200 pt-12">
             {description ? (
               <div className="w-full">
@@ -288,12 +243,12 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
               </div>
             ) : null}
 
-            {showCare && plant.light && plant.difficulty ? (
+            {showCare && plant.light ? (
               <div className={description ? "mt-12 w-full" : "w-full"}>
                 <PlantProductInfoGrid
                   light={plant.light}
                   water={water}
-                  difficulty={plant.difficulty}
+                  petFriendly={plant.petFriendly}
                   averageSize={plant.averageSize}
                 />
               </div>

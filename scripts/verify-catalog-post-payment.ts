@@ -427,13 +427,13 @@ async function main(): Promise<void> {
     await sql`
       INSERT INTO plants (
         id, name, name_he, subtitle, description, supplier_price, currency,
-        images, labels, light, water, difficulty, location, pet_friendly,
+        images, labels, light, water, location, pet_friendly,
         care_instructions, inventory_type, catalog_published, created_at
       )
       VALUES (
         ${plantId}, ${originalName}, 'צמח', 'Verify subtitle', 'Verify description',
         18.50, 'ILS', '["https://example.com/catalog-doc.jpg"]'::jsonb, '["verify"]'::jsonb,
-        'Low light', 'Moderate', 'Easy', 'Indoor', false,
+        'Low light', 'Moderate', 'Indoor', false,
         ${JSON.stringify(["Water when the top soil feels dry."])}::jsonb,
         'plants', true, now()
       )
@@ -455,13 +455,13 @@ async function main(): Promise<void> {
     await sql`
       INSERT INTO plants (
         id, name, name_he, subtitle, description, supplier_price, currency,
-        images, labels, light, water, difficulty, location, pet_friendly,
+        images, labels, light, water, location, pet_friendly,
         care_instructions, inventory_type, catalog_published, created_at
       )
       VALUES (
         ${plantId2}, ${secondName}, 'שרך', 'Second plant', 'Second description',
         12, 'ILS', '["https://example.com/catalog-doc-b.jpg"]'::jsonb, '["verify"]'::jsonb,
-        'Low light', 'Moderate', 'Easy', 'Indoor', true,
+        'Low light', 'Moderate', 'Indoor', true,
         ${JSON.stringify([careB])}::jsonb,
         'plants', true, now()
       )

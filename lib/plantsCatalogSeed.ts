@@ -16,7 +16,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Easy to care", "Medium", "Statement leaves"],
     light: "Bright indirect light",
     water: "Every 4–6 days",
-    difficulty: "Easy",
     location: "Near a bright window",
     petFriendly: false,
     careInstructions: [
@@ -41,7 +40,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Moderate care", "Medium", "Tropical"],
     light: "Medium light",
     water: "Every 4-6 days",
-    difficulty: "Moderate",
     location: "Warm spot with indirect light",
     petFriendly: false,
     careInstructions: [
@@ -68,7 +66,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Easy to care", "Small", "Trailing"],
     light: "Low light",
     water: "Every 3-5 days",
-    difficulty: "Easy",
     location: "Bright indirect spot",
     petFriendly: false,
     careInstructions: [
@@ -93,7 +90,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Easy to care", "Small", "Flowering plant"],
     light: "Direct sun",
     water: "Every 5-7 days",
-    difficulty: "Moderate",
     location: "Near a bright window",
     petFriendly: false,
     careInstructions: [
