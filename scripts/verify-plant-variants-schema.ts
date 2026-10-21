@@ -29,7 +29,9 @@ function assertCheckoutUnchanged(): void {
   assert.match(landing, /posSpot\.currentOfferId/);
 
   const plants = read("lib/types.ts");
-  assert.match(plants, /averageSize\?:/);
+  assert.doesNotMatch(plants, /averageSize/);
+  assert.doesNotMatch(read("lib/plantStorage.ts"), /average_size/);
+  assert.doesNotMatch(read("lib/plantValidation.ts"), /averageSize/);
   assert.match(plants, /supplierPrice: number/);
 
   console.log("verify-plant-variants-schema: checkout/payment still use offer product_id + consumer_price");

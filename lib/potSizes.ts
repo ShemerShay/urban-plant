@@ -1,4 +1,4 @@
-/** Decorative pot sizes. Plant variants stay free-text; shop matching is exact equality. */
+/** Decorative pot sizes. Shop pot matching is exact size_label equality. */
 export const POT_SIZE_LABELS = ["S", "M", "L"] as const;
 
 export type PotSizeLabel = (typeof POT_SIZE_LABELS)[number];

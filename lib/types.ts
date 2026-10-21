@@ -25,7 +25,6 @@ export interface PlantProduct {
   light?: LightLevel;
   water?: string;
   waterHe?: string;
-  averageSize?: "small" | "medium" | "large" | "x-large";
   supplierName?: string;
   baseSupplierPrice?: number;
   createdAt?: string;

@@ -245,7 +245,7 @@ async function main(): Promise<void> {
     });
     const unpriced = await createPlantVariant({
       plantId: testPlantId,
-      sizeLabel: "bare",
+      sizeLabel: "L",
       nurseryPotDiameterCm: 8,
     });
     variantIds.push(small.id, medium.id, unpriced.id);

@@ -23,16 +23,25 @@ function assertShopWiring(): void {
   assert.doesNotMatch(shop, /supplier_price/);
   assert.doesNotMatch(shop, /nursery_pot_diameter_cm = /);
   assert.match(shop, /pv\.size_label = ANY/);
+  assert.match(shop, /plantSizeCodes/);
+  assert.doesNotMatch(shop, /average_size/);
+  assert.doesNotMatch(shop, /averageSize/);
 
   const shopPage = read("app/shop/page.tsx");
   assert.match(shopPage, /readCatalogShopCards/);
   assert.match(shopPage, /max-w-5xl/);
   assert.match(shopPage, /ShopCatalogBar/);
+  assert.match(shopPage, /ShopCatalogGrid/);
   assert.doesNotMatch(shopPage, /href=\"\/cart\"/);
   assert.doesNotMatch(shopPage, /TrackProductView/);
   assert.doesNotMatch(shopPage, /product_view/);
   assert.doesNotMatch(shopPage, /PosPlantLanding/);
   assert.doesNotMatch(shopPage, /TrackPosScan/);
+
+  const grid = read("components/shop/ShopCatalogGrid.tsx");
+  assert.match(grid, /plantMatchesCatalogSizeFilter/);
+  assert.match(grid, /plantSizeCodes/);
+  assert.doesNotMatch(grid, /averageSize/);
 
   const detailPage = read("app/shop/plants/[plantId]/page.tsx");
   assert.match(detailPage, /readCatalogShopDetail/);
@@ -103,8 +112,13 @@ function assertShopWiring(): void {
   assert.doesNotMatch(offerStorage, /pot_variants/);
   const variants = read("lib/plantVariantStorage.ts");
   assert.match(variants, /A variant needs a size label or a nursery pot diameter/);
+  assert.match(variants, /sizeLabel must be S, M, or L/);
   assert.doesNotMatch(variants, /pot_variants/);
   assert.doesNotMatch(variants, /size_label IN \('S'/);
+  const sizePanel = read("components/admin/AdminPlantVariantsPanel.tsx");
+  assert.match(sizePanel, /PLANT_SIZE_LABELS/);
+  assert.match(sizePanel, /isPlantSizeLabel/);
+  assert.doesNotMatch(sizePanel, /setSizeLabel\(e\.target\.value\)/);
 
   const migration = read("db/migrations/041_pots.sql");
   assert.match(migration, /catalog_price > 0/);
@@ -123,9 +137,8 @@ function assertShopWiring(): void {
 async function main(): Promise<void> {
   assertShopWiring();
 
-  const { retainCompatiblePotId, catalogSizeChoices, uniquePotColorChoices } = await import(
-    "../lib/catalogShopSelection"
-  );
+  const { retainCompatiblePotId, catalogSizeChoices, uniquePotColorChoices, plantMatchesCatalogSizeFilter } =
+    await import("../lib/catalogShopSelection");
   assert.equal(retainCompatiblePotId(null, [{ id: "pot-a" }]), null);
   assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-a" }, { id: "pot-b" }]), "pot-a");
   assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-b" }]), null);
@@ -142,6 +155,11 @@ async function main(): Promise<void> {
     catalogSizeChoices([{ sizeLabel: "S" }, { sizeLabel: "S" }]),
     [],
   );
+  assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "all"), true);
+  assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "S"), true);
+  assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "M"), true);
+  assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "L"), false);
+  assert.equal(plantMatchesCatalogSizeFilter(["XL", "Medium"], "S"), false);
   const uniqueColors = uniquePotColorChoices([
     { id: "white", color: "White" },
     { id: "black", color: "Black" },
@@ -216,7 +234,9 @@ async function main(): Promise<void> {
   const { createPlant, deletePlant, getPlantByIdAsync, updatePlant } = await import(
     "../lib/plantStorage"
   );
-  const { createPlantVariant, updatePlantVariant } = await import("../lib/plantVariantStorage");
+  const { PlantVariantWriteError, createPlantVariant, updatePlantVariant } = await import(
+    "../lib/plantVariantStorage"
+  );
   const { applyInventoryDelta } = await import("../lib/inventoryStorage");
   const { readCatalogShopCards, readCatalogShopDetail } = await import("../lib/catalogShop");
   const { PotWriteError, createPot, createPotVariant } = await import("../lib/potStorage");
@@ -256,6 +276,7 @@ async function main(): Promise<void> {
       catalogPublished: false,
       createdAt: new Date().toISOString(),
     });
+    await sql`UPDATE plants SET average_size = 'x-large' WHERE id = ${testPlantId}`;
     const nextPetFriendly = createdPlant.petFriendly !== true;
     const petSaved = await updatePlant(testPlantId, {
       ...createdPlant,
@@ -297,17 +318,47 @@ async function main(): Promise<void> {
     assert.equal(onePrice.priceMax, 40);
     assert.equal(onePrice.unavailable, true);
 
-    const bare = await createPlantVariant({
-      plantId: testPlantId,
-      sizeLabel: "bare",
-      nurseryPotDiameterCm: 8,
-    });
+    let bareRejected = false;
+    try {
+      await createPlantVariant({
+        plantId: testPlantId,
+        sizeLabel: "bare",
+        nurseryPotDiameterCm: 8,
+      });
+    } catch (error) {
+      bareRejected = true;
+      assert.ok(error instanceof PlantVariantWriteError);
+      assert.equal(error.code, "invalid_size_label");
+    }
+    assert.equal(bareRejected, true);
+
+    let diameterOnlyRejected = false;
+    try {
+      await createPlantVariant({
+        plantId: testPlantId,
+        nurseryPotDiameterCm: 8,
+      });
+    } catch (error) {
+      diameterOnlyRejected = true;
+      assert.ok(error instanceof PlantVariantWriteError);
+      assert.equal(error.code, "invalid_size_label");
+    }
+    assert.equal(diameterOnlyRejected, true);
+
+    const legacyBare = await sql`
+      INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm)
+      VALUES (${testPlantId}, 'bare', 8)
+      RETURNING id, catalog_price
+    `;
+    const bare = (legacyBare as { id: string; catalog_price: string | null }[])[0];
+    assert.ok(bare);
     variantIds.push(bare.id);
-    assert.equal(bare.catalogPrice ?? null, null);
+    assert.equal(bare.catalog_price ?? null, null);
     const stillOne = await readCatalogShopDetail(testPlantId);
     assert.ok(stillOne);
     assert.equal(stillOne.sizes.length, 1);
     assert.equal(stillOne.sizes[0]?.catalogPrice, 40);
+    assert.equal("averageSize" in stillOne, false);
 
     const medium = await createPlantVariant({
       plantId: testPlantId,
@@ -315,18 +366,42 @@ async function main(): Promise<void> {
       nurseryPotDiameterCm: 17,
       catalogPrice: 90,
     });
+    const withSmallAndMedium = (await readCatalogShopCards()).find(
+      (card) => card.id === testPlantId,
+    );
+    assert.ok(withSmallAndMedium);
+    assert.deepEqual(withSmallAndMedium.plantSizeCodes, ["S", "M"]);
+    assert.equal(plantMatchesCatalogSizeFilter(withSmallAndMedium.plantSizeCodes, "S"), true);
+    assert.equal(plantMatchesCatalogSizeFilter(withSmallAndMedium.plantSizeCodes, "M"), true);
+    assert.equal(plantMatchesCatalogSizeFilter(withSmallAndMedium.plantSizeCodes, "L"), false);
+
     const large = await createPlantVariant({
       plantId: testPlantId,
       sizeLabel: "L",
       nurseryPotDiameterCm: 21,
       catalogPrice: 70,
     });
-    const extra = await createPlantVariant({
-      plantId: testPlantId,
-      sizeLabel: "XL",
-      nurseryPotDiameterCm: 30,
-      catalogPrice: 15,
-    });
+    let xlRejected = false;
+    try {
+      await createPlantVariant({
+        plantId: testPlantId,
+        sizeLabel: "XL",
+        nurseryPotDiameterCm: 30,
+        catalogPrice: 15,
+      });
+    } catch (error) {
+      xlRejected = true;
+      assert.ok(error instanceof PlantVariantWriteError);
+      assert.equal(error.code, "invalid_size_label");
+    }
+    assert.equal(xlRejected, true);
+    const legacyXl = await sql`
+      INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm, catalog_price)
+      VALUES (${testPlantId}, 'XL', 30, 15)
+      RETURNING id
+    `;
+    const extra = (legacyXl as { id: string }[])[0];
+    assert.ok(extra);
     variantIds.push(medium.id, large.id, extra.id);
     await applyInventoryDelta({ variantId: medium.id, delta: 2, note: `${tag} receive` });
 
@@ -392,6 +467,7 @@ async function main(): Promise<void> {
     const cardWithPots = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
     assert.ok(cardWithPots);
     assert.equal(cardWithPots.sizes.some((size) => size.sizeLabel === "XL"), true);
+    assert.deepEqual(cardWithPots.plantSizeCodes, ["S", "M", "L"]);
     const cardSizes = catalogSizeChoices(cardWithPots.sizes);
     assert.deepEqual(
       cardSizes.map((size) => size.sizeLabel),
@@ -447,14 +523,37 @@ async function main(): Promise<void> {
     const soldOutDetail = await readCatalogShopDetail(testPlantId);
     assert.equal(soldOutDetail?.sizes.find((size) => size.sizeLabel === "M")?.quantity, 0);
 
-    await updatePlantVariant({
+    const keptLegacy = await updatePlantVariant({
       plantId: testPlantId,
       variantId: extra.id,
       sizeLabel: "XL",
     });
+    assert.equal(keptLegacy.sizeLabel, "XL");
+    let remapRejected = false;
+    try {
+      await updatePlantVariant({
+        plantId: testPlantId,
+        variantId: extra.id,
+        sizeLabel: "Huge",
+      });
+    } catch (error) {
+      remapRejected = true;
+      assert.ok(error instanceof PlantVariantWriteError);
+      assert.equal(error.code, "invalid_size_label");
+    }
+    assert.equal(remapRejected, true);
+    const stillLegacy = await sql`
+      SELECT size_label FROM plant_variants WHERE id = ${extra.id}::uuid
+    `;
+    assert.equal((stillLegacy as { size_label: string }[])[0]?.size_label, "XL");
     const current = await getPlantByIdAsync(testPlantId);
     assert.ok(current);
+    assert.equal("averageSize" in current, false);
     await updatePlant(testPlantId, { ...current, catalogPublished: false });
+    const storedAverage = await sql`
+      SELECT average_size FROM plants WHERE id = ${testPlantId}
+    `;
+    assert.equal((storedAverage as { average_size: string }[])[0]?.average_size, "x-large");
     assert.equal(
       (await readCatalogShopCards()).some((card) => card.id === testPlantId),
       false,

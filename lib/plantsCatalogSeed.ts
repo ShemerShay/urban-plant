@@ -23,7 +23,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
       "Water when the top soil feels dry.",
       "Wipe leaves occasionally for shine.",
     ],
-    averageSize: "medium",
   },
   {
     id: "alocasia",
@@ -47,14 +46,12 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
       "Higher humidity helps leaf edges stay crisp.",
       "Rotate weekly for even growth.",
     ],
-    averageSize: "medium",
   },
   {
     id: "asparagus",
     name: "Asparagus fern",
     family: "Asparagaceae",
     subtitle: "Soft airy texture",
-    averageSize: "small",
     description:
       "Feathery, delicate foliage that adds movement and a relaxed botanical vibe to tight spaces.",
     supplierPrice: 89,
@@ -98,7 +95,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
       "Rotate the pot weekly for balanced growth.",
       "Wipe leaves gently once a month to remove dust.",
     ],
-    averageSize: "large",
   },
 ];
 

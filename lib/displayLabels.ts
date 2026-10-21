@@ -14,7 +14,7 @@ import type { OrderChannel } from "@/lib/orderSaleIdentity";
 import type { PurchaseEmailStatus } from "@/lib/orderTypes";
 import type { InventoryStatus, OrderStatus, PlantStatus } from "@/lib/status";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
-import type { LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel } from "@/lib/types";
 
 export function inventoryStatusLabel(locale: Locale, status: InventoryStatus): string {
   switch (status) {
@@ -73,21 +73,6 @@ export function lightLabel(locale: Locale, light: LightLevel): string {
       return t(locale, "plant.light.brightIndirect");
     case "Direct sun":
       return t(locale, "plant.light.directSun");
-  }
-}
-
-export function sizeLabel(locale: Locale, averageSize: PlantProduct["averageSize"]): string {
-  switch (averageSize) {
-    case "small":
-      return t(locale, "plant.size.small");
-    case "medium":
-      return t(locale, "plant.size.medium");
-    case "large":
-      return t(locale, "plant.size.large");
-    case "x-large":
-      return t(locale, "plant.size.xlarge");
-    default:
-      return "";
   }
 }
 

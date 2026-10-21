@@ -7,6 +7,7 @@ import { useLocale } from "@/components/locale/LocaleProvider";
 import { displayApiError } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
+import { isPlantSizeLabel, PLANT_SIZE_LABELS } from "@/lib/plantSizes";
 import { routes } from "@/lib/routes";
 import type { Locale } from "@/lib/locale";
 import type { PlantProduct } from "@/lib/types";
@@ -20,13 +21,43 @@ type VariantRow = {
   quantity: number;
 };
 
-function variantLabel(variant: VariantRow): string {
+function variantLabel(variant: VariantRow, fallback: string): string {
   const size = variant.sizeLabel?.trim();
   const cm = variant.nurseryPotDiameterCm;
   if (size && cm != null) return `${size} (${cm} cm)`;
   if (size) return size;
   if (cm != null) return `${cm} cm`;
-  return "Variant";
+  return fallback;
+}
+
+function PlantSizeSelect({
+  value,
+  onChange,
+  label,
+  inputClassName,
+  labelClassName,
+  allowEmpty,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  inputClassName: string;
+  labelClassName: string;
+  allowEmpty?: boolean;
+}) {
+  return (
+    <label>
+      <span className={labelClassName}>{label}</span>
+      <select className={inputClassName} value={value} onChange={(e) => onChange(e.target.value)}>
+        {allowEmpty ? <option value="">—</option> : null}
+        {PLANT_SIZE_LABELS.map((size) => (
+          <option key={size} value={size}>
+            {size}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 type VariantsApiResponse = {
@@ -158,7 +189,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sizeLabel: editSize.trim() ? editSize.trim() : null,
+          ...(isPlantSizeLabel(editSize) ? { sizeLabel: editSize } : {}),
           nurseryPotDiameterCm: editDiameter.trim() ? Number(editDiameter) : null,
           catalogPrice: editPrice.trim() ? Number(editPrice) : null,
         }),
@@ -246,14 +277,25 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
             <li key={variant.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
               {editingId === variant.id ? (
                 <div className="grid gap-2 sm:grid-cols-3">
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.plants.variants.sizeLabel")}</span>
-                    <input
-                      className={inputClassName}
+                  {isPlantSizeLabel(variant.sizeLabel) ? (
+                    <PlantSizeSelect
                       value={editSize}
-                      onChange={(e) => setEditSize(e.target.value)}
+                      onChange={setEditSize}
+                      label={t(locale, "admin.plants.variants.sizeLabel")}
+                      inputClassName={inputClassName}
+                      labelClassName={labelClassName}
                     />
-                  </label>
+                  ) : (
+                    <div>
+                      <span className={labelClassName}>
+                        {t(locale, "admin.plants.variants.sizeLabel")}
+                      </span>
+                      <p className="mt-1 text-sm text-slate-800">{variant.sizeLabel?.trim() || "—"}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {t(locale, "admin.plants.variants.legacyKept")}
+                      </p>
+                    </div>
+                  )}
                   <label>
                     <span className={labelClassName}>{t(locale, "admin.plants.variants.diameter")}</span>
                     <input
@@ -279,7 +321,9 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                 </div>
               ) : (
                 <div className="text-sm text-slate-800">
-                  <p className="font-medium text-emerald-950">{variantLabel(variant)}</p>
+                  <p className="font-medium text-emerald-950">
+                    {variantLabel(variant, t(locale, "admin.plants.variants.sizeLabel"))}
+                  </p>
                   <p className="mt-1 text-xs text-slate-600">
                     {t(locale, "admin.plants.variants.catalogPrice")}:{" "}
                     {catalogPriceText(variant, plant, locale)}
@@ -406,14 +450,14 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
           {t(locale, "admin.plants.variants.new")}
         </h4>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          <label>
-            <span className={labelClassName}>{t(locale, "admin.plants.variants.sizeLabel")}</span>
-            <input
-              className={inputClassName}
-              value={sizeLabel}
-              onChange={(e) => setSizeLabel(e.target.value)}
-            />
-          </label>
+          <PlantSizeSelect
+            value={sizeLabel}
+            onChange={setSizeLabel}
+            label={t(locale, "admin.plants.variants.sizeLabel")}
+            inputClassName={inputClassName}
+            labelClassName={labelClassName}
+            allowEmpty
+          />
           <label>
             <span className={labelClassName}>{t(locale, "admin.plants.variants.diameter")}</span>
             <input
@@ -441,7 +485,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         <button
           type="button"
           onClick={() => void handleCreate()}
-          disabled={isCreating}
+          disabled={isCreating || !isPlantSizeLabel(sizeLabel)}
           className="mt-3 rounded-xl bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
         >
           {isCreating
