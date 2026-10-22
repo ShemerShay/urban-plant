@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminRequest } from "@/lib/adminAuth";
-import { PotWriteError, createPotVariant, potWriteHttp } from "@/lib/potStorage";
+import { createPotColor } from "@/lib/potSizeStorage";
+import { PotWriteError, potWriteHttp } from "@/lib/potStorage";
 
 interface RouteParams {
-  params: Promise<{ potId: string }>;
+  params: Promise<{ potId: string; sizeId: string }>;
 }
 
 function unauthorized() {
@@ -13,8 +14,9 @@ function unauthorized() {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   if (!isAdminRequest(request)) return unauthorized();
-  const { potId: rawId } = await params;
-  const potId = decodeURIComponent(rawId).trim();
+  const { potId: rawPotId, sizeId: rawSizeId } = await params;
+  const potId = decodeURIComponent(rawPotId).trim();
+  const sizeId = decodeURIComponent(rawSizeId).trim();
   let body: unknown;
   try {
     body = await request.json();
@@ -26,20 +28,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
   const record = body as Record<string, unknown>;
   try {
-    const variant = await createPotVariant({
+    const color = await createPotColor({
       potId,
-      sizeLabel: record.sizeLabel ?? record.size_label,
+      sizeId,
       color: record.color,
       colorHe: record.colorHe ?? record.color_he,
-      catalogPrice: record.catalogPrice ?? record.catalog_price,
     });
-    return NextResponse.json({ variant }, { status: 201 });
+    return NextResponse.json({ color }, { status: 201 });
   } catch (error) {
     if (error instanceof PotWriteError) {
       const mapped = potWriteHttp(error);
       return NextResponse.json({ error: mapped.error }, { status: mapped.status });
     }
-    const message = error instanceof Error ? error.message : "Could not create pot variant";
+    const message = error instanceof Error ? error.message : "Could not create color";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

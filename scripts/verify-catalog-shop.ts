@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -128,8 +128,8 @@ function assertShopWiring(): void {
 
   const potsApi = read("app/api/pots/route.ts");
   assert.match(potsApi, /isAdminRequest/);
-  const potVariantApi = read("app/api/pots/[potId]/variants/route.ts");
-  assert.match(potVariantApi, /isAdminRequest/);
+  assert.match(read("app/api/pots/[potId]/sizes/route.ts"), /isAdminRequest/);
+  assert.equal(existsSync(join(root, "app/api/pots/[potId]/variants/route.ts")), false);
 
   console.log("verify-catalog-shop: shop wiring leaves POS and plant variants unchanged");
 }
