@@ -15,10 +15,8 @@ export interface PlantProduct {
   subtitleHe?: string;
   description?: string;
   descriptionHe?: string;
-  /** Canonical catalog supplier price (DB: supplier_price). */
+  /** Canonical catalog supplier cost (DB: supplier_price). */
   supplierPrice: number;
-  /** Same value as supplierPrice; kept for admin UI / API wire compatibility. */
-  price: number;
   currency: "ILS" | "USD" | "EUR";
   images?: string[];
   labels?: string[];

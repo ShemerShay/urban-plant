@@ -58,6 +58,7 @@
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts",
     "verify:admin-catalog-inventory": "npx tsx scripts/verify-admin-catalog-inventory.ts",
+    "verify:sellable-variants": "npx tsx scripts/verify-sellable-variants.ts",
     "verify:admin-catalog-orders": "npx tsx scripts/verify-admin-catalog-orders.ts",
     "verify:catalog-shop": "npx tsx scripts/verify-catalog-shop.ts",
     "verify:catalog-cart": "npx tsx scripts/verify-catalog-cart.ts",

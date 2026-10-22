@@ -117,6 +117,10 @@ export const routes = {
       `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}`,
     plantVariantInventory: (plantId: string, variantId: string) =>
       `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}/inventory`,
+    sellableVariants: (plantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/sellable-variants`,
+    sellableVariant: (plantId: string, sellableVariantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/sellable-variants/${encodeURIComponent(sellableVariantId.trim())}`,
     pots: () => "/api/pots",
     pot: (potId: string) => `/api/pots/${encodeURIComponent(potId.trim())}`,
     potSizes: (potId: string) =>

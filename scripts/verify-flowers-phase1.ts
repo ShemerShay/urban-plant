@@ -307,7 +307,6 @@ async function assertNullableFlowerStorage(): Promise<void> {
       id: flowerId,
       name: "באנץ פרחים ירוקים",
       supplierPrice: 20,
-      price: 20,
       currency: "ILS",
       inventoryType: "flowers",
     });

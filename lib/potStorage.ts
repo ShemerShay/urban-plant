@@ -226,9 +226,12 @@ export async function deletePot(potId: string): Promise<void> {
     await sql`DELETE FROM pots WHERE id = ${existing.id}::uuid`;
   } catch (error) {
     if (isForeignKeyViolation(error)) {
+      const message = error instanceof Error ? error.message : String(error);
       throw new PotWriteError(
         "in_use",
-        "This pot has central inventory and cannot be deleted",
+        /sellable_variants/i.test(message)
+          ? "This pot is used by a variant and cannot be deleted"
+          : "This pot has central inventory and cannot be deleted",
       );
     }
     throw error;

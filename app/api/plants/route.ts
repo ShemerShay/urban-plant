@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPlant, CatalogPublishError, readPlants } from "@/lib/plantStorage";
 import { parseInventoryType } from "@/lib/inventoryType";
 import { isAdminRequest } from "@/lib/adminAuth";
-import { plantToWire, plantsToWire, wireBodyToParseInput } from "@/lib/plantWire";
+import { plantToWire, plantsToWire } from "@/lib/plantWire";
 import { parsePlantBody, resolveCatalogPublishedInput } from "@/lib/plantValidation";
 
 export async function GET(request: NextRequest) {
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   const newId = randomUUID();
-  const parsed = parsePlantBody(wireBodyToParseInput(record), {
+  const parsed = parsePlantBody(record, {
     requireId: false,
     existingId: newId,
   });

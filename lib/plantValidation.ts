@@ -168,8 +168,7 @@ export function parsePlantBody(
     return { ok: false, error: "currency must be ILS, USD, or EUR" };
   }
 
-  const supplierPriceRaw =
-    body.supplierPrice ?? body.supplier_price ?? body.price;
+  const supplierPriceRaw = body.supplierPrice ?? body.supplier_price;
   const supplierPrice =
     typeof supplierPriceRaw === "number" &&
     Number.isFinite(supplierPriceRaw) &&
@@ -250,7 +249,6 @@ export function parsePlantBody(
       id: resolvedId,
       name,
       supplierPrice,
-      price: supplierPrice,
       currency: currencyRaw as PlantProduct["currency"],
       inventoryType: "flowers",
       ...(nameHe ? { nameHe } : {}),
@@ -327,7 +325,6 @@ export function parsePlantBody(
     subtitle: subtitle.value,
     description: description.value,
     supplierPrice,
-    price: supplierPrice,
     currency: currencyRaw as PlantProduct["currency"],
     images,
     labels,
