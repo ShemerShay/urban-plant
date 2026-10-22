@@ -5,19 +5,26 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
 import { useLocale } from "@/components/locale/LocaleProvider";
-import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
 import { displayApiError } from "@/lib/displayLabels";
+import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { POT_SIZE_LABELS, type PotSizeLabel } from "@/lib/potSizes";
 import { routes } from "@/lib/routes";
 
-type PotVariantRow = {
+type PotColorRow = {
+  id: string;
+  potSizeId: string;
+  color: string;
+  colorHe?: string;
+  quantity: number;
+};
+
+type PotSizeRow = {
   id: string;
   potId: string;
   sizeLabel: PotSizeLabel;
-  color: string;
-  colorHe?: string;
-  catalogPrice: number;
+  supplierPrice: number | null;
+  colors: PotColorRow[];
 };
 
 type PotRow = {
@@ -25,18 +32,36 @@ type PotRow = {
   name: string;
   nameHe?: string;
   image?: string;
-  variants: PotVariantRow[];
+  sizes: PotSizeRow[];
 };
 
 type ApiResponse = {
   pots?: PotRow[];
-  pot?: PotRow;
-  variant?: PotVariantRow;
   error?: string;
 };
 
+type DeleteTarget =
+  | { kind: "pot"; potId: string }
+  | { kind: "size"; potId: string; sizeId: string }
+  | { kind: "color"; potId: string; sizeId: string; colorId: string };
+
 const inputClassName = "mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900";
 const labelClassName = "text-xs font-medium text-slate-500";
+
+function formatSupplierCost(price: number, locale: Locale): string {
+  const hasFraction = Math.round(price * 100) % 100 !== 0;
+  return new Intl.NumberFormat(locale === "he" ? "he-IL" : "en-US", {
+    style: "currency",
+    currency: "ILS",
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(price);
+}
+
+function openSizes(pot: PotRow, current?: PotSizeLabel): PotSizeLabel[] {
+  const used = new Set(pot.sizes.map((size) => size.sizeLabel));
+  return POT_SIZE_LABELS.filter((size) => size === current || !used.has(size));
+}
 
 export function AdminPotsManager() {
   const locale = useLocale();
@@ -57,15 +82,27 @@ export function AdminPotsManager() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [variantPotId, setVariantPotId] = useState<string | null>(null);
-  const [variantSize, setVariantSize] = useState<PotSizeLabel>("S");
-  const [variantColor, setVariantColor] = useState("");
-  const [variantColorHe, setVariantColorHe] = useState("");
-  const [variantPrice, setVariantPrice] = useState("");
-  const [variantError, setVariantError] = useState<string | null>(null);
-  const [isAddingVariant, setIsAddingVariant] = useState(false);
+  const [sizePotId, setSizePotId] = useState<string | null>(null);
+  const [editingSizeId, setEditingSizeId] = useState<string | null>(null);
+  const [sizeLabel, setSizeLabel] = useState<PotSizeLabel>("S");
+  const [supplierCost, setSupplierCost] = useState("");
+  const [sizeError, setSizeError] = useState<string | null>(null);
+  const [isSavingSize, setIsSavingSize] = useState(false);
 
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [colorSizeId, setColorSizeId] = useState<string | null>(null);
+  const [editingColorId, setEditingColorId] = useState<string | null>(null);
+  const [color, setColor] = useState("");
+  const [colorHe, setColorHe] = useState("");
+  const [colorError, setColorError] = useState<string | null>(null);
+  const [isSavingColor, setIsSavingColor] = useState(false);
+
+  const [adjustColorId, setAdjustColorId] = useState<string | null>(null);
+  const [delta, setDelta] = useState("");
+  const [note, setNote] = useState("");
+  const [adjustError, setAdjustError] = useState<string | null>(null);
+  const [isAdjusting, setIsAdjusting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -164,64 +201,150 @@ export function AdminPotsManager() {
     }
   }
 
-  async function handleAddVariant(potId: string) {
-    setIsAddingVariant(true);
-    setVariantError(null);
+  function startAddSize(pot: PotRow) {
+    const available = openSizes(pot);
+    const next = available[0];
+    if (!next) return;
+    setSizePotId(pot.id);
+    setEditingSizeId(null);
+    setSizeLabel(next);
+    setSupplierCost("");
+    setSizeError(null);
+  }
+
+  function startEditSize(size: PotSizeRow) {
+    setSizePotId(size.potId);
+    setEditingSizeId(size.id);
+    setSizeLabel(size.sizeLabel);
+    setSupplierCost(size.supplierPrice == null ? "" : String(size.supplierPrice));
+    setSizeError(null);
+  }
+
+  async function handleSaveSize(potId: string) {
+    setIsSavingSize(true);
+    setSizeError(null);
+    const supplierPrice = supplierCost.trim() ? Number(supplierCost) : null;
     try {
-      const res = await fetch(routes.api.potVariants(potId), {
+      const res = await fetch(
+        editingSizeId ? routes.api.potSize(potId, editingSizeId) : routes.api.potSizes(potId),
+        {
+          method: editingSizeId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sizeLabel, supplierPrice }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as ApiResponse;
+      if (!res.ok) {
+        setSizeError(displayApiError(locale, data.error, "admin.pots.saveFailed"));
+        return;
+      }
+      setSizePotId(null);
+      setEditingSizeId(null);
+      setSupplierCost("");
+      await loadPots();
+    } catch {
+      setSizeError(t(locale, "common.networkError"));
+    } finally {
+      setIsSavingSize(false);
+    }
+  }
+
+  function startAddColor(sizeId: string) {
+    setColorSizeId(sizeId);
+    setEditingColorId(null);
+    setColor("");
+    setColorHe("");
+    setColorError(null);
+  }
+
+  function startEditColor(colorRow: PotColorRow) {
+    setColorSizeId(colorRow.potSizeId);
+    setEditingColorId(colorRow.id);
+    setColor(colorRow.color);
+    setColorHe(colorRow.colorHe ?? "");
+    setColorError(null);
+  }
+
+  async function handleSaveColor(potId: string, sizeId: string) {
+    setIsSavingColor(true);
+    setColorError(null);
+    try {
+      const res = await fetch(
+        editingColorId
+          ? routes.api.potColor(potId, sizeId, editingColorId)
+          : routes.api.potColors(potId, sizeId),
+        {
+          method: editingColorId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            color: color.trim(),
+            colorHe: colorHe.trim() || null,
+          }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as ApiResponse;
+      if (!res.ok) {
+        setColorError(displayApiError(locale, data.error, "admin.pots.saveFailed"));
+        return;
+      }
+      setColorSizeId(null);
+      setEditingColorId(null);
+      setColor("");
+      setColorHe("");
+      await loadPots();
+    } catch {
+      setColorError(t(locale, "common.networkError"));
+    } finally {
+      setIsSavingColor(false);
+    }
+  }
+
+  async function handleAdjust(potId: string, sizeId: string, colorId: string) {
+    setIsAdjusting(true);
+    setAdjustError(null);
+    try {
+      const res = await fetch(routes.api.potColorInventory(potId, sizeId, colorId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sizeLabel: variantSize,
-          color: variantColor.trim(),
-          colorHe: variantColorHe.trim() || null,
-          catalogPrice: Number(variantPrice),
+          delta: Number(delta),
+          note: note.trim(),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as ApiResponse;
       if (!res.ok) {
-        setVariantError(displayApiError(locale, data.error, "admin.pots.saveFailed"));
+        setAdjustError(displayApiError(locale, data.error, "admin.pots.saveFailed"));
         return;
       }
-      setVariantColor("");
-      setVariantColorHe("");
-      setVariantPrice("");
-      setVariantPotId(null);
+      setAdjustColorId(null);
+      setDelta("");
+      setNote("");
       await loadPots();
     } catch {
-      setVariantError(t(locale, "common.networkError"));
+      setAdjustError(t(locale, "common.networkError"));
     } finally {
-      setIsAddingVariant(false);
-    }
-  }
-
-  async function handleDeleteVariant(potId: string, variantId: string) {
-    setVariantError(null);
-    try {
-      const res = await fetch(routes.api.potVariant(potId, variantId), { method: "DELETE" });
-      const data = (await res.json().catch(() => ({}))) as ApiResponse;
-      if (!res.ok) {
-        setVariantError(displayApiError(locale, data.error, "admin.pots.deleteFailed"));
-        return;
-      }
-      await loadPots();
-    } catch {
-      setVariantError(t(locale, "common.networkError"));
+      setIsAdjusting(false);
     }
   }
 
   async function confirmDelete() {
-    if (!deleteId) return;
+    if (!deleteTarget) return;
     setDeleteBusy(true);
     setDeleteError(null);
+    const url =
+      deleteTarget.kind === "pot"
+        ? routes.api.pot(deleteTarget.potId)
+        : deleteTarget.kind === "size"
+          ? routes.api.potSize(deleteTarget.potId, deleteTarget.sizeId)
+          : routes.api.potColor(deleteTarget.potId, deleteTarget.sizeId, deleteTarget.colorId);
     try {
-      const res = await fetch(routes.api.pot(deleteId), { method: "DELETE" });
+      const res = await fetch(url, { method: "DELETE" });
       const data = (await res.json().catch(() => ({}))) as ApiResponse;
       if (!res.ok) {
         setDeleteError(displayApiError(locale, data.error, "admin.pots.deleteFailed"));
         return;
       }
-      setDeleteId(null);
+      setDeleteTarget(null);
       await loadPots();
     } catch {
       setDeleteError(t(locale, "common.networkError"));
@@ -229,6 +352,22 @@ export function AdminPotsManager() {
       setDeleteBusy(false);
     }
   }
+
+  const deleteCopy =
+    deleteTarget?.kind === "size"
+      ? {
+          title: t(locale, "admin.pots.deleteSizeTitle"),
+          message: t(locale, "admin.pots.deleteSizeMessage"),
+        }
+      : deleteTarget?.kind === "color"
+        ? {
+            title: t(locale, "admin.pots.deleteColorTitle"),
+            message: t(locale, "admin.pots.deleteColorMessage"),
+          }
+        : {
+            title: t(locale, "admin.pots.deleteTitle"),
+            message: t(locale, "admin.pots.deleteMessage"),
+          };
 
   return (
     <section>
@@ -273,153 +412,306 @@ export function AdminPotsManager() {
         <p className="mt-6 text-sm text-slate-600">{t(locale, "admin.pots.empty")}</p>
       ) : (
         <ul className="mt-6 space-y-4">
-          {pots.map((pot) => (
-            <li key={pot.id} className="rounded-3xl bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-              {editingId === pot.id ? (
-                <div className="space-y-3">
-                  <label className="block">
-                    <span className={labelClassName}>{t(locale, "admin.pots.name")}</span>
-                    <input className={inputClassName} value={editName} onChange={(e) => setEditName(e.target.value)} />
-                  </label>
-                  <label className="block">
-                    <span className={labelClassName}>{t(locale, "admin.pots.nameHe")}</span>
-                    <input
-                      className={inputClassName}
-                      value={editNameHe}
-                      onChange={(e) => setEditNameHe(e.target.value)}
+          {pots.map((pot) => {
+            const sizeChoices = openSizes(
+              pot,
+              editingSizeId ? pot.sizes.find((size) => size.id === editingSizeId)?.sizeLabel : undefined,
+            );
+            const showSizeForm = sizePotId === pot.id;
+            return (
+              <li key={pot.id} className="rounded-3xl bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+                {editingId === pot.id ? (
+                  <div className="space-y-3">
+                    <label className="block">
+                      <span className={labelClassName}>{t(locale, "admin.pots.name")}</span>
+                      <input
+                        className={inputClassName}
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className={labelClassName}>{t(locale, "admin.pots.nameHe")}</span>
+                      <input
+                        className={inputClassName}
+                        value={editNameHe}
+                        onChange={(e) => setEditNameHe(e.target.value)}
+                      />
+                    </label>
+                    <PlantImagePicker
+                      images={editImage ? [editImage] : []}
+                      onChange={(urls) => setEditImage(urls[urls.length - 1] ?? "")}
+                      plantName={editName}
                     />
-                  </label>
-                  <PlantImagePicker
-                    images={editImage ? [editImage] : []}
-                    onChange={(urls) => setEditImage(urls[urls.length - 1] ?? "")}
-                    plantName={editName}
-                  />
-                  {editError ? <p className="text-sm text-red-700">{editError}</p> : null}
-                  <button
-                    type="button"
-                    disabled={isSaving}
-                    className="text-sm font-semibold text-emerald-800"
-                    onClick={() => void handleSave(pot.id)}
-                  >
-                    {t(locale, "admin.pots.save")}
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <p className="font-medium text-emerald-950">{pot.name}</p>
-                  {pot.nameHe ? <p className="text-sm text-slate-600">{pot.nameHe}</p> : null}
-                  <div className="mt-2 flex gap-3">
-                    <button type="button" className="text-sm text-emerald-800" onClick={() => startEdit(pot)}>
-                      {t(locale, "admin.pots.edit")}
-                    </button>
-                    <button type="button" className="text-sm text-red-700" onClick={() => setDeleteId(pot.id)}>
-                      {t(locale, "admin.pots.delete")}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <ul className="mt-4 space-y-2">
-                {pot.variants.map((variant) => (
-                  <li key={variant.id} className="flex items-center justify-between gap-3 text-sm text-slate-800">
-                    <span>
-                      {variant.sizeLabel} · {variant.color}
-                      {variant.colorHe ? ` · ${variant.colorHe}` : ""} ·{" "}
-                      {formatCatalogPrice(variant.catalogPrice, "ILS", locale)}
-                    </span>
+                    {editError ? <p className="text-sm text-red-700">{editError}</p> : null}
                     <button
                       type="button"
-                      className="text-xs text-red-700"
-                      onClick={() => void handleDeleteVariant(pot.id, variant.id)}
+                      disabled={isSaving}
+                      className="text-sm font-semibold text-emerald-800"
+                      onClick={() => void handleSave(pot.id)}
                     >
-                      {t(locale, "admin.pots.delete")}
+                      {t(locale, "admin.pots.save")}
                     </button>
-                  </li>
-                ))}
-              </ul>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="font-medium text-emerald-950">{pot.name}</p>
+                    {pot.nameHe ? <p className="text-sm text-slate-600">{pot.nameHe}</p> : null}
+                    <div className="mt-2 flex gap-3">
+                      <button type="button" className="text-sm text-emerald-800" onClick={() => startEdit(pot)}>
+                        {t(locale, "admin.pots.edit")}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm text-red-700"
+                        onClick={() => setDeleteTarget({ kind: "pot", potId: pot.id })}
+                      >
+                        {t(locale, "admin.pots.delete")}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-              {variantPotId === pot.id ? (
-                <div className="mt-3 grid gap-2">
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.pots.size")}</span>
-                    <select
-                      className={inputClassName}
-                      value={variantSize}
-                      onChange={(e) => setVariantSize(e.target.value as PotSizeLabel)}
+                {pot.sizes.length === 0 ? (
+                  <p className="mt-4 text-sm text-slate-600">{t(locale, "admin.pots.noSizes")}</p>
+                ) : (
+                  <ul className="mt-4 space-y-3">
+                    {pot.sizes.map((size) => {
+                      const showColorForm = colorSizeId === size.id;
+                      return (
+                        <li key={size.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="text-sm text-slate-800">
+                              <p className="font-medium text-emerald-950">
+                                {t(locale, "admin.pots.size")} {size.sizeLabel}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                {t(locale, "admin.pots.supplierCost")}:{" "}
+                                {size.supplierPrice == null
+                                  ? t(locale, "admin.pots.supplierCostEmpty")
+                                  : formatSupplierCost(size.supplierPrice, locale)}
+                              </p>
+                            </div>
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                className="text-xs text-emerald-800"
+                                onClick={() => startEditSize(size)}
+                              >
+                                {t(locale, "admin.pots.edit")}
+                              </button>
+                              <button
+                                type="button"
+                                className="text-xs text-red-700"
+                                onClick={() =>
+                                  setDeleteTarget({ kind: "size", potId: pot.id, sizeId: size.id })
+                                }
+                              >
+                                {t(locale, "admin.pots.delete")}
+                              </button>
+                            </div>
+                          </div>
+
+                          <p className="mt-3 text-xs font-medium text-slate-500">
+                            {t(locale, "admin.pots.colors")}
+                          </p>
+                          {size.colors.length === 0 ? (
+                            <p className="mt-1 text-sm text-slate-600">{t(locale, "admin.pots.noColors")}</p>
+                          ) : (
+                            <ul className="mt-2 space-y-2">
+                              {size.colors.map((colorRow) => (
+                                <li key={colorRow.id} className="rounded-xl bg-white px-3 py-2 text-sm">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-slate-800">
+                                      {colorRow.color}
+                                      {colorRow.colorHe ? ` · ${colorRow.colorHe}` : ""} ·{" "}
+                                      {t(locale, "admin.pots.quantity")}: {colorRow.quantity}
+                                    </span>
+                                    <span className="flex gap-3">
+                                      <button
+                                        type="button"
+                                        className="text-xs text-emerald-800"
+                                        onClick={() => startEditColor(colorRow)}
+                                      >
+                                        {t(locale, "admin.pots.edit")}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="text-xs text-emerald-800"
+                                        onClick={() => {
+                                          setAdjustColorId(colorRow.id);
+                                          setDelta("");
+                                          setNote("");
+                                          setAdjustError(null);
+                                        }}
+                                      >
+                                        {t(locale, "admin.pots.adjust")}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="text-xs text-red-700"
+                                        onClick={() =>
+                                          setDeleteTarget({
+                                            kind: "color",
+                                            potId: pot.id,
+                                            sizeId: size.id,
+                                            colorId: colorRow.id,
+                                          })
+                                        }
+                                      >
+                                        {t(locale, "admin.pots.delete")}
+                                      </button>
+                                    </span>
+                                  </div>
+                                  {adjustColorId === colorRow.id ? (
+                                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                      <label>
+                                        <span className={labelClassName}>{t(locale, "admin.pots.delta")}</span>
+                                        <input
+                                          className={inputClassName}
+                                          type="number"
+                                          step={1}
+                                          value={delta}
+                                          onChange={(e) => setDelta(e.target.value)}
+                                        />
+                                      </label>
+                                      <label>
+                                        <span className={labelClassName}>{t(locale, "admin.pots.note")}</span>
+                                        <input
+                                          className={inputClassName}
+                                          value={note}
+                                          onChange={(e) => setNote(e.target.value)}
+                                        />
+                                      </label>
+                                      {adjustError ? (
+                                        <p className="text-sm text-red-700 sm:col-span-2">{adjustError}</p>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        disabled={isAdjusting || !delta.trim() || !note.trim()}
+                                        className="text-sm font-semibold text-emerald-800 disabled:opacity-50"
+                                        onClick={() => void handleAdjust(pot.id, size.id, colorRow.id)}
+                                      >
+                                        {t(locale, "admin.pots.applyAdjust")}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {showColorForm ? (
+                            <div className="mt-3 grid gap-2">
+                              <label>
+                                <span className={labelClassName}>{t(locale, "admin.pots.color")}</span>
+                                <input
+                                  className={inputClassName}
+                                  value={color}
+                                  onChange={(e) => setColor(e.target.value)}
+                                />
+                              </label>
+                              <label>
+                                <span className={labelClassName}>{t(locale, "admin.pots.colorHe")}</span>
+                                <input
+                                  className={inputClassName}
+                                  value={colorHe}
+                                  onChange={(e) => setColorHe(e.target.value)}
+                                />
+                              </label>
+                              {colorError ? <p className="text-sm text-red-700">{colorError}</p> : null}
+                              <button
+                                type="button"
+                                disabled={isSavingColor || !color.trim()}
+                                className="text-sm font-semibold text-emerald-800 disabled:opacity-50"
+                                onClick={() => void handleSaveColor(pot.id, size.id)}
+                              >
+                                {t(locale, "admin.pots.save")}
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="mt-3 text-sm font-semibold text-emerald-800"
+                              onClick={() => startAddColor(size.id)}
+                            >
+                              {t(locale, "admin.pots.addColor")}
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+
+                {showSizeForm ? (
+                  <div className="mt-3 grid gap-2">
+                    <label>
+                      <span className={labelClassName}>{t(locale, "admin.pots.size")}</span>
+                      <select
+                        className={inputClassName}
+                        value={sizeLabel}
+                        onChange={(e) => setSizeLabel(e.target.value as PotSizeLabel)}
+                      >
+                        {sizeChoices.map((size) => (
+                          <option key={size} value={size}>
+                            {size}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span className={labelClassName}>{t(locale, "admin.pots.supplierCost")}</span>
+                      <input
+                        className={inputClassName}
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={supplierCost}
+                        onChange={(e) => setSupplierCost(e.target.value)}
+                      />
+                    </label>
+                    {sizeError ? <p className="text-sm text-red-700">{sizeError}</p> : null}
+                    <button
+                      type="button"
+                      disabled={isSavingSize || sizeChoices.length === 0}
+                      className="text-sm font-semibold text-emerald-800 disabled:opacity-50"
+                      onClick={() => void handleSaveSize(pot.id)}
                     >
-                      {POT_SIZE_LABELS.map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.pots.color")}</span>
-                    <input
-                      className={inputClassName}
-                      value={variantColor}
-                      onChange={(e) => setVariantColor(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.pots.colorHe")}</span>
-                    <input
-                      className={inputClassName}
-                      value={variantColorHe}
-                      onChange={(e) => setVariantColorHe(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.pots.price")}</span>
-                    <input
-                      className={inputClassName}
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={variantPrice}
-                      onChange={(e) => setVariantPrice(e.target.value)}
-                    />
-                  </label>
-                  {variantError ? <p className="text-sm text-red-700">{variantError}</p> : null}
+                      {t(locale, "admin.pots.save")}
+                    </button>
+                  </div>
+                ) : openSizes(pot).length > 0 ? (
                   <button
                     type="button"
-                    disabled={isAddingVariant}
-                    className="text-sm font-semibold text-emerald-800"
-                    onClick={() => void handleAddVariant(pot.id)}
+                    className="mt-3 text-sm font-semibold text-emerald-800"
+                    onClick={() => startAddSize(pot)}
                   >
-                    {t(locale, "admin.pots.save")}
+                    {t(locale, "admin.pots.addSize")}
                   </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="mt-3 text-sm font-semibold text-emerald-800"
-                  onClick={() => {
-                    setVariantPotId(pot.id);
-                    setVariantError(null);
-                  }}
-                >
-                  {t(locale, "admin.pots.addVariant")}
-                </button>
-              )}
-            </li>
-          ))}
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
 
       <AdminConfirmDialog
-        open={deleteId != null}
-        title={t(locale, "admin.pots.deleteTitle")}
-        message={t(locale, "admin.pots.deleteMessage")}
-        confirmLabel={t(locale, "admin.pots.deleteConfirm")}
+        open={deleteTarget != null}
+        title={deleteCopy.title}
+        message={deleteCopy.message}
+        confirmLabel={
+          deleteTarget?.kind === "pot"
+            ? t(locale, "admin.pots.deleteConfirm")
+            : t(locale, "admin.pots.delete")
+        }
         destructive
         busy={deleteBusy}
         error={deleteError}
         onConfirm={() => void confirmDelete()}
         onCancel={() => {
           if (deleteBusy) return;
-          setDeleteId(null);
+          setDeleteTarget(null);
           setDeleteError(null);
         }}
       />

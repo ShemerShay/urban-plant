@@ -1,6 +1,7 @@
 /**
- * Catalog pots. Compatibility with a plant variant is an exact size_label match.
- * No pot inventory.
+ * Legacy Catalog pots. Shop matching is still an exact size_label match on
+ * pot_variants, and catalog_price stays the customer selling price.
+ * Pot sizes, colors, and central pot inventory are separate tables.
  */
 
 import { sql } from "@/lib/db";
@@ -22,17 +23,22 @@ export type PotVariant = {
   catalogPrice: number;
 };
 
-export type PotWithVariants = Pot & {
-  variants: PotVariant[];
-};
+const DATABASE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isDatabaseUuid(value: string): boolean {
+  return DATABASE_UUID.test(value.trim());
+}
 
 export type PotWriteCode =
   | "not_found"
   | "name_required"
   | "invalid_size_label"
   | "invalid_catalog_price"
+  | "invalid_supplier_price"
   | "color_required"
-  | "duplicate";
+  | "duplicate"
+  | "in_use";
 
 export class PotWriteError extends Error {
   readonly code: PotWriteCode;
@@ -148,37 +154,22 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export function potWriteHttp(error: PotWriteError): { status: number; error: string } {
-  const status = error.code === "not_found" ? 404 : error.code === "duplicate" ? 409 : 400;
+  const status =
+    error.code === "not_found" ? 404 : error.code === "duplicate" || error.code === "in_use" ? 409 : 400;
   return { status, error: error.message };
 }
 
-export async function readPotsWithVariants(): Promise<PotWithVariants[]> {
-  const potRows = await sql`
-    SELECT id, name, name_he, image
-    FROM pots
-    ORDER BY name ASC, id ASC
-  `;
-  const variantRows = await sql`
-    SELECT id, pot_id, size_label, color, color_he, catalog_price
-    FROM pot_variants
-    ORDER BY size_label ASC, color ASC, id ASC
-  `;
-  const variantsByPot = new Map<string, PotVariant[]>();
-  for (const row of variantRows as PotVariantRow[]) {
-    const variant = mapVariant(row);
-    const list = variantsByPot.get(variant.potId) ?? [];
-    list.push(variant);
-    variantsByPot.set(variant.potId, list);
+function isForeignKeyViolation(error: unknown): boolean {
+  if (typeof error === "object" && error && "code" in error && String(error.code) === "23503") {
+    return true;
   }
-  return (potRows as PotRow[]).map((row) => {
-    const pot = mapPot(row);
-    return { ...pot, variants: variantsByPot.get(pot.id) ?? [] };
-  });
+  const message = error instanceof Error ? error.message : String(error);
+  return /foreign key|violates foreign key constraint/i.test(message);
 }
 
 export async function getPotById(id: string): Promise<Pot | undefined> {
   const trimmed = id.trim();
-  if (!trimmed) return undefined;
+  if (!isDatabaseUuid(trimmed)) return undefined;
   const rows = await sql`
     SELECT id, name, name_he, image
     FROM pots
@@ -231,7 +222,17 @@ export async function updatePot(input: {
 export async function deletePot(potId: string): Promise<void> {
   const existing = await getPotById(potId);
   if (!existing) throw new PotWriteError("not_found", "Pot not found");
-  await sql`DELETE FROM pots WHERE id = ${existing.id}::uuid`;
+  try {
+    await sql`DELETE FROM pots WHERE id = ${existing.id}::uuid`;
+  } catch (error) {
+    if (isForeignKeyViolation(error)) {
+      throw new PotWriteError(
+        "in_use",
+        "This pot has central inventory and cannot be deleted",
+      );
+    }
+    throw error;
+  }
 }
 
 async function insertVariant(input: {
@@ -262,6 +263,11 @@ async function insertVariant(input: {
   }
 }
 
+/**
+ * Legacy Catalog writer. Shop, cart, checkout, and orders still read
+ * pot_variants.catalog_price. Slice 5 replaces that read. Slice 7 drops the table.
+ * Pot Size and Color writes do not call this.
+ */
 export async function createPotVariant(input: {
   potId: string;
   sizeLabel: unknown;
@@ -278,65 +284,4 @@ export async function createPotVariant(input: {
     colorHe: parseOptionalText(input.colorHe),
     catalogPrice: parseRequiredCatalogPrice(input.catalogPrice),
   });
-}
-
-export async function updatePotVariant(input: {
-  potId: string;
-  variantId: string;
-  sizeLabel?: unknown;
-  color?: unknown;
-  colorHe?: unknown;
-  catalogPrice?: unknown;
-}): Promise<PotVariant> {
-  const potId = input.potId.trim();
-  const variantId = input.variantId.trim();
-  const rows = await sql`
-    SELECT id, pot_id, size_label, color, color_he, catalog_price
-    FROM pot_variants
-    WHERE id = ${variantId}::uuid AND pot_id = ${potId}::uuid
-    LIMIT 1
-  `;
-  const existing = (rows as PotVariantRow[])[0];
-  if (!existing) throw new PotWriteError("not_found", "Pot variant not found");
-  const current = mapVariant(existing);
-  const sizeLabel =
-    input.sizeLabel === undefined ? current.sizeLabel : parseSizeLabel(input.sizeLabel);
-  const color = input.color === undefined ? current.color : parseColor(input.color);
-  const colorHe =
-    input.colorHe === undefined ? (current.colorHe ?? null) : parseOptionalText(input.colorHe);
-  const catalogPrice =
-    input.catalogPrice === undefined
-      ? current.catalogPrice
-      : parseRequiredCatalogPrice(input.catalogPrice);
-  try {
-    const updated = await sql`
-      UPDATE pot_variants
-      SET
-        size_label = ${sizeLabel},
-        color = ${color},
-        color_he = ${colorHe},
-        catalog_price = ${catalogPrice}
-      WHERE id = ${current.id}::uuid AND pot_id = ${potId}::uuid
-      RETURNING id, pot_id, size_label, color, color_he, catalog_price
-    `;
-    const row = (updated as PotVariantRow[])[0];
-    if (!row) throw new PotWriteError("not_found", "Pot variant not found");
-    return mapVariant(row);
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new PotWriteError("duplicate", "This pot already has that size and color");
-    }
-    throw error;
-  }
-}
-
-export async function deletePotVariant(input: { potId: string; variantId: string }): Promise<void> {
-  const rows = await sql`
-    DELETE FROM pot_variants
-    WHERE id = ${input.variantId.trim()}::uuid AND pot_id = ${input.potId.trim()}::uuid
-    RETURNING id
-  `;
-  if ((rows as { id: string }[]).length === 0) {
-    throw new PotWriteError("not_found", "Pot variant not found");
-  }
 }

@@ -119,10 +119,16 @@ export const routes = {
       `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}/inventory`,
     pots: () => "/api/pots",
     pot: (potId: string) => `/api/pots/${encodeURIComponent(potId.trim())}`,
-    potVariants: (potId: string) =>
-      `/api/pots/${encodeURIComponent(potId.trim())}/variants`,
-    potVariant: (potId: string, variantId: string) =>
-      `/api/pots/${encodeURIComponent(potId.trim())}/variants/${encodeURIComponent(variantId.trim())}`,
+    potSizes: (potId: string) =>
+      `/api/pots/${encodeURIComponent(potId.trim())}/sizes`,
+    potSize: (potId: string, sizeId: string) =>
+      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}`,
+    potColors: (potId: string, sizeId: string) =>
+      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}/colors`,
+    potColor: (potId: string, sizeId: string, colorId: string) =>
+      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}/colors/${encodeURIComponent(colorId.trim())}`,
+    potColorInventory: (potId: string, sizeId: string, colorId: string) =>
+      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}/colors/${encodeURIComponent(colorId.trim())}/inventory`,
     offers: () => "/api/offers",
     offer: (offerId: string) => `/api/offers/${encodeURIComponent(offerId.trim())}`,
     partnerBrands: () => "/api/partner-brands",
