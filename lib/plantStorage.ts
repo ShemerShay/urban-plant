@@ -100,7 +100,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     id: row.id,
     name: row.name,
     supplierPrice,
-    price: supplierPrice,
     currency: row.currency as PlantProduct["currency"],
     ...(subtitle ? { subtitle } : {}),
     ...(description ? { description } : {}),
@@ -126,22 +125,11 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
 }
 
 function seedPlantsWithSupplierPrice(): PlantProduct[] {
-  return PLANTS_CATALOG_SEED.map((plant) => {
-    const legacyPrice = (plant as PlantProduct & { price?: number }).price;
-    const supplierPrice =
-      typeof plant.supplierPrice === "number"
-        ? plant.supplierPrice
-        : typeof legacyPrice === "number"
-          ? legacyPrice
-          : 0;
-    return {
-      ...plant,
-      supplierPrice,
-      price: supplierPrice,
-      inventoryType: plant.inventoryType ?? "plants",
-      catalogPublished: plant.catalogPublished === true,
-    };
-  });
+  return PLANTS_CATALOG_SEED.map((plant) => ({
+    ...plant,
+    inventoryType: plant.inventoryType ?? "plants",
+    catalogPublished: plant.catalogPublished === true,
+  }));
 }
 
 export async function readPlants(filter?: {

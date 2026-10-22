@@ -309,9 +309,12 @@ export async function deletePotSize(input: { potId: string; sizeId: string }): P
   } catch (error) {
     if (error instanceof PotWriteError) throw error;
     if (isForeignKeyViolation(error)) {
+      const message = error instanceof Error ? error.message : String(error);
       throw new PotWriteError(
         "in_use",
-        "This pot size has central inventory and cannot be deleted",
+        /sellable_variants/i.test(message)
+          ? "This pot size is used by a variant and cannot be deleted"
+          : "This pot size has central inventory and cannot be deleted",
       );
     }
     throw error;

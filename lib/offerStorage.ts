@@ -6,7 +6,6 @@ import { randomUUID } from "crypto";
 
 import { sql } from "@/lib/db";
 import type { InventoryType } from "@/lib/inventoryType";
-import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
 import type { Offer, OfferStatus } from "./offerTypes";
@@ -24,16 +23,6 @@ export type UpdateOfferInput = {
   consumerPrice?: number;
   status?: OfferStatus;
 };
-
-function defaultOffers(): Offer[] {
-  return PLANTS_CATALOG_SEED.map((plant) => ({
-    id: randomUUID(),
-    productId: plant.id,
-    consumerPrice: plant.supplierPrice,
-    status: "active",
-    createdAt: plant.createdAt ?? SEED_CREATED_AT,
-  }));
-}
 
 export type OfferRow = {
   id: string;
@@ -80,28 +69,7 @@ export async function readOffers(filter?: {
         FROM offers
         ORDER BY created_at ASC
       `;
-  const offers = (rows as OfferRow[]).map(mapOfferRow);
-  if (filter?.inventoryType) return offers;
-  return offers.length > 0 ? offers : defaultOffers();
-}
-
-export async function saveOffers(offers: Offer[]): Promise<void> {
-  await sql`DELETE FROM offers`;
-  for (const offer of offers) {
-    await sql`
-      INSERT INTO offers (
-        id, product_id, variant_id, consumer_price, status, created_at
-      )
-      VALUES (
-        ${offer.id},
-        ${offer.productId},
-        ${offer.variantId ?? null},
-        ${offer.consumerPrice},
-        ${offer.status},
-        ${offer.createdAt}::timestamptz
-      )
-    `;
-  }
+  return (rows as OfferRow[]).map(mapOfferRow);
 }
 
 export async function getOfferById(id: string): Promise<Offer | undefined> {
@@ -114,8 +82,7 @@ export async function getOfferById(id: string): Promise<Offer | undefined> {
     LIMIT 1
   `;
   const row = (rows as OfferRow[])[0];
-  if (row) return mapOfferRow(row);
-  return (await readOffers()).find((offer) => offer.id === trimmed);
+  return row ? mapOfferRow(row) : undefined;
 }
 
 /** Inserts a new offer; always assigns a fresh UUID (client must not send slug-style ids). */

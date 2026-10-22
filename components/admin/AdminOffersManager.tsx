@@ -211,13 +211,7 @@ function OfferFieldsForm({
             plants={plants}
             value={draft.productId}
             onChange={(productId) => {
-              const plant = plants.find((p) => p.id === productId);
-              patch({
-                productId,
-                ...(plant && !draft.consumerPrice
-                  ? { consumerPrice: String(plant.price) }
-                  : {}),
-              });
+              patch({ productId });
             }}
             required
           />
@@ -517,6 +511,10 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
   async function handleCreate() {
     if (!createDraft.productId.trim()) {
       setCreateError(t(locale, "admin.offers.selectPlantRequired"));
+      return;
+    }
+    if (createDraft.consumerPrice.trim() === "") {
+      setCreateError(t(locale, "admin.offers.consumerPriceInvalid"));
       return;
     }
     const consumerPrice = Number(createDraft.consumerPrice);

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
 import { AdminPlantVariantsPanel } from "@/components/admin/AdminPlantVariantsPanel";
+import { AdminSellableVariantsSection } from "@/components/admin/AdminSellableVariantsSection";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { useLocale } from "@/components/locale/LocaleProvider";
@@ -31,7 +32,7 @@ type PlantDraft = {
   subtitleHe: string;
   description: string;
   descriptionHe: string;
-  price: string;
+  supplierPrice: string;
   currency: PlantProduct["currency"];
   imagesText: string;
   labelsText: string;
@@ -76,7 +77,7 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     subtitleHe: plant.subtitleHe ?? "",
     description: plant.description ?? "",
     descriptionHe: plant.descriptionHe ?? "",
-    price: String(plant.price),
+    supplierPrice: String(plant.supplierPrice),
     currency: plant.currency,
     imagesText: linesFromArray(plant.images ?? []),
     labelsText: linesFromArray(plant.labels ?? []),
@@ -103,7 +104,7 @@ function emptyDraft(): PlantDraft {
     subtitleHe: "",
     description: "",
     descriptionHe: "",
-    price: "",
+    supplierPrice: "",
     currency: "ILS",
     imagesText: "",
     labelsText: "",
@@ -123,13 +124,13 @@ function draftToPayload(
   draft: PlantDraft,
   options?: { omitId?: boolean; inventoryType?: InventoryType },
 ): Record<string, unknown> {
-  const price = Number(draft.price);
+  const supplierPrice = Number(draft.supplierPrice);
   const inventoryType = options?.inventoryType ?? "plants";
   if (inventoryType === "flowers") {
     return {
       ...(options?.omitId ? {} : { id: draft.id.trim() }),
       name: draft.name.trim(),
-      price,
+      supplierPrice,
       currency: draft.currency,
       inventoryType: "flowers",
     };
@@ -146,7 +147,7 @@ function draftToPayload(
     subtitleHe: draft.subtitleHe.trim(),
     description: draft.description.trim(),
     descriptionHe: draft.descriptionHe.trim(),
-    price,
+    supplierPrice,
     currency: draft.currency,
     images: arrayFromLines(draft.imagesText),
     labels: arrayFromLines(draft.labelsText),
@@ -238,7 +239,7 @@ function plantMatchesSearch(plant: PlantProduct, query: string): boolean {
     plant.description,
     plant.descriptionHe,
     plant.currency,
-    String(plant.price),
+    String(plant.supplierPrice),
     plant.light,
     plant.water,
     plant.waterHe,
@@ -418,14 +419,14 @@ function PlantFieldsForm({
         </>
         ) : null}
         <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.common.price")}</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.supplierCost")}</span>
           <input
             className={inputClassName}
             type="number"
             min={0}
             step={1}
-            value={draft.price}
-            onChange={(e) => patch({ price: e.target.value })}
+            value={draft.supplierPrice}
+            onChange={(e) => patch({ supplierPrice: e.target.value })}
           />
         </label>
         <label className="block">
@@ -622,8 +623,8 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
         </div>
       ) : null}
       <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">{t(locale, "admin.common.price")}</dt>
-        <dd className="text-slate-900">{formatPrice(plant.price, plant.currency, locale)}</dd>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.supplierCost")}</dt>
+        <dd className="text-slate-900">{formatPrice(plant.supplierPrice, plant.currency, locale)}</dd>
       </div>
       {plant.labels && plant.labels.length > 0 ? (
       <div>
@@ -799,7 +800,7 @@ function AdminPlantCard({
             </span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">{plant.subtitle}</span>
             <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{formatPrice(plant.price, plant.currency, locale)}</span>
+              <span>{formatPrice(plant.supplierPrice, plant.currency, locale)}</span>
               {plant.inventoryType !== "flowers" ? (
                 <span
                   className={
@@ -881,6 +882,9 @@ function AdminPlantCard({
           )}
           {plant.inventoryType !== "flowers" ? (
             <AdminPlantVariantsPanel plant={plant} />
+          ) : null}
+          {plant.inventoryType !== "flowers" ? (
+            <AdminSellableVariantsSection plant={plant} />
           ) : null}
         </div>
       ) : null}

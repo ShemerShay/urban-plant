@@ -7,7 +7,7 @@ import {
   getPlantByIdAsync,
   updatePlant,
 } from "@/lib/plantStorage";
-import { plantToWire, wireBodyToParseInput } from "@/lib/plantWire";
+import { plantToWire } from "@/lib/plantWire";
 import {
   localizedFieldFromBody,
   parsePlantBody,
@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const record = body as Record<string, unknown>;
-  const parsed = parsePlantBody(wireBodyToParseInput({ ...record, id: plantId }), {
+  const parsed = parsePlantBody({ ...record, id: plantId }, {
     requireId: false,
     existingId: plantId,
   });

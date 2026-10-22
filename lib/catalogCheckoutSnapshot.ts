@@ -59,7 +59,7 @@ export function catalogLineTotal(
 
 /**
  * plants.supplier_price is Urban Plant's supplier cost.
- * A positive price is snapshotted. Missing, zero, and negative become null.
+ * A positive supplier cost is snapshotted. Missing, zero, and negative become null.
  * There is no pot cost.
  */
 export function plantUnitCostFromSupplierPrice(supplierPrice: unknown): PlantUnitCostSnapshot {
@@ -70,12 +70,12 @@ export function plantUnitCostFromSupplierPrice(supplierPrice: unknown): PlantUni
   ) {
     return { plantUnitCost: null, plantUnitCostSource: null };
   }
-  const price = parseNumeric(supplierPrice);
-  if (price <= 0) {
+  const supplierCost = parseNumeric(supplierPrice);
+  if (supplierCost <= 0) {
     return { plantUnitCost: null, plantUnitCostSource: null };
   }
   return {
-    plantUnitCost: price,
+    plantUnitCost: supplierCost,
     plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
   };
 }
