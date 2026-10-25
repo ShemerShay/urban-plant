@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
   const { sql } = await import("../lib/db");
-  const { readOffers, appendOffer, getOfferById } = await import("../lib/offerStorage");
+  const { readOffers, getOfferById } = await import("../lib/offerStorage");
   const { readPosSpots } = await import("../lib/posSpotStorage");
   const { MANUAL_OFFER_ID } = await import("../lib/offerTypes");
 
@@ -244,13 +244,7 @@ async function main(): Promise<void> {
     `;
     const nullOffer = await getOfferById(offerNull);
     assert.equal(nullOffer?.variantId, null);
-
-    const created = await appendOffer({
-      productId: plantA.id,
-      consumerPrice: 11,
-    });
-    assert.equal(created.variantId ?? null, null);
-    await sql`DELETE FROM offers WHERE id = ${created.id}`;
+    assert.equal(nullOffer?.sellableVariantId ?? null, null);
 
     let mismatchRejected = false;
     try {

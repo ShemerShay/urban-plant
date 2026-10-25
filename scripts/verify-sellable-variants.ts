@@ -27,9 +27,8 @@ function assertWiring(): void {
 
   const shop = read("lib/catalogShop.ts");
   const cart = read("lib/catalogCart.ts");
-  const offers = read("lib/offerStorage.ts");
   const pos = read("lib/posSpotStorage.ts");
-  for (const source of [shop, cart, offers, pos]) {
+  for (const source of [shop, cart, pos]) {
     assert.doesNotMatch(source, /sellable_variants/);
   }
 
@@ -49,7 +48,8 @@ function assertWiring(): void {
   const offersApi = read("app/api/offers/route.ts");
   assert.doesNotMatch(offersApi, /supplierPrice/);
   assert.doesNotMatch(offersApi, /supplier_price/);
-  assert.match(offersApi, /appendOffer\(\{/);
+  assert.match(offersApi, /appendFlowerOffer\(\{/);
+  assert.doesNotMatch(offersApi, /appendOffer\(\{/);
 
   const offerStorage = read("lib/offerStorage.ts");
   assert.doesNotMatch(offerStorage, /defaultOffers/);
@@ -61,7 +61,7 @@ function assertWiring(): void {
   const snapshot = read("lib/catalogCheckoutSnapshot.ts");
   assert.doesNotMatch(snapshot, /const price = parseNumeric\(supplierPrice\)/);
 
-  console.log("verify-sellable-variants: wiring leaves Catalog, cart, offers, and POS unchanged");
+  console.log("verify-sellable-variants: wiring leaves Catalog, cart, and POS off sellable variants");
 }
 
 async function main(): Promise<void> {

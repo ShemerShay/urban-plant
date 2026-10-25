@@ -6,11 +6,31 @@ export type OfferStatus = "active" | "inactive";
 export const MANUAL_OFFER_ID = "manual-offer";
 export const MANUAL_PRODUCT_ID = "manual";
 
+export type OfferAvailabilityScope = "catalog" | "partner_location";
+
+export interface OfferAvailability {
+  scope: OfferAvailabilityScope;
+  partnerLocationId: string | null;
+}
+
+/** Read model for a plant Offer’s Sellable Variant. Supplier cost is not included. */
+export interface OfferSellableVariant {
+  sellableVariantId: string;
+  plantName: string;
+  plantSizeLabel: string;
+  potName: string | null;
+  potSizeLabel: string | null;
+}
+
 export interface Offer {
   id: string;
   productId: string;
-  /** Physical configuration. Null until a variant is assigned. */
+  /** Legacy Plant Size. Null on new plant Offers; still read by POS until Slice 6. */
   variantId?: string | null;
+  /** Plant Offers point at one Sellable Variant. Flowers and legacy rows stay null. */
+  sellableVariantId: string | null;
+  sellableVariant: OfferSellableVariant | null;
+  availabilities: OfferAvailability[];
   consumerPrice: number;
   status: OfferStatus;
   createdAt: string;
