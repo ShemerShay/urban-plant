@@ -18,7 +18,8 @@ export type SellableVariantWriteCode =
   | "plant_not_found"
   | "flower_plant"
   | "invalid_plant_size"
-  | "duplicate";
+  | "duplicate"
+  | "in_use";
 
 export class SellableVariantWriteError extends Error {
   readonly code: SellableVariantWriteCode;
@@ -39,6 +40,16 @@ export type SellableVariant = DerivedSupplierCost & {
   potId: string | null;
   potName: string | null;
   potSizeLabel: PotSizeLabel | null;
+};
+
+/** Admin Offer picker. Selling price and supplier cost are not included. */
+export type SellableVariantChoice = {
+  sellableVariantId: string;
+  plantId: string;
+  plantName: string;
+  plantSizeLabel: string;
+  potName: string | null;
+  potSizeLabel: string | null;
 };
 
 type SellableVariantRow = {
@@ -98,10 +109,10 @@ export function sellableVariantWriteHttp(error: SellableVariantWriteError): {
   error: string;
 } {
   const status =
-    error.code === "not_found" || error.code === "plant_not_found"
-      ? 404
-      : error.code === "duplicate"
-        ? 409
+    error.code === "in_use" || error.code === "duplicate"
+      ? 409
+      : error.code === "not_found" || error.code === "plant_not_found"
+        ? 404
         : 400;
   return { status, error: error.message };
 }
@@ -114,6 +125,48 @@ async function assertPlant(plantId: string): Promise<void> {
   if (plant.inventoryType === "flowers") {
     throw new SellableVariantWriteError("flower_plant", "Flower plants cannot have variants");
   }
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  if (typeof error === "object" && error && "code" in error && String(error.code) === "23503") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return /foreign key|violates foreign key constraint/i.test(message);
+}
+
+export async function readSellableVariantChoices(): Promise<SellableVariantChoice[]> {
+  const rows = await sql`
+    SELECT
+      sv.id,
+      pv.plant_id,
+      pl.name AS plant_name,
+      pv.size_label AS plant_size_label,
+      pot.name AS pot_name,
+      ps.size_label AS pot_size_label
+    FROM sellable_variants sv
+    INNER JOIN plant_variants pv ON pv.id = sv.plant_variant_id
+    INNER JOIN plants pl ON pl.id = pv.plant_id
+    LEFT JOIN pot_sizes ps ON ps.id = sv.pot_size_id
+    LEFT JOIN pots pot ON pot.id = ps.pot_id
+    WHERE pl.inventory_type = 'plants'
+    ORDER BY pl.name ASC, pv.size_label ASC, pot.name ASC NULLS FIRST, ps.size_label ASC, sv.id ASC
+  `;
+  return (rows as {
+    id: string;
+    plant_id: string;
+    plant_name: string;
+    plant_size_label: string;
+    pot_name: string | null;
+    pot_size_label: string | null;
+  }[]).map((row) => ({
+    sellableVariantId: row.id,
+    plantId: row.plant_id,
+    plantName: row.plant_name.trim(),
+    plantSizeLabel: row.plant_size_label.trim(),
+    potName: row.pot_name?.trim() || null,
+    potSizeLabel: row.pot_size_label?.trim() || null,
+  }));
 }
 
 export async function readSellableVariantsForPlant(plantId: string): Promise<SellableVariant[]> {
@@ -244,15 +297,26 @@ export async function deleteSellableVariant(input: {
   if (!isDatabaseUuid(sellableVariantId)) {
     throw new SellableVariantWriteError("not_found", "Variant not found");
   }
-  const rows = await sql`
-    DELETE FROM sellable_variants sv
-    USING plant_variants pv
-    WHERE sv.id = ${sellableVariantId}::uuid
-      AND sv.plant_variant_id = pv.id
-      AND pv.plant_id = ${plantId}
-    RETURNING sv.id
-  `;
-  if ((rows as { id: string }[]).length === 0) {
-    throw new SellableVariantWriteError("not_found", "Variant not found");
+  try {
+    const rows = await sql`
+      DELETE FROM sellable_variants sv
+      USING plant_variants pv
+      WHERE sv.id = ${sellableVariantId}::uuid
+        AND sv.plant_variant_id = pv.id
+        AND pv.plant_id = ${plantId}
+      RETURNING sv.id
+    `;
+    if ((rows as { id: string }[]).length === 0) {
+      throw new SellableVariantWriteError("not_found", "Variant not found");
+    }
+  } catch (error) {
+    if (error instanceof SellableVariantWriteError) throw error;
+    if (isForeignKeyViolation(error)) {
+      throw new SellableVariantWriteError(
+        "in_use",
+        "This variant is in use and cannot be deleted",
+      );
+    }
+    throw error;
   }
 }

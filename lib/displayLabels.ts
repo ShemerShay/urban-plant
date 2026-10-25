@@ -171,6 +171,8 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not load offers": "admin.offers.loadFailed",
   "Network error while loading offers": "admin.offers.loadNetworkError",
   "Could not create offer": "admin.offers.createFailed",
+  "This price is already used by another offer for this variant": "admin.offers.priceConflict",
+  "Another active Catalog offer already exists for this variant": "admin.offers.catalogConflict",
 };
 
 export function offerStatusLabel(locale: Locale, status: string): string {
