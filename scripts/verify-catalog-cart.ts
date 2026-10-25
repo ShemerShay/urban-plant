@@ -190,7 +190,30 @@ async function main(): Promise<void> {
   const { createPlantVariant } = await import("../lib/plantVariantStorage");
   const { applyInventoryDelta, getInventoryQuantity } = await import("../lib/inventoryStorage");
   const { resolveCatalogCartLines } = await import("../lib/catalogShop");
-  const { createPot, createPotVariant } = await import("../lib/potStorage");
+  const { createPot } = await import("../lib/potStorage");
+
+  async function seedLegacyPotVariant(input: {
+    potId: string;
+    sizeLabel: string;
+    color: string;
+    colorHe?: string | null;
+    catalogPrice: number;
+  }): Promise<{ id: string }> {
+    const rows = await sql`
+      INSERT INTO pot_variants (pot_id, size_label, color, color_he, catalog_price)
+      VALUES (
+        ${input.potId}::uuid,
+        ${input.sizeLabel},
+        ${input.color},
+        ${input.colorHe ?? null},
+        ${input.catalogPrice}
+      )
+      RETURNING id
+    `;
+    const row = (rows as { id: string }[])[0];
+    assert.ok(row);
+    return row;
+  }
 
   const plantRows = await sql`SELECT id, inventory_type FROM plants`;
   const plantRow = (plantRows as { id: string; inventory_type: string | null }[]).find(
@@ -253,14 +276,14 @@ async function main(): Promise<void> {
 
     const clay = await createPot({ name: `${tag} clay`, nameHe: "חימר" });
     potIds.push(clay.id);
-    const white = await createPotVariant({
+    const white = await seedLegacyPotVariant({
       potId: clay.id,
       sizeLabel: "S",
       color: "White",
       colorHe: "לבן",
       catalogPrice: 25,
     });
-    const black = await createPotVariant({
+    const black = await seedLegacyPotVariant({
       potId: clay.id,
       sizeLabel: "M",
       color: "Black",

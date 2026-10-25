@@ -5,22 +5,12 @@
  */
 
 import { sql } from "@/lib/db";
-import { isPotSizeLabel, type PotSizeLabel } from "@/lib/potSizes";
 
 export type Pot = {
   id: string;
   name: string;
   nameHe?: string;
   image?: string;
-};
-
-export type PotVariant = {
-  id: string;
-  potId: string;
-  sizeLabel: PotSizeLabel;
-  color: string;
-  colorHe?: string;
-  catalogPrice: number;
 };
 
 const DATABASE_UUID =
@@ -34,7 +24,6 @@ export type PotWriteCode =
   | "not_found"
   | "name_required"
   | "invalid_size_label"
-  | "invalid_catalog_price"
   | "invalid_supplier_price"
   | "color_required"
   | "duplicate"
@@ -57,15 +46,6 @@ type PotRow = {
   image: string | null;
 };
 
-type PotVariantRow = {
-  id: string;
-  pot_id: string;
-  size_label: string;
-  color: string;
-  color_he: string | null;
-  catalog_price: string | number;
-};
-
 function optionalTrimmed(value: string | null | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -83,27 +63,6 @@ function mapPot(row: PotRow): Pot {
   };
 }
 
-function mapPrice(value: string | number): number {
-  const n = typeof value === "number" ? value : Number(value);
-  return n;
-}
-
-function mapVariant(row: PotVariantRow): PotVariant {
-  const sizeLabel = row.size_label.trim();
-  if (!isPotSizeLabel(sizeLabel)) {
-    throw new PotWriteError("invalid_size_label", "sizeLabel must be S, M, or L");
-  }
-  const colorHe = optionalTrimmed(row.color_he);
-  return {
-    id: row.id,
-    potId: row.pot_id,
-    sizeLabel,
-    color: row.color.trim(),
-    ...(colorHe ? { colorHe } : {}),
-    catalogPrice: mapPrice(row.catalog_price),
-  };
-}
-
 function parseName(value: unknown): string {
   const name = typeof value === "string" ? value.trim() : "";
   if (!name) throw new PotWriteError("name_required", "name is required");
@@ -115,42 +74,6 @@ function parseOptionalText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed || null;
-}
-
-function parseSizeLabel(value: unknown): PotSizeLabel {
-  const raw = typeof value === "string" ? value.trim() : "";
-  if (!isPotSizeLabel(raw)) {
-    throw new PotWriteError("invalid_size_label", "sizeLabel must be S, M, or L");
-  }
-  return raw;
-}
-
-function parseRequiredCatalogPrice(value: unknown): number {
-  if (value === undefined || value === null || value === "") {
-    throw new PotWriteError("invalid_catalog_price", "catalogPrice must be greater than 0");
-  }
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new PotWriteError("invalid_catalog_price", "catalogPrice must be greater than 0");
-  }
-  const cents = Math.round(n * 100);
-  if (Math.abs(n * 100 - cents) > 1e-6) {
-    throw new PotWriteError(
-      "invalid_catalog_price",
-      "catalogPrice must have at most 2 decimal places",
-    );
-  }
-  return cents / 100;
-}
-
-function parseColor(value: unknown): string {
-  const color = typeof value === "string" ? value.trim() : "";
-  if (!color) throw new PotWriteError("color_required", "color is required");
-  return color;
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error != null && "code" in error && String(error.code) === "23505";
 }
 
 export function potWriteHttp(error: PotWriteError): { status: number; error: string } {
@@ -236,55 +159,4 @@ export async function deletePot(potId: string): Promise<void> {
     }
     throw error;
   }
-}
-
-async function insertVariant(input: {
-  potId: string;
-  sizeLabel: PotSizeLabel;
-  color: string;
-  colorHe: string | null;
-  catalogPrice: number;
-}): Promise<PotVariant> {
-  try {
-    const rows = await sql`
-      INSERT INTO pot_variants (pot_id, size_label, color, color_he, catalog_price)
-      VALUES (
-        ${input.potId}::uuid,
-        ${input.sizeLabel},
-        ${input.color},
-        ${input.colorHe},
-        ${input.catalogPrice}
-      )
-      RETURNING id, pot_id, size_label, color, color_he, catalog_price
-    `;
-    return mapVariant((rows as PotVariantRow[])[0]);
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new PotWriteError("duplicate", "This pot already has that size and color");
-    }
-    throw error;
-  }
-}
-
-/**
- * Legacy Catalog writer. Shop, cart, checkout, and orders still read
- * pot_variants.catalog_price. Slice 5 replaces that read. Slice 7 drops the table.
- * Pot Size and Color writes do not call this.
- */
-export async function createPotVariant(input: {
-  potId: string;
-  sizeLabel: unknown;
-  color: unknown;
-  colorHe?: unknown;
-  catalogPrice: unknown;
-}): Promise<PotVariant> {
-  const pot = await getPotById(input.potId);
-  if (!pot) throw new PotWriteError("not_found", "Pot not found");
-  return insertVariant({
-    potId: pot.id,
-    sizeLabel: parseSizeLabel(input.sizeLabel),
-    color: parseColor(input.color),
-    colorHe: parseOptionalText(input.colorHe),
-    catalogPrice: parseRequiredCatalogPrice(input.catalogPrice),
-  });
 }
