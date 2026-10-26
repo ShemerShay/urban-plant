@@ -52,18 +52,10 @@ export function AdminCatalogOrderLines({ lines, total }: AdminCatalogOrderLinesP
                 ) : null}
                 <dt>{t(locale, "admin.orders.quantity")}</dt>
                 <dd className="text-slate-800">{line.quantity}</dd>
-                <dt>{t(locale, "admin.orders.plantPrice")}</dt>
+                <dt>{t(locale, "admin.orders.unitPrice")}</dt>
                 <dd className="text-slate-800">
-                  {formatCatalogPrice(line.plantUnitPrice, line.currency, locale)}
+                  {formatCatalogPrice(line.unitPrice, line.currency, locale)}
                 </dd>
-                {line.potUnitPrice != null ? (
-                  <>
-                    <dt>{t(locale, "admin.orders.potPrice")}</dt>
-                    <dd className="text-slate-800">
-                      {formatCatalogPrice(line.potUnitPrice, line.currency, locale)}
-                    </dd>
-                  </>
-                ) : null}
                 <dt>{t(locale, "admin.orders.lineTotal")}</dt>
                 <dd className="font-medium text-slate-900">
                   {formatCatalogPrice(line.lineTotal, line.currency, locale)}

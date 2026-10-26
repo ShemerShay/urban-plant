@@ -22,8 +22,13 @@ function assertShopWiring(): void {
   assert.match(shop, /inventory_type = 'plants'/);
   assert.doesNotMatch(shop, /supplier_price/);
   assert.doesNotMatch(shop, /nursery_pot_diameter_cm = /);
-  assert.match(shop, /pv\.size_label = ANY/);
+  assert.match(shop, /offer_availabilities/);
+  assert.match(shop, /consumer_price/);
+  assert.doesNotMatch(shop, /pot_variants/);
+  assert.doesNotMatch(shop, /catalog_price/);
   assert.match(shop, /plantSizeCodes/);
+  assert.match(shop, /pot\.image AS pot_image/);
+  assert.doesNotMatch(shop, /!potImage\) continue/);
   assert.doesNotMatch(shop, /average_size/);
   assert.doesNotMatch(shop, /averageSize/);
 
@@ -57,12 +62,11 @@ function assertShopWiring(): void {
   const detailUi = read("components/shop/ShopPlantDetail.tsx");
   assert.match(detailUi, /"use client"/);
   assert.match(detailUi, /selectedSizeId/);
-  assert.match(detailUi, /selectedPotId/);
-  assert.match(detailUi, /onSelect=\{selectSize\}/);
+  assert.match(detailUi, /resolveExplicitConfiguration/);
   assert.match(detailUi, /from \"@\/lib\/catalogShopSelection\"/);
   assert.match(detailUi, /import type \{ CatalogShopDetail/);
-  assert.match(detailUi, /retainCompatiblePotId/);
-  assert.match(detailUi, /compatiblePots\.length > 0/);
+  assert.match(detailUi, /selectedVariantId/);
+  assert.doesNotMatch(detailUi, /catalog_price/);
   assert.doesNotMatch(detailUi, /difficulty/);
   assert.match(detailUi, /petFriendly=\{plant\.petFriendly\}/);
   assert.match(detailUi, /shop\.addToCart/);
@@ -79,11 +83,14 @@ function assertShopWiring(): void {
   const shopCard = read("components/shop/ShopPlantCard.tsx");
   assert.match(shopCard, /formatCatalogPrice/);
   assert.match(shopCard, /CatalogSizeOptions/);
-  assert.match(shopCard, /CatalogPotColorOptions/);
+  assert.match(shopCard, /resolveCardConfiguration/);
   assert.match(shopCard, /addCatalogCartItem/);
-  assert.match(shopCard, /retainCompatiblePotId/);
+  assert.match(shopCard, /w-4\/5/);
+  assert.match(shopCard, /ANALYTICS_EVENTS\.addToCart/);
   assert.match(shopCard, /selectedSizeId/);
-  assert.doesNotMatch(shopCard, /ANALYTICS_EVENTS/);
+  assert.match(shopCard, /resolved && resolvedVariant\?\.potImage/);
+  assert.match(shopCard, /src=\{resolvedVariant\.potImage\}/);
+  assert.doesNotMatch(shopCard, /useState\(sizeOptions\[0\]/);
   assert.doesNotMatch(shopCard, /startCardcom/);
 
   const tracker = read("components/analytics/TrackProductView.tsx");
@@ -137,11 +144,12 @@ function assertShopWiring(): void {
 async function main(): Promise<void> {
   assertShopWiring();
 
-  const { retainCompatiblePotId, catalogSizeChoices, uniquePotColorChoices, plantMatchesCatalogSizeFilter } =
-    await import("../lib/catalogShopSelection");
-  assert.equal(retainCompatiblePotId(null, [{ id: "pot-a" }]), null);
-  assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-a" }, { id: "pot-b" }]), "pot-a");
-  assert.equal(retainCompatiblePotId("pot-a", [{ id: "pot-b" }]), null);
+  const {
+    catalogSizeChoices,
+    plantMatchesCatalogSizeFilter,
+    resolveCardVariant,
+    resolveExplicitConfiguration,
+  } = await import("../lib/catalogShopSelection");
   assert.deepEqual(
     catalogSizeChoices([
       { sizeLabel: "L" },
@@ -160,25 +168,50 @@ async function main(): Promise<void> {
   assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "M"), true);
   assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "L"), false);
   assert.equal(plantMatchesCatalogSizeFilter(["XL", "Medium"], "S"), false);
-  const uniqueColors = uniquePotColorChoices([
-    { id: "white", color: "White" },
-    { id: "black", color: "Black" },
-  ]);
-  assert.deepEqual(
-    uniqueColors.choices.map((pot) => pot.id),
-    ["white", "black"],
+  const potA = {
+    id: "sv-b",
+    potSizeId: "ps-b",
+    potName: "Beta",
+    potImage: "/plant-library/beta.jpg",
+    potSizeLabel: "L",
+    offerId: "o-b",
+    unitPrice: 20,
+    colors: [{ id: "c-b", color: "Black", quantity: 2 }],
+  };
+  const potB = {
+    id: "sv-a",
+    potSizeId: "ps-a",
+    potName: "Alpha",
+    potImage: "/plant-library/alpha.jpg",
+    potSizeLabel: "M",
+    offerId: "o-a",
+    unitPrice: 30,
+    colors: [{ id: "c-a", color: "White", quantity: 1 }],
+  };
+  const noPot = {
+    id: "sv-none",
+    potSizeId: null,
+    offerId: "o-none",
+    unitPrice: 10,
+    colors: [],
+  };
+  const sized = { id: "size", quantity: 3, variants: [potA, potB, noPot] };
+  assert.equal(resolveCardVariant(sized)?.id, "sv-a");
+  assert.equal(resolveCardVariant({ ...sized, variants: [noPot] })?.id, "sv-none");
+  assert.equal(resolveCardVariant({ ...sized, quantity: 0 }), null);
+  const imagelessAlpha = { ...potB, id: "sv-bare", potImage: undefined };
+  assert.equal(
+    resolveCardVariant({ ...sized, variants: [potA, imagelessAlpha, noPot] })?.id,
+    "sv-bare",
   );
-  assert.deepEqual(uniqueColors.ambiguousColors, []);
-  const sharedColor = uniquePotColorChoices([
-    { id: "clay-white", color: "White" },
-    { id: "stone-white", color: "white" },
-    { id: "black", color: "Black" },
-  ]);
-  assert.deepEqual(
-    sharedColor.choices.map((pot) => pot.id),
-    ["black"],
+  assert.equal(
+    resolveExplicitConfiguration(
+      { id: "size", quantity: 3, variants: [imagelessAlpha] },
+      "sv-bare",
+      "c-a",
+    )?.offerId,
+    "o-a",
   );
-  assert.deepEqual(sharedColor.ambiguousColors, ["White"]);
 
   const plantsManager = read("components/admin/AdminPlantsManager.tsx");
   assert.doesNotMatch(plantsManager, /draft\.difficulty/);
@@ -239,7 +272,11 @@ async function main(): Promise<void> {
   );
   const { applyInventoryDelta } = await import("../lib/inventoryStorage");
   const { readCatalogShopCards, readCatalogShopDetail } = await import("../lib/catalogShop");
-  const { createPot } = await import("../lib/potStorage");
+  const { createPot, updatePot } = await import("../lib/potStorage");
+  const { createPotColor, createPotSize } = await import("../lib/potSizeStorage");
+  const { applyPotInventoryDelta } = await import("../lib/potInventoryStorage");
+  const { createSellableVariant } = await import("../lib/sellableVariantStorage");
+  const { createOrReusePlantOffer } = await import("../lib/offerStorage");
 
   async function seedLegacyPotVariant(input: {
     potId: string;
@@ -276,9 +313,34 @@ async function main(): Promise<void> {
   const tag = `catalog-shop-verify-${randomUUID().slice(0, 8)}`;
   const testPlantId = randomUUID();
   const variantIds: string[] = [];
+  const sellableIds: string[] = [];
   const potIds: string[] = [];
 
+  async function seedNoPotOffer(plantSizeId: string, price: number): Promise<void> {
+    const variant = await createSellableVariant({
+      plantId: testPlantId,
+      plantSizeId,
+      potSizeId: null,
+    });
+    sellableIds.push(variant.sellableVariantId);
+    await createOrReusePlantOffer({
+      sellableVariantId: variant.sellableVariantId,
+      consumerPrice: price,
+      availabilities: [{ scope: "catalog" }],
+    });
+  }
+
   async function cleanup(): Promise<void> {
+    if (sellableIds.length > 0) {
+      await sql`
+        DELETE FROM offer_availabilities
+        WHERE offer_id IN (
+          SELECT id FROM offers WHERE sellable_variant_id = ANY(${sellableIds}::uuid[])
+        )
+      `;
+      await sql`DELETE FROM offers WHERE sellable_variant_id = ANY(${sellableIds}::uuid[])`;
+      await sql`DELETE FROM sellable_variants WHERE id = ANY(${sellableIds}::uuid[])`;
+    }
     if (variantIds.length > 0) {
       await sql`DELETE FROM inventory_history WHERE variant_id = ANY(${variantIds}::uuid[])`;
       await sql`DELETE FROM inventory WHERE variant_id = ANY(${variantIds}::uuid[])`;
@@ -286,6 +348,21 @@ async function main(): Promise<void> {
     }
     await deletePlant(testPlantId);
     if (potIds.length > 0) {
+      await sql`DELETE FROM pot_inventory_history WHERE pot_color_id IN (
+        SELECT c.id FROM pot_colors c
+        JOIN pot_sizes s ON s.id = c.pot_size_id
+        WHERE s.pot_id = ANY(${potIds}::uuid[])
+      )`;
+      await sql`DELETE FROM pot_inventory WHERE pot_color_id IN (
+        SELECT c.id FROM pot_colors c
+        JOIN pot_sizes s ON s.id = c.pot_size_id
+        WHERE s.pot_id = ANY(${potIds}::uuid[])
+      )`;
+      await sql`DELETE FROM pot_colors WHERE pot_size_id IN (
+        SELECT id FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])
+      )`;
+      await sql`DELETE FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])`;
+      await sql`DELETE FROM pot_variants WHERE pot_id = ANY(${potIds}::uuid[])`;
       await sql`DELETE FROM pots WHERE id = ANY(${potIds}::uuid[])`;
     }
   }
@@ -324,8 +401,7 @@ async function main(): Promise<void> {
     assert.equal(publishedOnly.image, sourcePlant.images?.[0]);
     assert.equal(publishedOnly.name, tag);
     assert.equal(publishedOnly.nameHe, "צמח בדיקה");
-    assert.equal(publishedOnly.priceMin, null);
-    assert.equal(publishedOnly.priceMax, null);
+    assert.equal(publishedOnly.sizes.length, 0);
     assert.equal(publishedOnly.unavailable, true);
 
     const small = await createPlantVariant({
@@ -335,10 +411,14 @@ async function main(): Promise<void> {
       catalogPrice: 40,
     });
     variantIds.push(small.id);
+    const pricedWithoutOffer = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
+    assert.ok(pricedWithoutOffer);
+    assert.equal(pricedWithoutOffer.sizes.length, 0);
+    assert.equal(pricedWithoutOffer.unavailable, true);
+    await seedNoPotOffer(small.id, 40);
     const onePrice = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
     assert.ok(onePrice);
-    assert.equal(onePrice.priceMin, 40);
-    assert.equal(onePrice.priceMax, 40);
+    assert.equal(onePrice.sizes[0]?.variants[0]?.unitPrice, 40);
     assert.equal(onePrice.unavailable, true);
 
     let bareRejected = false;
@@ -380,7 +460,7 @@ async function main(): Promise<void> {
     const stillOne = await readCatalogShopDetail(testPlantId);
     assert.ok(stillOne);
     assert.equal(stillOne.sizes.length, 1);
-    assert.equal(stillOne.sizes[0]?.catalogPrice, 40);
+    assert.equal(stillOne.sizes[0]?.variants[0]?.unitPrice, 40);
     assert.equal("averageSize" in stillOne, false);
 
     const medium = await createPlantVariant({
@@ -389,6 +469,7 @@ async function main(): Promise<void> {
       nurseryPotDiameterCm: 17,
       catalogPrice: 90,
     });
+    await seedNoPotOffer(medium.id, 90);
     const withSmallAndMedium = (await readCatalogShopCards()).find(
       (card) => card.id === testPlantId,
     );
@@ -426,31 +507,31 @@ async function main(): Promise<void> {
     const extra = (legacyXl as { id: string }[])[0];
     assert.ok(extra);
     variantIds.push(medium.id, large.id, extra.id);
+    await seedNoPotOffer(large.id, 70);
     await applyInventoryDelta({ variantId: medium.id, delta: 2, note: `${tag} receive` });
 
     const ranged = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
     assert.ok(ranged);
-    assert.equal(ranged.priceMin, 15);
-    assert.equal(ranged.priceMax, 90);
     assert.equal(ranged.unavailable, false);
+    assert.equal(ranged.sizes.some((size) => size.sizeLabel === "XL"), false);
 
     const clay = await createPot({ name: `${tag} clay`, nameHe: "חימר", image: sourcePlant.images[0] });
     const stone = await createPot({ name: `${tag} stone` });
     potIds.push(clay.id, stone.id);
-    const white = await seedLegacyPotVariant({
+    await seedLegacyPotVariant({
       potId: clay.id,
       sizeLabel: "S",
       color: "White",
       colorHe: "לבן",
       catalogPrice: 25,
     });
-    const black = await seedLegacyPotVariant({
+    await seedLegacyPotVariant({
       potId: clay.id,
       sizeLabel: "M",
       color: "Black",
       catalogPrice: 35,
     });
-    const terracotta = await seedLegacyPotVariant({
+    await seedLegacyPotVariant({
       potId: stone.id,
       sizeLabel: "L",
       color: "Terracotta",
@@ -459,60 +540,116 @@ async function main(): Promise<void> {
 
     const cardWithPots = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
     assert.ok(cardWithPots);
-    assert.equal(cardWithPots.sizes.some((size) => size.sizeLabel === "XL"), true);
+    assert.equal(cardWithPots.sizes.some((size) => size.sizeLabel === "XL"), false);
     assert.deepEqual(cardWithPots.plantSizeCodes, ["S", "M", "L"]);
     const cardSizes = catalogSizeChoices(cardWithPots.sizes);
     assert.deepEqual(
       cardSizes.map((size) => size.sizeLabel),
       ["S", "M", "L"],
     );
-    assert.equal(cardSizes.find((size) => size.sizeLabel === "S")?.pots[0]?.id, white.id);
-    assert.equal(cardSizes.find((size) => size.sizeLabel === "M")?.pots[0]?.color, "Black");
-    assert.deepEqual(
-      uniquePotColorChoices(cardSizes.find((size) => size.sizeLabel === "S")?.pots ?? []).ambiguousColors,
-      [],
+    assert.equal(
+      cardSizes.every((size) => size.variants.every((variant) => variant.potSizeId == null)),
+      true,
     );
+
+    const claySize = await createPotSize({ potId: clay.id, sizeLabel: "M", supplierPrice: 8 });
+    const clayColor = await createPotColor({
+      potId: clay.id,
+      sizeId: claySize.id,
+      color: "White",
+      colorHe: "לבן",
+    });
+    await applyPotInventoryDelta({
+      potId: clay.id,
+      sizeId: claySize.id,
+      potColorId: clayColor.id,
+      delta: 2,
+      note: `${tag} clay`,
+    });
+    const claySellable = await createSellableVariant({
+      plantId: testPlantId,
+      plantSizeId: medium.id,
+      potSizeId: claySize.id,
+    });
+    sellableIds.push(claySellable.sellableVariantId);
+    const clayOffer = await createOrReusePlantOffer({
+      sellableVariantId: claySellable.sellableVariantId,
+      consumerPrice: 110,
+      availabilities: [{ scope: "catalog" }],
+    });
+    const stoneSize = await createPotSize({ potId: stone.id, sizeLabel: "M", supplierPrice: 6 });
+    const stoneColor = await createPotColor({
+      potId: stone.id,
+      sizeId: stoneSize.id,
+      color: "Terracotta",
+      colorHe: "טרקוטה",
+    });
+    await applyPotInventoryDelta({
+      potId: stone.id,
+      sizeId: stoneSize.id,
+      potColorId: stoneColor.id,
+      delta: 2,
+      note: `${tag} stone`,
+    });
+    const stoneSellable = await createSellableVariant({
+      plantId: testPlantId,
+      plantSizeId: medium.id,
+      potSizeId: stoneSize.id,
+    });
+    sellableIds.push(stoneSellable.sellableVariantId);
+    const stoneOffer = await createOrReusePlantOffer({
+      sellableVariantId: stoneSellable.sellableVariantId,
+      consumerPrice: 80,
+      availabilities: [{ scope: "catalog" }],
+    });
 
     const detail = await readCatalogShopDetail(testPlantId);
     assert.ok(detail);
     assert.deepEqual(
       detail.sizes.map((size) => size.sizeLabel),
-      ["S", "M", "L", "XL"],
+      ["S", "M", "L"],
     );
     const byLabel = new Map(detail.sizes.map((size) => [size.sizeLabel, size]));
     const sizeS = byLabel.get("S");
     const sizeM = byLabel.get("M");
     const sizeL = byLabel.get("L");
-    const sizeXl = byLabel.get("XL");
-    assert.ok(sizeS && sizeM && sizeL && sizeXl);
+    assert.ok(sizeS && sizeM && sizeL);
     assert.equal(sizeS.nurseryPotDiameterCm, 12);
-    assert.equal(sizeS.catalogPrice, 40);
+    assert.equal(sizeS.variants[0]?.unitPrice, 40);
     assert.equal(sizeS.quantity, 0);
     assert.equal(sizeM.quantity, 2);
-    assert.equal(sizeM.catalogPrice, 90);
+    assert.equal(sizeM.variants[0]?.unitPrice, 90);
     assert.equal(sizeL.nurseryPotDiameterCm, 21);
-    assert.equal(sizeXl.catalogPrice, 15);
-    assert.equal(sizeXl.pots.length, 0);
-    assert.equal(sizeS.pots.length, 1);
-    assert.equal(sizeS.pots[0]?.id, white.id);
-    assert.equal(sizeS.pots[0]?.color, "White");
-    assert.equal(sizeS.pots[0]?.colorHe, "לבן");
-    assert.equal(sizeS.pots[0]?.catalogPrice, 25);
-    assert.equal(sizeS.pots[0]?.image, sourcePlant.images[0]);
-    assert.equal(sizeM.pots.length, 1);
-    assert.equal(sizeM.pots[0]?.id, black.id);
-    assert.equal(sizeM.pots[0]?.catalogPrice, 35);
-    assert.equal(sizeL.pots.length, 1);
-    assert.equal(sizeL.pots[0]?.id, terracotta.id);
-    assert.equal(sizeL.pots.some((pot) => pot.sizeLabel !== "L"), false);
-    assert.equal(sizeS.pots.some((pot) => pot.sizeLabel !== "S"), false);
+    assert.equal(sizeL.variants[0]?.unitPrice, 70);
+    const pictured = sizeM.variants.find((variant) => variant.id === claySellable.sellableVariantId);
+    const imageless = sizeM.variants.find((variant) => variant.id === stoneSellable.sellableVariantId);
+    assert.equal(pictured?.potImage, sourcePlant.images[0]);
+    assert.equal(pictured?.offerId, clayOffer.offer.id);
+    assert.equal(pictured?.unitPrice, 110);
+    assert.ok(imageless);
+    assert.equal(imageless.potImage, undefined);
+    assert.equal(imageless.offerId, stoneOffer.offer.id);
+    assert.equal(imageless.unitPrice, 80);
+    assert.equal(resolveCardVariant(sizeM)?.id, claySellable.sellableVariantId);
+    assert.equal(resolveCardVariant(sizeM)?.potImage, sourcePlant.images[0]);
+    assert.equal(
+      resolveExplicitConfiguration(sizeM, stoneSellable.sellableVariantId, stoneColor.id)?.offerId,
+      stoneOffer.offer.id,
+    );
+    await updatePot({ potId: clay.id, image: null });
+    const afterClear = await readCatalogShopDetail(testPlantId);
+    const clearedSize = afterClear?.sizes.find((entry) => entry.id === medium.id);
+    const cleared = clearedSize?.variants.find((variant) => variant.id === claySellable.sellableVariantId);
+    assert.ok(clearedSize && cleared);
+    assert.equal(cleared.potImage, undefined);
+    assert.equal(cleared.offerId, clayOffer.offer.id);
+    assert.equal(resolveCardVariant(clearedSize)?.id, claySellable.sellableVariantId);
+    assert.equal(resolveCardVariant(clearedSize)?.potImage, undefined);
 
     await applyInventoryDelta({ variantId: medium.id, delta: -2, note: `${tag} clear` });
     const soldOut = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
     assert.ok(soldOut);
     assert.equal(soldOut.unavailable, true);
-    assert.equal(soldOut.priceMin, 15);
-    assert.equal(soldOut.priceMax, 90);
     const soldOutDetail = await readCatalogShopDetail(testPlantId);
     assert.equal(soldOutDetail?.sizes.find((size) => size.sizeLabel === "M")?.quantity, 0);
 

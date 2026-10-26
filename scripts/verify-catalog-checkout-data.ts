@@ -63,9 +63,8 @@ async function main(): Promise<void> {
     throw new Error("Refusing to run catalog checkout verification against the dev-partner-page database");
   }
 
-  const { plantUnitCostFromSupplierPrice, PLANT_UNIT_COST_SOURCE } = await import(
-    "../lib/catalogCheckoutSnapshot"
-  );
+  const { plantUnitCostFromSupplierPrice, PLANT_UNIT_COST_SOURCE, POT_UNIT_COST_SOURCE } =
+    await import("../lib/catalogCheckoutSnapshot");
   assert.deepEqual(plantUnitCostFromSupplierPrice(18.5), {
     plantUnitCost: 18.5,
     plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
@@ -74,7 +73,15 @@ async function main(): Promise<void> {
     plantUnitCost: 18.5,
     plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
   });
-  for (const value of [0, "0", "0.00", -1, null, undefined, ""]) {
+  assert.deepEqual(plantUnitCostFromSupplierPrice(0), {
+    plantUnitCost: 0,
+    plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
+  });
+  assert.deepEqual(plantUnitCostFromSupplierPrice("0.00"), {
+    plantUnitCost: 0,
+    plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
+  });
+  for (const value of [-1, null, undefined, ""]) {
     assert.deepEqual(plantUnitCostFromSupplierPrice(value), {
       plantUnitCost: null,
       plantUnitCostSource: null,
@@ -146,8 +153,11 @@ async function main(): Promise<void> {
   const holdIndexNames = new Set(
     (holdIndexes as { indexname: string }[]).map((row) => row.indexname),
   );
-  assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_variant_key"), true);
+  assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_variant_key"), false);
+  assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_plant_key"), true);
+  assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_color_key"), true);
   assert.equal(holdIndexNames.has("catalog_stock_holds_active_variant_idx"), true);
+  assert.equal(holdIndexNames.has("catalog_stock_holds_active_color_idx"), true);
 
   const itemCols = await sql`
     SELECT column_name
@@ -158,17 +168,22 @@ async function main(): Promise<void> {
   for (const name of [
     "line_no",
     "plant_variant_id",
-    "pot_variant_id",
-    "plant_unit_price",
-    "pot_unit_price",
+    "sellable_variant_id",
+    "offer_id",
+    "pot_size_id",
+    "pot_color_id",
+    "unit_price",
     "line_total",
     "plant_unit_cost",
     "plant_unit_cost_source",
+    "pot_unit_cost",
+    "pot_unit_cost_source",
   ]) {
     assert.equal(itemColNames.includes(name), true, name);
   }
-  assert.equal(itemColNames.includes("pot_unit_cost"), false);
-  assert.equal(itemColNames.includes("pot_cost"), false);
+  for (const name of ["pot_variant_id", "plant_unit_price", "pot_unit_price"]) {
+    assert.equal(itemColNames.includes(name), false, name);
+  }
 
   const itemFks = await sql`
     SELECT pg_get_constraintdef(oid) AS def
@@ -214,7 +229,8 @@ async function main(): Promise<void> {
   const variantA = randomUUID();
   const variantB = randomUUID();
   const potId = randomUUID();
-  const potVariantId = randomUUID();
+  const potSizeId = randomUUID();
+  const potColorId = randomUUID();
   const attemptIds: string[] = [];
   const orderIds: string[] = [];
 
@@ -286,8 +302,12 @@ async function main(): Promise<void> {
       VALUES (${potId}::uuid, ${`Pot ${tag}`}, 'עציץ')
     `;
     await sql`
-      INSERT INTO pot_variants (id, pot_id, size_label, color, color_he, catalog_price)
-      VALUES (${potVariantId}::uuid, ${potId}::uuid, 'M', ${`clay-${tag}`}, 'חרס', 15)
+      INSERT INTO pot_sizes (id, pot_id, size_label, supplier_price)
+      VALUES (${potSizeId}::uuid, ${potId}::uuid, 'M', 0)
+    `;
+    await sql`
+      INSERT INTO pot_colors (id, pot_size_id, color, color_he)
+      VALUES (${potColorId}::uuid, ${potSizeId}::uuid, ${`clay-${tag}`}, 'חרס')
     `;
     await sql`
       INSERT INTO inventory (variant_id, quantity, updated_at)
@@ -357,37 +377,49 @@ async function main(): Promise<void> {
           lineNo: 1,
           plantId: pricedPlantId,
           plantVariantId: variantA,
-          potVariantId: null,
+          sellableVariantId: variantA,
+          offerId: `offer-a-${tag}`,
+          potSizeId: null,
+          potColorId: null,
           quantity: 2,
-          plantUnitPrice: 40,
-          potUnitPrice: null,
+          unitPrice: 40,
           lineTotal: 80,
           currency: "ILS" as const,
           plantName: "Checkout Priced",
           plantNameHe: "צמח",
           sizeLabel: `A-${tag}`,
           potName: null,
+          potSizeLabel: null,
           potColor: null,
+          potColorHe: null,
           plantUnitCost: 1,
           plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
+          potUnitCost: null,
+          potUnitCostSource: null,
         },
         {
           lineNo: 2,
           plantId: pricedPlantId,
           plantVariantId: variantA,
-          potVariantId,
+          sellableVariantId: variantA,
+          offerId: `offer-pot-${tag}`,
+          potSizeId,
+          potColorId,
           quantity: 1,
-          plantUnitPrice: 40,
-          potUnitPrice: 15,
+          unitPrice: 55,
           lineTotal: 55,
           currency: "ILS" as const,
           plantName: "Checkout Priced",
           plantNameHe: "צמח",
           sizeLabel: `A-${tag}`,
           potName: `Pot ${tag}`,
+          potSizeLabel: "M",
           potColor: `clay-${tag}`,
+          potColorHe: "חרס",
           plantUnitCost: null,
           plantUnitCostSource: null,
+          potUnitCost: 0,
+          potUnitCostSource: POT_UNIT_COST_SOURCE,
         },
       ],
     };
@@ -405,15 +437,21 @@ async function main(): Promise<void> {
     for (const line of catalogLoaded?.catalogSnapshot?.lines ?? []) {
       assert.equal(line.plantUnitCost, 18.5);
       assert.equal(line.plantUnitCostSource, PLANT_UNIT_COST_SOURCE);
-      assert.equal("potUnitCost" in line, false);
     }
+    assert.equal(catalogLoaded?.catalogSnapshot?.lines[0]?.potUnitCost, null);
+    assert.equal(catalogLoaded?.catalogSnapshot?.lines[1]?.unitPrice, 55);
+    assert.equal(catalogLoaded?.catalogSnapshot?.lines[1]?.potUnitCost, 0);
+    assert.equal(
+      catalogLoaded?.catalogSnapshot?.lines[1]?.potUnitCostSource,
+      POT_UNIT_COST_SOURCE,
+    );
     const storedSnapshot = await sql`
       SELECT catalog_snapshot
       FROM payment_attempts
       WHERE id = ${catalogAttemptId}::uuid
     `;
     const rawSnapshot = JSON.stringify((storedSnapshot as { catalog_snapshot: unknown }[])[0]?.catalog_snapshot);
-    assert.doesNotMatch(rawSnapshot, /potUnitCost|pot_unit_cost|potCost/);
+    assert.doesNotMatch(rawSnapshot, /plant_unit_price|pot_unit_price|potVariantId/);
 
     await sql`
       UPDATE plants SET supplier_price = 99 WHERE id = ${pricedPlantId}
@@ -434,26 +472,32 @@ async function main(): Promise<void> {
             lineNo: 1,
             plantId: zeroPlantId,
             plantVariantId: variantB,
-            potVariantId: null,
+            sellableVariantId: variantB,
+            offerId: `offer-b-${tag}`,
+            potSizeId: null,
+            potColorId: null,
             quantity: 1,
-            plantUnitPrice: 10,
-            potUnitPrice: null,
+            unitPrice: 10,
             lineTotal: 10,
             currency: "ILS",
             plantName: "Checkout Zero",
             plantNameHe: null,
             sizeLabel: `B-${tag}`,
             potName: null,
+            potSizeLabel: null,
             potColor: null,
+            potColorHe: null,
             plantUnitCost: 4,
             plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
+            potUnitCost: null,
+            potUnitCostSource: null,
           },
         ],
       },
     });
     const zeroLoaded = await getPaymentAttemptById(zeroAttemptId);
-    assert.equal(zeroLoaded?.catalogSnapshot?.lines[0]?.plantUnitCost, null);
-    assert.equal(zeroLoaded?.catalogSnapshot?.lines[0]?.plantUnitCostSource, null);
+    assert.equal(zeroLoaded?.catalogSnapshot?.lines[0]?.plantUnitCost, 0);
+    assert.equal(zeroLoaded?.catalogSnapshot?.lines[0]?.plantUnitCostSource, PLANT_UNIT_COST_SOURCE);
 
     const missingCosts = await (
       await import("../lib/catalogCheckoutSnapshot")
@@ -638,7 +682,7 @@ async function main(): Promise<void> {
     try {
       await acquireCatalogStockHolds({
         attemptId: consumeId,
-        lines: [{ plantVariantId: potVariantId, quantity: 1 }],
+        lines: [{ plantVariantId: potColorId, quantity: 1 }],
       });
     } catch (error) {
       potRejected = error instanceof CatalogStockHoldError && error.code === "variant_not_found";
@@ -684,14 +728,16 @@ async function main(): Promise<void> {
     const inserted = await insertOrderItems(orderId, orderItemsFromCatalogSnapshot(snapshot));
     assert.equal(inserted.length, 2);
     assert.equal(inserted[0]?.plantUnitCost, 18.5);
-    assert.equal(inserted[1]?.potUnitPrice, 15);
+    assert.equal(inserted[1]?.unitPrice, 55);
     assert.equal(inserted[1]?.plantUnitCost, 18.5);
+    assert.equal(inserted[1]?.potUnitCost, 0);
+    assert.equal(inserted[1]?.potUnitCostSource, POT_UNIT_COST_SOURCE);
     const zeroItems = await insertOrderItems(
       otherOrderId,
       orderItemsFromCatalogSnapshot(zeroLoaded!.catalogSnapshot!),
     );
-    assert.equal(zeroItems[0]?.plantUnitCost, null);
-    assert.equal(zeroItems[0]?.plantUnitCostSource, null);
+    assert.equal(zeroItems[0]?.plantUnitCost, 0);
+    assert.equal(zeroItems[0]?.plantUnitCostSource, PLANT_UNIT_COST_SOURCE);
 
     await sql`UPDATE plants SET supplier_price = 0 WHERE id = ${pricedPlantId}`;
     const readBack = await getOrderItemsByOrderId(orderId);
@@ -702,14 +748,14 @@ async function main(): Promise<void> {
     const byIds = await getOrderItemsByOrderIds([orderId, otherOrderId]);
     assert.equal(byIds.get(orderId)?.length, 2);
     assert.equal(byIds.get(otherOrderId)?.length, 1);
-    assert.equal(byIds.get(otherOrderId)?.[0]?.plantUnitCost, null);
+    assert.equal(byIds.get(otherOrderId)?.[0]?.plantUnitCost, 0);
 
     let badTotalRejected = false;
     try {
       await sql`
         INSERT INTO order_items (
           order_id, line_no, plant_id, plant_variant_id, quantity,
-          plant_unit_price, line_total, currency, plant_name
+          unit_price, line_total, currency, plant_name
         )
         VALUES (
           ${orderId}::uuid, 9, ${pricedPlantId}, ${variantA}::uuid, 1,
@@ -721,22 +767,32 @@ async function main(): Promise<void> {
     }
     assert.equal(badTotalRejected, true);
 
-    let zeroCostRejected = false;
+    let negativeCostRejected = false;
     try {
       await sql`
         INSERT INTO order_items (
           order_id, line_no, plant_id, plant_variant_id, quantity,
-          plant_unit_price, line_total, currency, plant_name, plant_unit_cost
+          unit_price, line_total, currency, plant_name, plant_unit_cost
         )
         VALUES (
           ${orderId}::uuid, 8, ${pricedPlantId}, ${variantA}::uuid, 1,
-          10, 10, 'ILS', 'Checkout Priced', 0
+          10, 10, 'ILS', 'Checkout Priced', -1
         )
       `;
     } catch {
-      zeroCostRejected = true;
+      negativeCostRejected = true;
     }
-    assert.equal(zeroCostRejected, true);
+    assert.equal(negativeCostRejected, true);
+    await sql`
+      INSERT INTO order_items (
+        order_id, line_no, plant_id, plant_variant_id, sellable_variant_id, offer_id, quantity,
+        unit_price, line_total, currency, plant_name, plant_unit_cost, plant_unit_cost_source
+      )
+      VALUES (
+        ${orderId}::uuid, 8, ${pricedPlantId}, ${variantA}::uuid, ${variantA}::uuid, ${`offer-zero-${tag}`}, 1,
+        10, 10, 'ILS', 'Checkout Priced', 0, 'plants.supplier_price@sale'
+      )
+    `;
 
     await sql`DELETE FROM pots WHERE id = ${potId}::uuid`;
     for (const attemptId of attemptIds) {
@@ -747,12 +803,18 @@ async function main(): Promise<void> {
     await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid)`;
     await sql`DELETE FROM plants WHERE id IN (${pricedPlantId}, ${zeroPlantId})`;
     const afterDelete = await getOrderItemsByOrderId(orderId);
-    assert.equal(afterDelete.length, 2);
-    assert.equal(afterDelete[1]?.potVariantId, potVariantId);
-    assert.equal(afterDelete[1]?.potColor, `clay-${tag}`);
-    assert.equal(afterDelete[0]?.plantName, "Checkout Priced");
-    assert.equal(afterDelete[0]?.plantUnitCost, 18.5);
-    assert.equal("potUnitCost" in afterDelete[0]!, false);
+    assert.equal(afterDelete.length, 3);
+    const potLine = afterDelete.find((line) => line.potColorId === potColorId);
+    const noPotLine = afterDelete.find((line) => line.lineNo === 1);
+    const zeroCostLine = afterDelete.find((line) => line.lineNo === 8);
+    assert.equal(potLine?.potUnitCost, 0);
+    assert.equal(potLine?.unitPrice, 55);
+    assert.equal(potLine?.potColor, `clay-${tag}`);
+    assert.equal(noPotLine?.plantName, "Checkout Priced");
+    assert.equal(noPotLine?.plantUnitCost, 18.5);
+    assert.equal(noPotLine?.potUnitCost, null);
+    assert.equal(zeroCostLine?.plantUnitCost, 0);
+    assert.equal(zeroCostLine?.unitPrice, 10);
 
     let orderDeleteBlocked = false;
     try {
@@ -761,7 +823,7 @@ async function main(): Promise<void> {
       orderDeleteBlocked = true;
     }
     assert.equal(orderDeleteBlocked, true);
-    assert.equal((await getOrderItemsByOrderId(orderId)).length, 2);
+    assert.equal((await getOrderItemsByOrderId(orderId)).length, 3);
 
     const spotAfterRows = await sql`
       SELECT id, status, payment_hold_attempt_id, plant_variant_id, current_offer_id

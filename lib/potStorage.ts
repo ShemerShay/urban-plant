@@ -1,6 +1,6 @@
 /**
- * Legacy Catalog pots. Shop matching is still an exact size_label match on
- * pot_variants, and catalog_price stays the customer selling price.
+ * Pot records for admin.
+ * Customer Catalog selling does not read pot_variants or catalog_price.
  * Pot sizes, colors, and central pot inventory are separate tables.
  */
 

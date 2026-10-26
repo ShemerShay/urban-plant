@@ -48,11 +48,12 @@ const UUID_RE =
 
 export type CatalogCheckoutLineInput = {
   plantId: string;
-  plantVariantId: string;
-  potVariantId: string | null;
+  plantSizeId: string;
+  sellableVariantId: string;
+  offerId: string;
+  potColorId: string | null;
   quantity: number;
-  plantUnitPrice: number;
-  potUnitPrice: number | null;
+  unitPrice: number;
 };
 
 export type StartCatalogCardcomPaymentInput = {
@@ -101,7 +102,7 @@ type CreateRow = {
   insufficient: boolean;
   attempt_id: string | null;
   hold_count: number | string;
-  variant_count: number | string;
+  resource_count: number | string;
 };
 
 function pgCode(error: unknown): string | undefined {
@@ -131,41 +132,36 @@ function parseLines(lines: unknown): CatalogCheckoutLineInput[] | null {
     if (!raw || typeof raw !== "object") return null;
     const row = raw as Record<string, unknown>;
     const plantId = typeof row.plantId === "string" ? row.plantId.trim() : "";
-    const plantVariantId =
-      typeof row.plantVariantId === "string" ? row.plantVariantId.trim().toLowerCase() : "";
-    if (!plantId || !isUuid(plantVariantId)) return null;
+    const plantSizeId =
+      typeof row.plantSizeId === "string" ? row.plantSizeId.trim().toLowerCase() : "";
+    const sellableVariantId =
+      typeof row.sellableVariantId === "string" ? row.sellableVariantId.trim().toLowerCase() : "";
+    const offerId = typeof row.offerId === "string" ? row.offerId.trim() : "";
+    if (!plantId || !isUuid(plantSizeId) || !isUuid(sellableVariantId) || !offerId) return null;
 
-    let potVariantId: string | null = null;
-    if (row.potVariantId == null) {
-      potVariantId = null;
-    } else if (typeof row.potVariantId === "string") {
-      const trimmed = row.potVariantId.trim().toLowerCase();
-      if (!trimmed) {
-        potVariantId = null;
-      } else if (!isUuid(trimmed)) {
-        return null;
-      } else {
-        potVariantId = trimmed;
-      }
+    let potColorId: string | null = null;
+    if (row.potColorId == null) {
+      potColorId = null;
+    } else if (typeof row.potColorId === "string") {
+      const trimmed = row.potColorId.trim().toLowerCase();
+      if (!trimmed) potColorId = null;
+      else if (!isUuid(trimmed)) return null;
+      else potColorId = trimmed;
     } else {
       return null;
     }
 
     if (!Number.isInteger(row.quantity) || (row.quantity as number) <= 0) return null;
-    if (!isPositiveMoney(row.plantUnitPrice)) return null;
-    if (potVariantId == null) {
-      if (row.potUnitPrice != null) return null;
-    } else if (!isPositiveMoney(row.potUnitPrice)) {
-      return null;
-    }
+    if (!isPositiveMoney(row.unitPrice)) return null;
 
     parsed.push({
       plantId,
-      plantVariantId,
-      potVariantId,
+      plantSizeId,
+      sellableVariantId,
+      offerId,
+      potColorId,
       quantity: row.quantity as number,
-      plantUnitPrice: row.plantUnitPrice,
-      potUnitPrice: potVariantId == null ? null : (row.potUnitPrice as number),
+      unitPrice: row.unitPrice,
     });
   }
   return parsed;
@@ -305,19 +301,26 @@ async function createCatalogAttemptAndHolds(input: {
   const payload = JSON.stringify(
     input.lines.map((line) => ({
       plantId: line.plantId,
-      plantVariantId: line.plantVariantId,
-      potVariantId: line.potVariantId,
+      plantSizeId: line.plantSizeId,
+      sellableVariantId: line.sellableVariantId,
+      offerId: line.offerId,
+      potColorId: line.potColorId,
       quantity: line.quantity,
-      plantUnitPrice: line.plantUnitPrice,
-      potUnitPrice: line.potUnitPrice,
+      unitPrice: line.unitPrice,
     })),
   );
-  const variantIds = [...new Set(input.lines.map((line) => line.plantVariantId))].sort();
-  const lockQueries = variantIds.map(
-    (variantId) => sql`
+  const plantIds = [...new Set(input.lines.map((line) => line.plantSizeId))].sort();
+  const colorIds = [
+    ...new Set(
+      input.lines.map((line) => line.potColorId).filter((id): id is string => Boolean(id)),
+    ),
+  ].sort();
+  const expectedHoldCount = plantIds.length + colorIds.length;
+  const lockQueries = [...plantIds, ...colorIds].map(
+    (resourceId) => sql`
       SELECT pg_advisory_xact_lock(
         hashtext('catalog_stock_hold'),
-        hashtext(${variantId}::text)
+        hashtext(${resourceId}::text)
       )
     `,
   );
@@ -331,14 +334,12 @@ async function createCatalogAttemptAndHolds(input: {
           SELECT
             ord::int AS line_no,
             elem->>'plantId' AS plant_id,
-            (elem->>'plantVariantId')::uuid AS plant_variant_id,
-            NULLIF(elem->>'potVariantId', '')::uuid AS pot_variant_id,
+            (elem->>'plantSizeId')::uuid AS plant_variant_id,
+            (elem->>'sellableVariantId')::uuid AS sellable_variant_id,
+            elem->>'offerId' AS offer_id,
+            NULLIF(elem->>'potColorId', '')::uuid AS pot_color_id,
             (elem->>'quantity')::int AS quantity,
-            round((elem->>'plantUnitPrice')::numeric, 2) AS client_plant_price,
-            CASE
-              WHEN elem->>'potUnitPrice' IS NULL THEN NULL
-              ELSE round((elem->>'potUnitPrice')::numeric, 2)
-            END AS client_pot_price
+            round((elem->>'unitPrice')::numeric, 2) AS client_unit_price
           FROM jsonb_array_elements(${payload}::jsonb) WITH ORDINALITY AS t(elem, ord)
         ),
         matched AS (
@@ -346,79 +347,116 @@ async function createCatalogAttemptAndHolds(input: {
             i.line_no,
             i.plant_id,
             i.plant_variant_id,
-            i.pot_variant_id,
+            i.sellable_variant_id,
+            i.offer_id,
+            i.pot_color_id,
             i.quantity,
-            i.client_plant_price,
-            i.client_pot_price,
+            i.client_unit_price,
             p.id AS server_plant_id,
             p.name AS plant_name,
             NULLIF(btrim(p.name_he), '') AS plant_name_he,
             NULLIF(btrim(pv.size_label), '') AS size_label,
-            round(pv.catalog_price, 2) AS server_plant_price,
+            round(o.consumer_price, 2) AS server_unit_price,
+            sv.pot_size_id,
             CASE
-              WHEN i.pot_variant_id IS NULL THEN NULL
-              ELSE round(pot.catalog_price, 2)
-            END AS server_pot_price,
-            CASE
-              WHEN i.pot_variant_id IS NULL THEN NULL
+              WHEN sv.pot_size_id IS NULL THEN NULL
               ELSE NULLIF(btrim(parent_pot.name), '')
             END AS pot_name,
             CASE
-              WHEN i.pot_variant_id IS NULL THEN NULL
-              ELSE NULLIF(btrim(pot.color), '')
+              WHEN sv.pot_size_id IS NULL THEN NULL
+              ELSE NULLIF(btrim(parent_pot.name_he), '')
+            END AS pot_name_he,
+            CASE
+              WHEN sv.pot_size_id IS NULL THEN NULL
+              ELSE ps.size_label
+            END AS pot_size_label,
+            CASE
+              WHEN sv.pot_size_id IS NULL THEN NULL
+              ELSE NULLIF(btrim(pc.color), '')
             END AS pot_color,
             CASE
-              WHEN p.supplier_price > 0 THEN round(p.supplier_price, 2)
-              ELSE NULL
+              WHEN sv.pot_size_id IS NULL THEN NULL
+              ELSE NULLIF(btrim(pc.color_he), '')
+            END AS pot_color_he,
+            CASE
+              WHEN p.supplier_price IS NULL THEN NULL
+              WHEN p.supplier_price < 0 THEN NULL
+              ELSE round(p.supplier_price, 2)
             END AS plant_unit_cost,
             CASE
-              WHEN p.supplier_price > 0 THEN 'plants.supplier_price@sale'
-              ELSE NULL
+              WHEN p.supplier_price IS NULL OR p.supplier_price < 0 THEN NULL
+              ELSE 'plants.supplier_price@sale'
             END AS plant_unit_cost_source,
+            CASE
+              WHEN sv.pot_size_id IS NULL OR ps.supplier_price IS NULL OR ps.supplier_price < 0 THEN NULL
+              ELSE round(ps.supplier_price, 2)
+            END AS pot_unit_cost,
+            CASE
+              WHEN sv.pot_size_id IS NULL OR ps.supplier_price IS NULL OR ps.supplier_price < 0 THEN NULL
+              ELSE 'pot_sizes.supplier_price@sale'
+            END AS pot_unit_cost_source,
             (
               p.id IS NOT NULL
               AND p.catalog_published IS TRUE
               AND COALESCE(p.inventory_type, 'plants') = 'plants'
               AND pv.id IS NOT NULL
               AND pv.plant_id = i.plant_id
-              AND pv.catalog_price IS NOT NULL
-              AND round(pv.catalog_price, 2) = i.client_plant_price
+              AND sv.id IS NOT NULL
+              AND sv.plant_variant_id = pv.id
+              AND o.id IS NOT NULL
+              AND o.id = i.offer_id
+              AND o.status = 'active'
+              AND o.sellable_variant_id = sv.id
+              AND EXISTS (
+                SELECT 1
+                FROM offer_availabilities oa
+                WHERE oa.offer_id = o.id
+                  AND oa.scope = 'catalog'
+              )
+              AND round(o.consumer_price, 2) = i.client_unit_price
               AND p.currency = 'ILS'
               AND i.quantity > 0
               AND (
                 (
-                  i.pot_variant_id IS NULL
-                  AND i.client_pot_price IS NULL
+                  sv.pot_size_id IS NULL
+                  AND i.pot_color_id IS NULL
                 )
                 OR (
-                  i.pot_variant_id IS NOT NULL
-                  AND pot.id IS NOT NULL
-                  AND NULLIF(btrim(pv.size_label), '') IS NOT NULL
-                  AND pot.size_label = NULLIF(btrim(pv.size_label), '')
-                  AND i.client_pot_price IS NOT NULL
-                  AND round(pot.catalog_price, 2) = i.client_pot_price
+                  sv.pot_size_id IS NOT NULL
+                  AND pc.id IS NOT NULL
+                  AND pc.pot_size_id = sv.pot_size_id
                   AND NULLIF(btrim(parent_pot.name), '') IS NOT NULL
-                  AND NULLIF(btrim(pot.color), '') IS NOT NULL
+                  AND NULLIF(btrim(pc.color), '') IS NOT NULL
                 )
               )
             ) AS line_ok
           FROM input_lines i
           LEFT JOIN plant_variants pv ON pv.id = i.plant_variant_id
           LEFT JOIN plants p ON p.id = pv.plant_id
-          LEFT JOIN pot_variants pot ON pot.id = i.pot_variant_id
-          LEFT JOIN pots parent_pot ON parent_pot.id = pot.pot_id
+          LEFT JOIN sellable_variants sv ON sv.id = i.sellable_variant_id
+          LEFT JOIN offers o ON o.id = i.offer_id
+          LEFT JOIN pot_sizes ps ON ps.id = sv.pot_size_id
+          LEFT JOIN pots parent_pot ON parent_pot.id = ps.pot_id
+          LEFT JOIN pot_colors pc ON pc.id = i.pot_color_id
         ),
         flags AS (
           SELECT
             NOT COALESCE((SELECT bool_and(line_ok) FROM matched), false) AS cart_changed
         ),
-        aggregated AS (
+        plant_agg AS (
           SELECT plant_variant_id, SUM(quantity)::int AS quantity
           FROM matched
           WHERE NOT (SELECT cart_changed FROM flags)
           GROUP BY plant_variant_id
         ),
-        availability AS (
+        color_agg AS (
+          SELECT pot_color_id, SUM(quantity)::int AS quantity
+          FROM matched
+          WHERE NOT (SELECT cart_changed FROM flags)
+            AND pot_color_id IS NOT NULL
+          GROUP BY pot_color_id
+        ),
+        plant_availability AS (
           SELECT
             a.plant_variant_id,
             a.quantity,
@@ -432,17 +470,35 @@ async function createCatalogAttemptAndHolds(input: {
               ), 0),
               0
             ) AS available_qty
-          FROM aggregated a
+          FROM plant_agg a
           LEFT JOIN inventory inv ON inv.variant_id = a.plant_variant_id
+        ),
+        color_availability AS (
+          SELECT
+            a.pot_color_id,
+            a.quantity,
+            GREATEST(
+              COALESCE(pi.quantity, 0) - COALESCE((
+                SELECT SUM(h.quantity)::int
+                FROM catalog_stock_holds h
+                WHERE h.pot_color_id = a.pot_color_id
+                  AND h.status = 'active'
+                  AND h.expires_at > now()
+              ), 0),
+              0
+            ) AS available_qty
+          FROM color_agg a
+          LEFT JOIN pot_inventory pi ON pi.pot_color_id = a.pot_color_id
         ),
         decision AS (
           SELECT
             f.cart_changed,
             (
               NOT f.cart_changed
-              AND COALESCE((
-                SELECT bool_or(quantity > available_qty) FROM availability
-              ), false)
+              AND (
+                COALESCE((SELECT bool_or(quantity > available_qty) FROM plant_availability), false)
+                OR COALESCE((SELECT bool_or(quantity > available_qty) FROM color_availability), false)
+              )
             ) AS insufficient
           FROM flags f
         ),
@@ -455,22 +511,25 @@ async function createCatalogAttemptAndHolds(input: {
                   'lineNo', m.line_no,
                   'plantId', m.server_plant_id,
                   'plantVariantId', m.plant_variant_id,
-                  'potVariantId', m.pot_variant_id,
+                  'sellableVariantId', m.sellable_variant_id,
+                  'offerId', m.offer_id,
+                  'potSizeId', m.pot_size_id,
+                  'potColorId', m.pot_color_id,
                   'quantity', m.quantity,
-                  'plantUnitPrice', m.server_plant_price,
-                  'potUnitPrice', m.server_pot_price,
-                  'lineTotal', round(
-                    (m.server_plant_price + COALESCE(m.server_pot_price, 0)) * m.quantity,
-                    2
-                  ),
+                  'unitPrice', m.server_unit_price,
+                  'lineTotal', m.server_unit_price * m.quantity,
                   'currency', 'ILS',
                   'plantName', m.plant_name,
                   'plantNameHe', m.plant_name_he,
                   'sizeLabel', m.size_label,
                   'potName', m.pot_name,
+                  'potSizeLabel', m.pot_size_label,
                   'potColor', m.pot_color,
+                  'potColorHe', m.pot_color_he,
                   'plantUnitCost', m.plant_unit_cost,
-                  'plantUnitCostSource', m.plant_unit_cost_source
+                  'plantUnitCostSource', m.plant_unit_cost_source,
+                  'potUnitCost', m.pot_unit_cost,
+                  'potUnitCostSource', m.pot_unit_cost_source
                 )
                 ORDER BY m.line_no
               )
@@ -478,9 +537,7 @@ async function createCatalogAttemptAndHolds(input: {
             ), '[]'::jsonb)
           ) AS catalog_snapshot,
           (
-            SELECT round(SUM(
-              (m.server_plant_price + COALESCE(m.server_pot_price, 0)) * m.quantity
-            ), 2)
+            SELECT round(SUM(m.server_unit_price * m.quantity), 2)
             FROM matched m
           ) AS amount,
           (SELECT m.server_plant_id FROM matched m ORDER BY m.line_no LIMIT 1) AS product_id,
@@ -559,6 +616,7 @@ async function createCatalogAttemptAndHolds(input: {
           INSERT INTO catalog_stock_holds (
             attempt_id,
             plant_variant_id,
+            pot_color_id,
             quantity,
             status,
             expires_at,
@@ -568,21 +626,36 @@ async function createCatalogAttemptAndHolds(input: {
           SELECT
             a.id,
             av.plant_variant_id,
+            NULL::uuid,
             av.quantity,
             'active',
             now() + (${PAYMENT_HOLD_TTL_MS} * interval '1 millisecond'),
             now(),
             now()
           FROM attempt_ins a
-          CROSS JOIN availability av
+          CROSS JOIN plant_availability av
+          UNION ALL
+          SELECT
+            a.id,
+            NULL::uuid,
+            cv.pot_color_id,
+            cv.quantity,
+            'active',
+            now() + (${PAYMENT_HOLD_TTL_MS} * interval '1 millisecond'),
+            now(),
+            now()
+          FROM attempt_ins a
+          CROSS JOIN color_availability cv
           RETURNING id
         ),
         guard AS (
           SELECT 1 / CASE
             WHEN (SELECT cart_changed OR insufficient FROM decision) THEN 1
             WHEN (SELECT id FROM attempt_ins) IS NOT NULL
-              AND (SELECT COUNT(*) FROM hold_ins) = (SELECT COUNT(*) FROM availability)
-              AND (SELECT COUNT(*) FROM availability) = ${variantIds.length}
+              AND (SELECT COUNT(*) FROM hold_ins) =
+                (SELECT COUNT(*) FROM plant_availability) + (SELECT COUNT(*) FROM color_availability)
+              AND (SELECT COUNT(*) FROM plant_availability) + (SELECT COUNT(*) FROM color_availability)
+                = ${expectedHoldCount}
             THEN 1
             ELSE 0
           END AS ok
@@ -592,7 +665,8 @@ async function createCatalogAttemptAndHolds(input: {
           d.insufficient,
           (SELECT id FROM attempt_ins) AS attempt_id,
           (SELECT COUNT(*)::int FROM hold_ins) AS hold_count,
-          (SELECT COUNT(*)::int FROM availability) AS variant_count,
+          (SELECT COUNT(*)::int FROM plant_availability)
+            + (SELECT COUNT(*)::int FROM color_availability) AS resource_count,
           (SELECT ok FROM guard) AS guard_ok
         FROM decision d
       `,
@@ -647,7 +721,7 @@ async function createCatalogAttemptAndHolds(input: {
       httpStatus: 409,
     };
   }
-  if (!row.attempt_id || Number(row.hold_count) !== variantIds.length) {
+  if (!row.attempt_id || Number(row.hold_count) !== expectedHoldCount) {
     if (row.attempt_id) {
       await compensateCatalogPaymentPrep(input.attemptId, CANCEL_REASON_PAYMENT_PREP_FAILED);
     }
@@ -663,7 +737,7 @@ async function createCatalogAttemptAndHolds(input: {
 
 /**
  * Validate the submitted Catalog cart against current server data, then create
- * one catalog payment attempt, its plant holds, and the Cardcom payment.
+ * one catalog payment attempt, its plant and color holds, and the Cardcom payment.
  */
 export async function startCatalogCardcomPayment(
   input: StartCatalogCardcomPaymentInput,
@@ -850,9 +924,9 @@ export async function startCatalogCardcomPayment(
 
 async function catalogHoldsAllowRetry(attemptId: string): Promise<boolean> {
   const rows = await sql`
-    WITH expected AS (
+    WITH plant_expected AS (
       SELECT
-        (line->>'plantVariantId')::uuid AS plant_variant_id,
+        (line->>'plantVariantId')::uuid AS resource_id,
         SUM((line->>'quantity')::int)::int AS quantity
       FROM payment_attempts a
       CROSS JOIN LATERAL jsonb_array_elements(a.catalog_snapshot->'lines') AS line
@@ -860,23 +934,49 @@ async function catalogHoldsAllowRetry(attemptId: string): Promise<boolean> {
         AND a.channel = 'catalog'
       GROUP BY 1
     ),
-    active AS (
-      SELECT h.plant_variant_id, h.quantity
+    color_expected AS (
+      SELECT
+        NULLIF(line->>'potColorId', '')::uuid AS resource_id,
+        SUM((line->>'quantity')::int)::int AS quantity
+      FROM payment_attempts a
+      CROSS JOIN LATERAL jsonb_array_elements(a.catalog_snapshot->'lines') AS line
+      WHERE a.id = ${attemptId}::uuid
+        AND a.channel = 'catalog'
+        AND NULLIF(line->>'potColorId', '') IS NOT NULL
+      GROUP BY 1
+    ),
+    active_plant AS (
+      SELECT h.plant_variant_id AS resource_id, h.quantity
       FROM catalog_stock_holds h
       WHERE h.attempt_id = ${attemptId}::uuid
         AND h.status = 'active'
         AND h.expires_at > now()
+        AND h.plant_variant_id IS NOT NULL
+    ),
+    active_color AS (
+      SELECT h.pot_color_id AS resource_id, h.quantity
+      FROM catalog_stock_holds h
+      WHERE h.attempt_id = ${attemptId}::uuid
+        AND h.status = 'active'
+        AND h.expires_at > now()
+        AND h.pot_color_id IS NOT NULL
     )
     SELECT (
-      (SELECT COUNT(*) FROM expected) > 0
-      AND (SELECT COUNT(*) FROM expected) = (
-        SELECT COUNT(*) FROM catalog_stock_holds WHERE attempt_id = ${attemptId}::uuid
-      )
-      AND (SELECT COUNT(*) FROM expected) = (SELECT COUNT(*) FROM active)
+      (SELECT COUNT(*) FROM plant_expected) > 0
+      AND (SELECT COUNT(*) FROM plant_expected) = (SELECT COUNT(*) FROM active_plant)
+      AND (SELECT COUNT(*) FROM color_expected) = (SELECT COUNT(*) FROM active_color)
+      AND (SELECT COUNT(*) FROM catalog_stock_holds WHERE attempt_id = ${attemptId}::uuid)
+        = (SELECT COUNT(*) FROM plant_expected) + (SELECT COUNT(*) FROM color_expected)
       AND NOT EXISTS (
         SELECT 1
-        FROM expected e
-        FULL OUTER JOIN active a ON a.plant_variant_id = e.plant_variant_id
+        FROM plant_expected e
+        FULL OUTER JOIN active_plant a ON a.resource_id = e.resource_id
+        WHERE e.quantity IS DISTINCT FROM a.quantity
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM color_expected e
+        FULL OUTER JOIN active_color a ON a.resource_id = e.resource_id
         WHERE e.quantity IS DISTINCT FROM a.quantity
       )
     ) AS ok

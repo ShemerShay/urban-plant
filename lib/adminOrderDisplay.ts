@@ -18,8 +18,7 @@ export type AdminCatalogLineView = {
   potName: string | null;
   potColor: string | null;
   quantity: number;
-  plantUnitPrice: number;
-  potUnitPrice: number | null;
+  unitPrice: number;
   lineTotal: number;
   currency: CatalogCurrency;
 };
@@ -50,8 +49,7 @@ type StoredCatalogLine = {
   potName: string | null;
   potColor: string | null;
   quantity: number;
-  plantUnitPrice: number;
-  potUnitPrice: number | null;
+  unitPrice: number;
   lineTotal: number;
   currency: string;
 };
@@ -70,8 +68,7 @@ export function catalogLineViewFromStoredLine(line: StoredCatalogLine): AdminCat
     potName: line.potName,
     potColor: line.potColor,
     quantity: line.quantity,
-    plantUnitPrice: line.plantUnitPrice,
-    potUnitPrice: line.potUnitPrice,
+    unitPrice: line.unitPrice,
     lineTotal: line.lineTotal,
     currency: catalogCurrency(line.currency),
   };

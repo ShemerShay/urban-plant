@@ -7,11 +7,12 @@ import type { CatalogCartItem, CatalogCartResolvedLine } from "@/lib/catalogCart
 
 export type CatalogCheckoutPaymentLine = {
   plantId: string;
-  plantVariantId: string;
-  potVariantId: string | null;
+  plantSizeId: string;
+  sellableVariantId: string;
+  offerId: string;
+  potColorId: string | null;
   quantity: number;
-  plantUnitPrice: number;
-  potUnitPrice: number | null;
+  unitPrice: number;
 };
 
 export type CatalogCheckoutResumeLine = {
@@ -20,10 +21,10 @@ export type CatalogCheckoutResumeLine = {
   nameHe: string | null;
   sizeLabel: string | null;
   quantity: number;
-  plantPrice: number;
+  unitPrice: number;
   potName: string | null;
+  potSizeLabel: string | null;
   potColor: string | null;
-  potPrice: number | null;
   lineTotal: number;
   currency: "ILS" | "USD" | "EUR";
 };
@@ -60,26 +61,15 @@ export function catalogCheckoutPaymentLines(
   const paymentLines: CatalogCheckoutPaymentLine[] = [];
   for (const line of lines) {
     if (!Number.isInteger(line.quantity) || line.quantity < 1) return null;
-    if (!(line.plantPrice > 0)) return null;
-    if (line.potVariantId == null) {
-      paymentLines.push({
-        plantId: line.plantId,
-        plantVariantId: line.plantVariantId,
-        potVariantId: null,
-        quantity: line.quantity,
-        plantUnitPrice: line.plantPrice,
-        potUnitPrice: null,
-      });
-      continue;
-    }
-    if (line.potPrice == null || !(line.potPrice > 0)) return null;
+    if (!(line.unitPrice > 0)) return null;
     paymentLines.push({
       plantId: line.plantId,
-      plantVariantId: line.plantVariantId,
-      potVariantId: line.potVariantId,
+      plantSizeId: line.plantSizeId,
+      sellableVariantId: line.sellableVariantId,
+      offerId: line.offerId,
+      potColorId: line.potColorId,
       quantity: line.quantity,
-      plantUnitPrice: line.plantPrice,
-      potUnitPrice: line.potPrice,
+      unitPrice: line.unitPrice,
     });
   }
   return paymentLines.length > 0 ? paymentLines : null;
@@ -94,17 +84,14 @@ export function catalogCheckoutLinesMatch(
   return displayed.every((line, index) => {
     const other = next[index];
     if (!other) return false;
-    const potPriceMatches =
-      line.potPrice == null
-        ? other.potPrice == null
-        : other.potPrice != null && moneyEqual(line.potPrice, other.potPrice);
     return (
       line.plantId === other.plantId &&
-      line.plantVariantId === other.plantVariantId &&
-      line.potVariantId === other.potVariantId &&
+      line.plantSizeId === other.plantSizeId &&
+      line.sellableVariantId === other.sellableVariantId &&
+      line.offerId === other.offerId &&
+      line.potColorId === other.potColorId &&
       line.quantity === other.quantity &&
-      moneyEqual(line.plantPrice, other.plantPrice) &&
-      potPriceMatches
+      moneyEqual(line.unitPrice, other.unitPrice)
     );
   });
 }
@@ -147,12 +134,19 @@ export function shouldClearCatalogCartOnStatus(input: {
 }
 
 export function catalogCheckoutSnapshotItems(
-  lines: Array<Pick<CatalogCartItem, "plantId" | "plantVariantId" | "potVariantId" | "quantity">>,
+  lines: Array<
+    Pick<
+      CatalogCartItem,
+      "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId" | "quantity"
+    >
+  >,
 ): CatalogCartItem[] {
   return lines.map((line) => ({
     plantId: line.plantId,
-    plantVariantId: line.plantVariantId,
-    potVariantId: line.potVariantId,
+    plantSizeId: line.plantSizeId,
+    sellableVariantId: line.sellableVariantId,
+    offerId: line.offerId,
+    potColorId: line.potColorId,
     quantity: line.quantity,
   }));
 }

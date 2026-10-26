@@ -48,7 +48,7 @@ function errorMessage(error: unknown): string {
 function isUnsafeFulfillmentError(error: unknown): boolean {
   const message = errorMessage(error);
   if (pgCode(error) === "22012" || /division by zero/i.test(message)) return true;
-  return /inventory_quantity_non_negative/i.test(message);
+  return /inventory_quantity_non_negative|pot_inventory_quantity_non_negative/i.test(message);
 }
 
 async function markCatalogNeedsReconciliation(input: {
@@ -116,26 +116,37 @@ export async function finalizeCatalogVerifiedPayment(input: {
       ? Math.trunc(input.cardcomTransactionId)
       : null;
 
-  const variantRows = await sql`
-    SELECT DISTINCT (line->>'plantVariantId') AS plant_variant_id
+  const resourceRows = await sql`
+    SELECT DISTINCT
+      NULLIF(line->>'plantVariantId', '') AS plant_variant_id,
+      NULLIF(line->>'potColorId', '') AS pot_color_id
     FROM payment_attempts a
     CROSS JOIN LATERAL jsonb_array_elements(
       COALESCE(a.catalog_snapshot->'lines', '[]'::jsonb)
     ) AS line
     WHERE a.id = ${attemptId}::uuid
       AND a.channel = 'catalog'
-      AND (line->>'plantVariantId') ~* '^[0-9a-f-]{36}$'
-    ORDER BY 1
   `;
-  const variantIds = (variantRows as { plant_variant_id: string }[]).map((row) =>
-    String(row.plant_variant_id),
-  );
+  const variantIds = [
+    ...new Set(
+      (resourceRows as { plant_variant_id: string | null }[])
+        .map((row) => row.plant_variant_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ].sort();
+  const colorIds = [
+    ...new Set(
+      (resourceRows as { pot_color_id: string | null }[])
+        .map((row) => row.pot_color_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ].sort();
 
-  const lockQueries = variantIds.map(
-    (variantId) => sql`
+  const lockQueries = [...variantIds, ...colorIds].map(
+    (resourceId) => sql`
       SELECT pg_advisory_xact_lock(
         hashtext('catalog_stock_hold'),
-        hashtext(${variantId}::text)
+        hashtext(${resourceId}::text)
       )
     `,
   );
@@ -146,6 +157,16 @@ export async function finalizeCatalogVerifiedPayment(input: {
           FROM inventory
           WHERE variant_id = ANY(${variantIds}::uuid[])
           ORDER BY variant_id
+          FOR UPDATE
+        `
+      : sql`SELECT 1 WHERE false`;
+  const potInventoryLock =
+    colorIds.length > 0
+      ? sql`
+          SELECT pot_color_id
+          FROM pot_inventory
+          WHERE pot_color_id = ANY(${colorIds}::uuid[])
+          ORDER BY pot_color_id
           FOR UPDATE
         `
       : sql`SELECT 1 WHERE false`;
@@ -170,6 +191,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
       `,
       ...lockQueries,
       inventoryLock,
+      potInventoryLock,
       sql`
         WITH locked AS (
           SELECT
@@ -199,36 +221,48 @@ export async function finalizeCatalogVerifiedPayment(input: {
             (line->>'lineNo')::int AS line_no,
             line->>'plantId' AS plant_id,
             (line->>'plantVariantId')::uuid AS plant_variant_id,
-            NULLIF(line->>'potVariantId', '')::uuid AS pot_variant_id,
+            (line->>'sellableVariantId')::uuid AS sellable_variant_id,
+            line->>'offerId' AS offer_id,
+            NULLIF(line->>'potSizeId', '')::uuid AS pot_size_id,
+            NULLIF(line->>'potColorId', '')::uuid AS pot_color_id,
             (line->>'quantity')::int AS quantity,
-            (line->>'plantUnitPrice')::numeric AS plant_unit_price,
-            CASE
-              WHEN line->>'potUnitPrice' IS NULL THEN NULL
-              ELSE (line->>'potUnitPrice')::numeric
-            END AS pot_unit_price,
+            (line->>'unitPrice')::numeric AS unit_price,
             (line->>'lineTotal')::numeric AS line_total,
             line->>'currency' AS currency,
             line->>'plantName' AS plant_name,
             NULLIF(line->>'plantNameHe', '') AS plant_name_he,
             NULLIF(line->>'sizeLabel', '') AS size_label,
             NULLIF(line->>'potName', '') AS pot_name,
+            NULLIF(line->>'potSizeLabel', '') AS pot_size_label,
             NULLIF(line->>'potColor', '') AS pot_color,
+            NULLIF(line->>'potColorHe', '') AS pot_color_he,
             CASE
               WHEN line->>'plantUnitCost' IS NULL THEN NULL
               ELSE (line->>'plantUnitCost')::numeric
             END AS plant_unit_cost,
-            NULLIF(line->>'plantUnitCostSource', '') AS plant_unit_cost_source
+            NULLIF(line->>'plantUnitCostSource', '') AS plant_unit_cost_source,
+            CASE
+              WHEN line->>'potUnitCost' IS NULL THEN NULL
+              ELSE (line->>'potUnitCost')::numeric
+            END AS pot_unit_cost,
+            NULLIF(line->>'potUnitCostSource', '') AS pot_unit_cost_source
           FROM locked l
           CROSS JOIN LATERAL jsonb_array_elements(l.catalog_snapshot->'lines') AS line
         ),
-        aggregated AS (
+        plant_agg AS (
           SELECT plant_variant_id, SUM(quantity)::int AS quantity
           FROM lines
           GROUP BY plant_variant_id
         ),
+        color_agg AS (
+          SELECT pot_color_id, SUM(quantity)::int AS quantity
+          FROM lines
+          WHERE pot_color_id IS NOT NULL
+          GROUP BY pot_color_id
+        ),
         hold_match AS (
           SELECT
-            (SELECT COUNT(*)::int FROM aggregated) AS variant_count,
+            (SELECT COUNT(*)::int FROM plant_agg) + (SELECT COUNT(*)::int FROM color_agg) AS resource_count,
             (
               SELECT COUNT(*)::int
               FROM catalog_stock_holds h
@@ -237,25 +271,40 @@ export async function finalizeCatalogVerifiedPayment(input: {
             (
               SELECT COUNT(*)::int
               FROM catalog_stock_holds h
-              INNER JOIN aggregated a ON a.plant_variant_id = h.plant_variant_id
+              INNER JOIN plant_agg a ON a.plant_variant_id = h.plant_variant_id
               WHERE h.attempt_id = ${attemptId}::uuid
                 AND h.status = 'active'
                 AND h.expires_at > now()
                 AND h.quantity = a.quantity
+                AND h.pot_color_id IS NULL
+            ) + (
+              SELECT COUNT(*)::int
+              FROM catalog_stock_holds h
+              INNER JOIN color_agg c ON c.pot_color_id = h.pot_color_id
+              WHERE h.attempt_id = ${attemptId}::uuid
+                AND h.status = 'active'
+                AND h.expires_at > now()
+                AND h.quantity = c.quantity
+                AND h.plant_variant_id IS NULL
             ) AS matched_count
         ),
         safe AS (
           SELECT (
             EXISTS (SELECT 1 FROM locked)
             AND (SELECT COUNT(*) FROM lines) > 0
-            AND (SELECT variant_count FROM hold_match) > 0
-            AND (SELECT variant_count FROM hold_match) = (SELECT hold_count FROM hold_match)
-            AND (SELECT variant_count FROM hold_match) = (SELECT matched_count FROM hold_match)
+            AND (SELECT resource_count FROM hold_match) > 0
+            AND (SELECT resource_count FROM hold_match) = (SELECT hold_count FROM hold_match)
+            AND (SELECT resource_count FROM hold_match) = (SELECT matched_count FROM hold_match)
             AND COALESCE((
               SELECT bool_and(COALESCE(i.quantity, 0) >= a.quantity)
-              FROM aggregated a
+              FROM plant_agg a
               LEFT JOIN inventory i ON i.variant_id = a.plant_variant_id
             ), false)
+            AND COALESCE((
+              SELECT bool_and(COALESCE(pi.quantity, 0) >= c.quantity)
+              FROM color_agg c
+              LEFT JOIN pot_inventory pi ON pi.pot_color_id = c.pot_color_id
+            ), true)
           ) AS ok
         ),
         recon AS (
@@ -345,38 +394,50 @@ export async function finalizeCatalogVerifiedPayment(input: {
             line_no,
             plant_id,
             plant_variant_id,
-            pot_variant_id,
+            sellable_variant_id,
+            offer_id,
+            pot_size_id,
+            pot_color_id,
             quantity,
-            plant_unit_price,
-            pot_unit_price,
+            unit_price,
             line_total,
             currency,
             plant_name,
             plant_name_he,
             size_label,
             pot_name,
+            pot_size_label,
             pot_color,
+            pot_color_he,
             plant_unit_cost,
-            plant_unit_cost_source
+            plant_unit_cost_source,
+            pot_unit_cost,
+            pot_unit_cost_source
           )
           SELECT
             o.order_id,
             ln.line_no,
             ln.plant_id,
             ln.plant_variant_id,
-            ln.pot_variant_id,
+            ln.sellable_variant_id,
+            ln.offer_id,
+            ln.pot_size_id,
+            ln.pot_color_id,
             ln.quantity,
-            ln.plant_unit_price,
-            ln.pot_unit_price,
+            ln.unit_price,
             ln.line_total,
             ln.currency,
             ln.plant_name,
             ln.plant_name_he,
             ln.size_label,
             ln.pot_name,
+            ln.pot_size_label,
             ln.pot_color,
+            ln.pot_color_he,
             ln.plant_unit_cost,
-            ln.plant_unit_cost_source
+            ln.plant_unit_cost_source,
+            ln.pot_unit_cost,
+            ln.pot_unit_cost_source
           FROM order_ins o
           CROSS JOIN lines ln
           RETURNING id
@@ -386,7 +447,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
           SET
             quantity = i.quantity - a.quantity,
             updated_at = now()
-          FROM aggregated a
+          FROM plant_agg a
           WHERE i.variant_id = a.plant_variant_id
             AND i.quantity >= a.quantity
             AND EXISTS (SELECT 1 FROM order_ins)
@@ -399,16 +460,47 @@ export async function finalizeCatalogVerifiedPayment(input: {
           CROSS JOIN order_ins o
           RETURNING id
         ),
+        pot_upd AS (
+          UPDATE pot_inventory pi
+          SET
+            quantity = pi.quantity - c.quantity,
+            updated_at = now()
+          FROM color_agg c
+          WHERE pi.pot_color_id = c.pot_color_id
+            AND pi.quantity >= c.quantity
+            AND EXISTS (SELECT 1 FROM order_ins)
+          RETURNING pi.pot_color_id, c.quantity AS qty
+        ),
+        pot_hist AS (
+          INSERT INTO pot_inventory_history (pot_color_id, delta, note)
+          SELECT u.pot_color_id, -u.qty, 'catalog sale ' || o.order_id::text
+          FROM pot_upd u
+          CROSS JOIN order_ins o
+          RETURNING id
+        ),
         consumed AS (
           UPDATE catalog_stock_holds h
           SET status = 'consumed', updated_at = now()
-          FROM aggregated a
           WHERE h.attempt_id = ${attemptId}::uuid
-            AND h.plant_variant_id = a.plant_variant_id
             AND h.status = 'active'
             AND h.expires_at > now()
-            AND h.quantity = a.quantity
             AND EXISTS (SELECT 1 FROM order_ins)
+            AND (
+              EXISTS (
+                SELECT 1
+                FROM plant_agg a
+                WHERE a.plant_variant_id = h.plant_variant_id
+                  AND a.quantity = h.quantity
+                  AND h.pot_color_id IS NULL
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM color_agg c
+                WHERE c.pot_color_id = h.pot_color_id
+                  AND c.quantity = h.quantity
+                  AND h.plant_variant_id IS NULL
+              )
+            )
           RETURNING h.id
         ),
         attempt_fin AS (
@@ -435,15 +527,20 @@ export async function finalizeCatalogVerifiedPayment(input: {
               AND NOT EXISTS (SELECT 1 FROM order_ins)
               AND NOT EXISTS (SELECT 1 FROM inv_upd)
               AND NOT EXISTS (SELECT 1 FROM hist)
+              AND NOT EXISTS (SELECT 1 FROM pot_upd)
+              AND NOT EXISTS (SELECT 1 FROM pot_hist)
               AND NOT EXISTS (SELECT 1 FROM consumed)
               AND NOT EXISTS (SELECT 1 FROM attempt_fin)
             THEN 1
             WHEN EXISTS (SELECT 1 FROM attempt_fin)
               AND (SELECT COUNT(*) FROM order_ins) = 1
               AND (SELECT COUNT(*) FROM item_ins) = (SELECT COUNT(*) FROM lines)
-              AND (SELECT COUNT(*) FROM inv_upd) = (SELECT COUNT(*) FROM aggregated)
-              AND (SELECT COUNT(*) FROM hist) = (SELECT COUNT(*) FROM aggregated)
-              AND (SELECT COUNT(*) FROM consumed) = (SELECT COUNT(*) FROM aggregated)
+              AND (SELECT COUNT(*) FROM inv_upd) = (SELECT COUNT(*) FROM plant_agg)
+              AND (SELECT COUNT(*) FROM hist) = (SELECT COUNT(*) FROM plant_agg)
+              AND (SELECT COUNT(*) FROM pot_upd) = (SELECT COUNT(*) FROM color_agg)
+              AND (SELECT COUNT(*) FROM pot_hist) = (SELECT COUNT(*) FROM color_agg)
+              AND (SELECT COUNT(*) FROM consumed) =
+                (SELECT COUNT(*) FROM plant_agg) + (SELECT COUNT(*) FROM color_agg)
             THEN 1
             ELSE 0
           END AS ok

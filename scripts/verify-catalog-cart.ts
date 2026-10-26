@@ -20,7 +20,7 @@ function assertCartWiring(): void {
   const cartLib = read("lib/catalogCart.ts");
   assert.match(cartLib, /up_catalog_cart/);
   assert.match(cartLib, /catalogCartTotalQuantity/);
-  assert.match(cartLib, /plantId \+ plantVariantId \+ potVariantId|catalogCartItemKey/);
+  assert.match(cartLib, /plantId \+ plantSizeId \+ sellableVariantId \+ offerId \+ potColorId|catalogCartItemKey/);
   assert.doesNotMatch(cartLib, /applyInventoryDelta/);
   assert.doesNotMatch(cartLib, /startCardcom/);
   assert.doesNotMatch(cartLib, /catalog_stock_holds/);
@@ -34,7 +34,7 @@ function assertCartWiring(): void {
   const detailUi = read("components/shop/ShopPlantDetail.tsx");
   assert.match(detailUi, /shop\.addToCart/);
   assert.match(detailUi, /addCatalogCartItem/);
-  assert.match(detailUi, /current === id \? null/);
+  assert.match(detailUi, /selectedVariantId/);
   assert.doesNotMatch(detailUi, /FixedBottomCTA/);
   assert.doesNotMatch(detailUi, /startCardcom/);
   assert.doesNotMatch(detailUi, /ANALYTICS_EVENTS\.removeFromCart/);
@@ -74,6 +74,7 @@ function assertCartWiring(): void {
   const shopReads = read("lib/catalogShop.ts");
   assert.match(shopReads, /resolveCatalogCartLines/);
   assert.match(shopReads, /Does not write inventory/);
+  assert.doesNotMatch(shopReads, /!potImage\) continue/);
   assert.doesNotMatch(shopReads, /applyInventoryDelta/);
 
   const header = read("components/plant/PlantPageHeader.tsx");
@@ -102,77 +103,91 @@ function assertCartWiring(): void {
 
 async function assertCartHelpers(): Promise<void> {
   const cart = await import("../lib/catalogCart");
-    assert.deepEqual(cart.parseCatalogCart(null), cart.EMPTY_CATALOG_CART);
-    assert.deepEqual(cart.parseCatalogCart("not-json"), cart.EMPTY_CATALOG_CART);
-    assert.deepEqual(cart.parseCatalogCart('{"v":2,"items":[]}'), cart.EMPTY_CATALOG_CART);
-    assert.deepEqual(
-      cart.parseCatalogCart('{"v":1,"items":[{"plantId":"p","plantVariantId":"v","potVariantId":null,"quantity":1.5}]}'),
-      cart.EMPTY_CATALOG_CART,
-    );
-    assert.deepEqual(
-      cart.parseCatalogCart('{"v":1,"items":[{"plantId":"","plantVariantId":"v","potVariantId":null,"quantity":1}]}'),
-      cart.EMPTY_CATALOG_CART,
-    );
+  assert.deepEqual(cart.parseCatalogCart(null), cart.EMPTY_CATALOG_CART);
+  assert.deepEqual(cart.parseCatalogCart("not-json"), cart.EMPTY_CATALOG_CART);
+  assert.deepEqual(cart.parseCatalogCart('{"v":2,"items":[]}'), cart.EMPTY_CATALOG_CART);
+  assert.deepEqual(
+    cart.parseCatalogCart(
+      '{"v":1,"items":[{"plantId":"p","plantVariantId":"v","potVariantId":null,"quantity":1.5}]}',
+    ),
+    cart.EMPTY_CATALOG_CART,
+  );
 
-    const parsed = cart.parseCatalogCart(
-      JSON.stringify({
-        v: 1,
-        items: [
-          { plantId: "p1", plantVariantId: "v1", potVariantId: null, quantity: 2 },
-          { plantId: "p1", plantVariantId: "v1", potVariantId: null, quantity: 1 },
-        ],
-      }),
-    );
-    assert.equal(parsed.items.length, 1);
-    assert.equal(parsed.items[0]?.quantity, 3);
+  const legacy = cart.parseCatalogCart(
+    JSON.stringify({
+      v: 1,
+      items: [
+        { plantId: "p1", plantVariantId: "v1", potVariantId: null, quantity: 2 },
+        { plantId: "p1", plantVariantId: "v1", potVariantId: null, quantity: 1 },
+      ],
+    }),
+  );
+  assert.equal(legacy.v, 1);
+  assert.equal(legacy.items.length, 2);
 
-    const withPot = {
-      plantId: "p1",
-      plantVariantId: "v1",
-      potVariantId: "pot-a",
-    };
-    const noPot = { plantId: "p1", plantVariantId: "v1", potVariantId: null };
-    const otherSize = { plantId: "p1", plantVariantId: "v2", potVariantId: null };
-    assert.notEqual(cart.catalogCartItemKey(withPot), cart.catalogCartItemKey(noPot));
-    assert.notEqual(cart.catalogCartItemKey(noPot), cart.catalogCartItemKey(otherSize));
+  const noPot = {
+    plantId: "p1",
+    plantSizeId: "size-1",
+    sellableVariantId: "sv-1",
+    offerId: "offer-1",
+    potColorId: null as string | null,
+  };
+  const withColor = { ...noPot, potColorId: "color-a" };
+  const otherSize = { ...noPot, plantSizeId: "size-2", sellableVariantId: "sv-2" };
+  assert.notEqual(cart.catalogCartItemKey(withColor), cart.catalogCartItemKey(noPot));
+  assert.notEqual(cart.catalogCartItemKey(noPot), cart.catalogCartItemKey(otherSize));
 
-    let next = cart.addCatalogCartItem(cart.EMPTY_CATALOG_CART, noPot, 2);
-    assert.equal(next.added, true);
-    assert.equal(next.cart.items[0]?.quantity, 1);
-    next = cart.addCatalogCartItem(next.cart, noPot, 2);
-    assert.equal(next.added, true);
-    assert.equal(next.cart.items[0]?.quantity, 2);
-    next = cart.addCatalogCartItem(next.cart, noPot, 2);
-    assert.equal(next.added, false);
-    assert.equal(next.cart.items[0]?.quantity, 2);
+  const merged = cart.parseCatalogCart(
+    JSON.stringify({
+      v: 2,
+      items: [
+        { ...noPot, quantity: 2 },
+        { ...noPot, quantity: 1 },
+      ],
+    }),
+  );
+  assert.equal(merged.v, 2);
+  assert.equal(merged.items.length, 1);
+  assert.equal(merged.items[0]?.quantity, 3);
 
-    const mixed = cart.addCatalogCartItem(next.cart, withPot, 2);
-    assert.equal(mixed.added, true);
-    assert.equal(mixed.cart.items.length, 2);
-    assert.equal(cart.catalogCartTotalQuantity(mixed.cart), 3);
-    assert.equal(cart.catalogCartTotalQuantity(cart.EMPTY_CATALOG_CART), 0);
+  let next = cart.addCatalogCartItem(cart.EMPTY_CATALOG_CART, noPot, 2);
+  assert.equal(next.added, true);
+  assert.equal(next.cart.items[0]?.quantity, 1);
+  next = cart.addCatalogCartItem(next.cart, noPot, 2);
+  assert.equal(next.added, true);
+  assert.equal(next.cart.items[0]?.quantity, 2);
+  next = cart.addCatalogCartItem(next.cart, noPot, 2);
+  assert.equal(next.added, false);
+  assert.equal(next.cart.items[0]?.quantity, 2);
 
-    const bumped = cart.updateCatalogCartQuantity(mixed.cart, noPot, 1, 2);
-    assert.equal(
-      bumped.items.find((item) => item.potVariantId == null)?.quantity,
-      1,
-    );
-    const blocked = cart.updateCatalogCartQuantity(bumped, noPot, 9, 2);
-    assert.equal(
-      blocked.items.find((item) => item.potVariantId == null)?.quantity,
-      2,
-    );
-    const removed = cart.removeCatalogCartItem(blocked, withPot);
-    assert.equal(removed.items.length, 1);
-    assert.equal(removed.items[0]?.potVariantId, null);
+  const mixed = cart.addCatalogCartItem(next.cart, withColor, 2);
+  assert.equal(mixed.added, true);
+  assert.equal(mixed.cart.items.length, 2);
+  assert.equal(cart.catalogCartTotalQuantity(mixed.cart), 3);
 
-    const request = cart.parseCatalogCartRequestItems({
-      items: [{ plantId: "p1", plantVariantId: "v1", potVariantId: null, quantity: 1 }],
-    });
-    assert.equal(request?.length, 1);
-    assert.equal(cart.parseCatalogCartRequestItems({ items: "nope" }), null);
+  const bumped = cart.updateCatalogCartQuantity(mixed.cart, noPot, 1, 2);
+  assert.equal(bumped.v, 2);
+  if (bumped.v !== 2) throw new Error("expected v2");
+  assert.equal(bumped.items.find((item) => item.potColorId == null)?.quantity, 1);
+  const blocked = cart.updateCatalogCartQuantity(bumped, noPot, 9, 2);
+  assert.equal(blocked.v, 2);
+  if (blocked.v !== 2) throw new Error("expected v2");
+  assert.equal(blocked.items.find((item) => item.potColorId == null)?.quantity, 2);
+  const removed = cart.removeCatalogCartItem(blocked, withColor);
+  assert.equal(removed.v, 2);
+  if (removed.v !== 2) throw new Error("expected v2");
+  assert.equal(removed.items.length, 1);
+  assert.equal(removed.items[0]?.potColorId, null);
 
-    console.log("verify-catalog-cart: helpers ok");
+  const request = cart.parseCatalogCartRequest({
+    v: 2,
+    items: [{ ...noPot, quantity: 1 }],
+  });
+  assert.equal(request?.v, 2);
+  assert.equal(request && request.v === 2 ? request.items.length : 0, 1);
+  assert.equal(cart.parseCatalogCartRequest({ items: "nope" }), null);
+
+  console.log("verify-catalog-cart: helpers ok");
 }
 
 async function main(): Promise<void> {
@@ -189,31 +204,12 @@ async function main(): Promise<void> {
   );
   const { createPlantVariant } = await import("../lib/plantVariantStorage");
   const { applyInventoryDelta, getInventoryQuantity } = await import("../lib/inventoryStorage");
-  const { resolveCatalogCartLines } = await import("../lib/catalogShop");
-  const { createPot } = await import("../lib/potStorage");
-
-  async function seedLegacyPotVariant(input: {
-    potId: string;
-    sizeLabel: string;
-    color: string;
-    colorHe?: string | null;
-    catalogPrice: number;
-  }): Promise<{ id: string }> {
-    const rows = await sql`
-      INSERT INTO pot_variants (pot_id, size_label, color, color_he, catalog_price)
-      VALUES (
-        ${input.potId}::uuid,
-        ${input.sizeLabel},
-        ${input.color},
-        ${input.colorHe ?? null},
-        ${input.catalogPrice}
-      )
-      RETURNING id
-    `;
-    const row = (rows as { id: string }[])[0];
-    assert.ok(row);
-    return row;
-  }
+  const { readCatalogShopDetail, resolveCatalogCartLines } = await import("../lib/catalogShop");
+  const { createPot, updatePot } = await import("../lib/potStorage");
+  const { createPotSize, createPotColor } = await import("../lib/potSizeStorage");
+  const { applyPotInventoryDelta } = await import("../lib/potInventoryStorage");
+  const { createSellableVariant } = await import("../lib/sellableVariantStorage");
+  const { createOrReusePlantOffer } = await import("../lib/offerStorage");
 
   const plantRows = await sql`SELECT id, inventory_type FROM plants`;
   const plantRow = (plantRows as { id: string; inventory_type: string | null }[]).find(
@@ -226,12 +222,39 @@ async function main(): Promise<void> {
   const tag = `catalog-cart-verify-${randomUUID().slice(0, 8)}`;
   const testPlantId = randomUUID();
   const variantIds: string[] = [];
+  const sellableIds: string[] = [];
   const potIds: string[] = [];
   const attemptIds: string[] = [];
 
+  async function seedOffer(plantSizeId: string, price: number, potSizeId: string | null) {
+    const variant = await createSellableVariant({
+      plantId: testPlantId,
+      plantSizeId,
+      potSizeId,
+    });
+    sellableIds.push(variant.sellableVariantId);
+    const created = await createOrReusePlantOffer({
+      sellableVariantId: variant.sellableVariantId,
+      consumerPrice: price,
+      availabilities: [{ scope: "catalog" }],
+    });
+    return { sellableVariantId: variant.sellableVariantId, offerId: created.offer.id };
+  }
+
   async function cleanup(): Promise<void> {
     if (attemptIds.length > 0) {
+      await sql`DELETE FROM catalog_stock_holds WHERE attempt_id = ANY(${attemptIds}::uuid[])`;
       await sql`DELETE FROM payment_attempts WHERE id = ANY(${attemptIds}::uuid[])`;
+    }
+    if (sellableIds.length > 0) {
+      await sql`
+        DELETE FROM offer_availabilities
+        WHERE offer_id IN (
+          SELECT id FROM offers WHERE sellable_variant_id = ANY(${sellableIds}::uuid[])
+        )
+      `;
+      await sql`DELETE FROM offers WHERE sellable_variant_id = ANY(${sellableIds}::uuid[])`;
+      await sql`DELETE FROM sellable_variants WHERE id = ANY(${sellableIds}::uuid[])`;
     }
     if (variantIds.length > 0) {
       await sql`DELETE FROM inventory_history WHERE variant_id = ANY(${variantIds}::uuid[])`;
@@ -240,6 +263,20 @@ async function main(): Promise<void> {
     }
     await deletePlant(testPlantId);
     if (potIds.length > 0) {
+      await sql`DELETE FROM pot_inventory_history WHERE pot_color_id IN (
+        SELECT c.id FROM pot_colors c
+        JOIN pot_sizes s ON s.id = c.pot_size_id
+        WHERE s.pot_id = ANY(${potIds}::uuid[])
+      )`;
+      await sql`DELETE FROM pot_inventory WHERE pot_color_id IN (
+        SELECT c.id FROM pot_colors c
+        JOIN pot_sizes s ON s.id = c.pot_size_id
+        WHERE s.pot_id = ANY(${potIds}::uuid[])
+      )`;
+      await sql`DELETE FROM pot_colors WHERE pot_size_id IN (
+        SELECT id FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])
+      )`;
+      await sql`DELETE FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])`;
       await sql`DELETE FROM pots WHERE id = ANY(${potIds}::uuid[])`;
     }
   }
@@ -274,25 +311,50 @@ async function main(): Promise<void> {
     variantIds.push(small.id, medium.id, unpriced.id);
     await applyInventoryDelta({ variantId: medium.id, delta: 2, note: `${tag} receive` });
 
-    const clay = await createPot({ name: `${tag} clay`, nameHe: "חימר" });
+    const clay = await createPot({
+      name: `${tag} clay`,
+      nameHe: "חימר",
+      image: "/plant-library/catalog-cart-pot.jpg",
+    });
     potIds.push(clay.id);
-    const white = await seedLegacyPotVariant({
+    const potSize = await createPotSize({ potId: clay.id, sizeLabel: "M", supplierPrice: 10 });
+    const black = await createPotColor({
       potId: clay.id,
-      sizeLabel: "S",
+      sizeId: potSize.id,
+      color: "Black",
+      colorHe: "שחור",
+    });
+    const otherSize = await createPotSize({ potId: clay.id, sizeLabel: "S", supplierPrice: 8 });
+    const white = await createPotColor({
+      potId: clay.id,
+      sizeId: otherSize.id,
       color: "White",
       colorHe: "לבן",
-      catalogPrice: 25,
     });
-    const black = await seedLegacyPotVariant({
+    await applyPotInventoryDelta({
       potId: clay.id,
-      sizeLabel: "M",
-      color: "Black",
-      catalogPrice: 35,
+      sizeId: potSize.id,
+      potColorId: black.id,
+      delta: 2,
+      note: `${tag} color`,
+    });
+    const mediumOffer = await seedOffer(medium.id, 90, null);
+    const smallOffer = await seedOffer(small.id, 40, null);
+    const potOffer = await seedOffer(medium.id, 125, potSize.id);
+
+    const line = (
+      offer: { sellableVariantId: string; offerId: string },
+      patch: { quantity?: number; potColorId?: string | null; plantSizeId?: string } = {},
+    ) => ({
+      plantId: testPlantId,
+      plantSizeId: patch.plantSizeId ?? medium.id,
+      sellableVariantId: offer.sellableVariantId,
+      offerId: offer.offerId,
+      potColorId: patch.potColorId ?? null,
+      quantity: patch.quantity ?? 1,
     });
 
-    const unpublished = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 1 },
-    ]);
+    const unpublished = await resolveCatalogCartLines([line(mediumOffer)]);
     assert.equal(unpublished.length, 0);
 
     await updatePlant(testPlantId, { ...createdPlant, catalogPublished: true });
@@ -302,13 +364,11 @@ async function main(): Promise<void> {
     `;
     const qtyBefore = await getInventoryQuantity(medium.id);
 
-    const clamped = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 5 },
-    ]);
+    const clamped = await resolveCatalogCartLines([line(mediumOffer, { quantity: 5 })]);
     assert.equal(clamped.length, 1);
     assert.equal(clamped[0]?.quantity, 2);
     assert.equal(clamped[0]?.availableQuantity, 2);
-    assert.equal(clamped[0]?.plantPrice, 90);
+    assert.equal(clamped[0]?.unitPrice, 90);
 
     const holdAttemptId = randomUUID();
     attemptIds.push(holdAttemptId);
@@ -337,18 +397,17 @@ async function main(): Promise<void> {
     `;
     await sql`
       INSERT INTO catalog_stock_holds (
-        attempt_id, plant_variant_id, quantity, status, expires_at
+        attempt_id, plant_variant_id, pot_color_id, quantity, status, expires_at
       ) VALUES (
         ${holdAttemptId}::uuid,
         ${medium.id}::uuid,
+        NULL,
         1,
         'active',
         now() + interval '17 minutes'
       )
     `;
-    const held = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 5 },
-    ]);
+    const held = await resolveCatalogCartLines([line(mediumOffer, { quantity: 5 })]);
     assert.equal(held.length, 1);
     assert.equal(held[0]?.quantity, 1);
     assert.equal(held[0]?.availableQuantity, 1);
@@ -359,56 +418,70 @@ async function main(): Promise<void> {
       SET expires_at = now() - interval '1 minute', updated_at = now()
       WHERE attempt_id = ${holdAttemptId}::uuid
     `;
-    const expiredHold = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 5 },
-    ]);
+    const expiredHold = await resolveCatalogCartLines([line(mediumOffer, { quantity: 5 })]);
     assert.equal(expiredHold[0]?.availableQuantity, 2);
+    await sql`DELETE FROM catalog_stock_holds WHERE attempt_id = ${holdAttemptId}::uuid`;
     await sql`DELETE FROM payment_attempts WHERE id = ${holdAttemptId}::uuid`;
     attemptIds.pop();
-    assert.equal(clamped[0]?.potVariantId, null);
+    assert.equal(clamped[0]?.potColorId, null);
     assert.equal(clamped[0]?.name, tag);
 
     const oos = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: small.id, potVariantId: null, quantity: 1 },
+      line(smallOffer, { plantSizeId: small.id, quantity: 1 }),
     ]);
     assert.equal(oos.length, 0);
 
     const missingPrice = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: unpriced.id, potVariantId: null, quantity: 1 },
+      {
+        plantId: testPlantId,
+        plantSizeId: unpriced.id,
+        sellableVariantId: randomUUID(),
+        offerId: "missing-offer",
+        potColorId: null,
+        quantity: 1,
+      },
     ]);
     assert.equal(missingPrice.length, 0);
 
-    const missingVariant = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: randomUUID(), potVariantId: null, quantity: 1 },
-    ]);
-    assert.equal(missingVariant.length, 0);
-
     const withPot = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: black.id, quantity: 1 },
+      line(potOffer, { potColorId: black.id }),
     ]);
     assert.equal(withPot.length, 1);
-    assert.equal(withPot[0]?.potVariantId, black.id);
-    assert.equal(withPot[0]?.potPrice, 35);
+    assert.equal(withPot[0]?.potColorId, black.id);
+    assert.equal(withPot[0]?.unitPrice, 125);
     assert.equal(withPot[0]?.potColor, "Black");
-
-    const incompatiblePot = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: white.id, quantity: 1 },
+    const pictured = (await readCatalogShopDetail(testPlantId))?.sizes
+      .find((entry) => entry.id === medium.id)
+      ?.variants.find((entry) => entry.id === potOffer.sellableVariantId);
+    assert.equal(pictured?.potImage, "/plant-library/catalog-cart-pot.jpg");
+    await updatePot({ potId: clay.id, image: null });
+    const withoutImage = await resolveCatalogCartLines([
+      line(potOffer, { potColorId: black.id }),
     ]);
-    assert.equal(incompatiblePot.length, 0);
+    assert.equal(withoutImage.length, 1);
+    assert.equal(withoutImage[0]?.potColorId, black.id);
+    assert.equal(withoutImage[0]?.unitPrice, 125);
+    assert.equal(withoutImage[0]?.offerId, potOffer.offerId);
+    const cleared = (await readCatalogShopDetail(testPlantId))?.sizes
+      .find((entry) => entry.id === medium.id)
+      ?.variants.find((entry) => entry.id === potOffer.sellableVariantId);
+    assert.ok(cleared);
+    assert.equal(cleared.potImage, undefined);
+    assert.equal(cleared.offerId, potOffer.offerId);
 
-    const missingPot = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: randomUUID(), quantity: 1 },
+    const wrongColor = await resolveCatalogCartLines([
+      line(potOffer, { potColorId: white.id }),
     ]);
-    assert.equal(missingPot.length, 0);
+    assert.equal(wrongColor.length, 0);
 
     const mixedLines = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 1 },
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: black.id, quantity: 1 },
-      { plantId: testPlantId, plantVariantId: small.id, potVariantId: null, quantity: 1 },
+      line(mediumOffer),
+      line(potOffer, { potColorId: black.id }),
+      line(smallOffer, { plantSizeId: small.id }),
     ]);
     assert.equal(mixedLines.length, 2);
-    assert.equal(mixedLines[0]?.potVariantId, null);
-    assert.equal(mixedLines[1]?.potVariantId, black.id);
+    assert.equal(mixedLines[0]?.potColorId, null);
+    assert.equal(mixedLines[1]?.potColorId, black.id);
 
     const historyAfter = await sql`
       SELECT count(*)::int AS n FROM inventory_history WHERE variant_id = ${medium.id}::uuid
@@ -422,9 +495,7 @@ async function main(): Promise<void> {
     const current = await getPlantByIdAsync(testPlantId);
     assert.ok(current);
     await updatePlant(testPlantId, { ...current, catalogPublished: false });
-    const afterUnpublish = await resolveCatalogCartLines([
-      { plantId: testPlantId, plantVariantId: medium.id, potVariantId: null, quantity: 1 },
-    ]);
+    const afterUnpublish = await resolveCatalogCartLines([line(mediumOffer)]);
     assert.equal(afterUnpublish.length, 0);
   } finally {
     await cleanup();

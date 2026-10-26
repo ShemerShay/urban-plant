@@ -19,10 +19,9 @@ export type AnalyticsCommerceProps = {
   spot_slug?: string;
   plant_id?: string;
   plant_variant_id?: string;
-  pot_variant_id?: string;
+  sellable_variant_id?: string;
+  pot_color_id?: string;
   plant_name?: string;
-  plant_price?: number;
-  pot_price?: number;
   quantity?: number;
   inventory_type?: string;
   offer_id?: string;

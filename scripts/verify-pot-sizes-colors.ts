@@ -1,6 +1,6 @@
 /**
  * Pot Size, Pot Color, and central pot inventory.
- * Legacy pot_variants stay the Catalog path.
+ * Pot admin and inventory. Customer Catalog reads Pot Colors, not pot_variants.
  *
  * Run: npx tsx scripts/verify-pot-sizes-colors.ts
  */
@@ -44,13 +44,19 @@ function assertWiring(): void {
   assert.doesNotMatch(migration, /offer_availabilities/);
 
   const shop = read("lib/catalogShop.ts");
-  assert.match(shop, /pot_variants/);
-  assert.doesNotMatch(shop, /pot_colors/);
-  assert.doesNotMatch(shop, /pot_inventory/);
+  assert.doesNotMatch(shop, /pot_variants/);
+  assert.match(shop, /FROM pot_colors/);
+  assert.match(shop, /pot_inventory/);
+  const legacyCart = read("lib/catalogLegacyCart.ts");
+  assert.match(legacyCart, /FROM pot_variants/);
+  const holds = read("lib/catalogStockHolds.ts");
+  assert.match(holds, /pot_colors/);
+  assert.match(holds, /pot_inventory/);
+  const cutover = read("db/migrations/049_catalog_offer_cutover.sql");
+  assert.match(cutover, /supplier_price IS NULL OR supplier_price >= 0/);
   for (const rel of [
     "lib/catalogCart.ts",
     "lib/catalogCheckoutFlow.ts",
-    "lib/catalogStockHolds.ts",
     "lib/offerStorage.ts",
     "lib/posSpotStorage.ts",
     "lib/plantVariantStorage.ts",
@@ -65,6 +71,19 @@ function assertWiring(): void {
   assert.match(admin, /admin\.pots\.supplierCost/);
   assert.match(admin, /admin\.pots\.addSize/);
   assert.match(admin, /admin\.pots\.addColor/);
+  assert.match(admin, /admin\.pots\.photoRequired/);
+  const messages = read("lib/messages.ts");
+  assert.match(messages, /Add a photo to show this pot in the Catalog card\./);
+  assert.match(messages, /הוסיפו תמונה כדי להציג את הכד בכרטיס הקטלוג\./);
+  assert.doesNotMatch(messages, /Photo required before this pot can be sold/);
+  assert.doesNotMatch(messages, /נדרשת תמונה לפני שהעציץ יכול להימכר/);
+  assert.doesNotMatch(messages, /A pot without a photo is not sold/);
+  assert.doesNotMatch(messages, /עציץ בלי תמונה לא נמכר/);
+  assert.match(admin, /PlantImagePicker/);
+  assert.match(admin, /single/);
+  assert.match(admin, /image: image\.trim\(\) \|\| null/);
+  assert.match(admin, /image: editImage\.trim\(\) \|\| null/);
+  assert.match(admin, /urls\[urls\.length - 1\]/);
   assert.match(admin, /potColorInventory/);
   assert.doesNotMatch(admin, /catalogPrice/);
   assert.doesNotMatch(admin, /potVariants/);
@@ -82,7 +101,7 @@ function assertWiring(): void {
     assert.match(read(rel), /isAdminRequest/, rel);
   }
 
-  console.log("verify-pot-sizes-colors: wiring leaves Catalog, cart, checkout, and POS unchanged");
+  console.log("verify-pot-sizes-colors: wiring keeps pot_variants off the selling path");
 }
 
 async function main(): Promise<void> {
@@ -97,7 +116,7 @@ async function main(): Promise<void> {
   }
 
   const { sql } = await import("../lib/db");
-  const { createPot, deletePot, PotWriteError } = await import("../lib/potStorage");
+  const { createPot, deletePot, PotWriteError, updatePot } = await import("../lib/potStorage");
   const {
     createPotColor,
     createPotSize,
@@ -267,6 +286,19 @@ async function main(): Promise<void> {
 
     const behavior = await createPot({ name: `${tag} behavior`, nameHe: "התנהגות" });
     behaviorPotId = behavior.id;
+    assert.equal(behavior.image, undefined);
+    const uploaded = await updatePot({
+      potId: behavior.id,
+      image: "/plant-library/pot-photo-a.jpg",
+    });
+    assert.equal(uploaded.image, "/plant-library/pot-photo-a.jpg");
+    const replaced = await updatePot({
+      potId: behavior.id,
+      image: "/plant-library/pot-photo-b.jpg",
+    });
+    assert.equal(replaced.image, "/plant-library/pot-photo-b.jpg");
+    const listed = (await readPotsWithSizes()).find((pot) => pot.id === behavior.id);
+    assert.equal(listed?.image, "/plant-library/pot-photo-b.jpg");
     let invalidSize = false;
     try {
       await createPotSize({ potId: behavior.id, sizeLabel: "XL", supplierPrice: 10 });
@@ -276,17 +308,23 @@ async function main(): Promise<void> {
       assert.equal(error.code, "invalid_size_label");
     }
     assert.equal(invalidSize, true);
-    let invalidCost = false;
+    let negativeCost = false;
     try {
-      await createPotSize({ potId: behavior.id, sizeLabel: "S", supplierPrice: 0 });
+      await createPotSize({ potId: behavior.id, sizeLabel: "S", supplierPrice: -1 });
     } catch (error) {
-      invalidCost = true;
+      negativeCost = true;
       assert.ok(error instanceof PotWriteError);
       assert.equal(error.code, "invalid_supplier_price");
     }
-    assert.equal(invalidCost, true);
+    assert.equal(negativeCost, true);
 
-    const small = await createPotSize({ potId: behavior.id, sizeLabel: "S", supplierPrice: 12.5 });
+    const zero = await createPotSize({ potId: behavior.id, sizeLabel: "S", supplierPrice: 0 });
+    assert.equal(zero.supplierPrice, 0);
+    const small = await updatePotSize({
+      potId: behavior.id,
+      sizeId: zero.id,
+      supplierPrice: 12.5,
+    });
     assert.equal(small.supplierPrice, 12.5);
     const medium = await createPotSize({ potId: behavior.id, sizeLabel: "M" });
     assert.equal(medium.supplierPrice, null);

@@ -3,55 +3,86 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePostHog } from "posthog-js/react";
 
-import { CatalogPotColorOptions } from "@/components/shop/CatalogPotColorOptions";
 import { CatalogSizeOptions } from "@/components/shop/CatalogSizeOptions";
-import { addCatalogCartItem, catalogCartItemKey } from "@/lib/catalogCart";
+import {
+  ANALYTICS_EVENTS,
+  captureAnalyticsEvent,
+} from "@/lib/analyticsEvents";
+import {
+  addCatalogCartItem,
+  catalogCartItemKey,
+  catalogCartLineAmount,
+  storedCatalogCartItems,
+  type CatalogCart,
+  type CatalogCartResolvedLine,
+} from "@/lib/catalogCart";
 import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
-import { formatCatalogPrice, formatCatalogPriceSummary } from "@/lib/catalogPriceFormat";
+import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
 import type { CatalogShopCard } from "@/lib/catalogShop";
-import { catalogSizeChoices, retainCompatiblePotId, uniquePotColorChoices } from "@/lib/catalogShopSelection";
+import {
+  additionalInStockColorCount,
+  catalogSizeChoices,
+  colorSetKey,
+  resolveCardConfiguration,
+} from "@/lib/catalogShopSelection";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 import type { Locale } from "@/lib/locale";
 
+function GalleryCue() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className="h-3.5 w-3.5">
+      <path
+        d="M14.5 5.5 8 12l6.5 6.5"
+        stroke="currentColor"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="origin-center rotate-180"
+      />
+    </svg>
+  );
+}
+
 export function ShopPlantCard({ plant, locale }: { plant: CatalogShopCard; locale: Locale }) {
+  const posthog = usePostHog();
   const cart = useCatalogCart();
   const sizeOptions = catalogSizeChoices(plant.sizes);
-  const [selectedSizeId, setSelectedSizeId] = useState(sizeOptions[0]?.id ?? "");
-  const [selectedPotId, setSelectedPotId] = useState<string | null>(null);
+  const [selectedSizeId, setSelectedSizeId] = useState("");
+  const [colorMemory, setColorMemory] = useState<{ colorId: string | null; setKey: string } | null>(
+    null,
+  );
   const [justAdded, setJustAdded] = useState(false);
 
   const name = localizedPlantText(locale, plant.name, plant.nameHe);
-  const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId) ?? sizeOptions[0];
-  const potChoices = uniquePotColorChoices(selectedSize?.pots ?? []).choices;
-  const selectedPot = selectedPotId
-    ? potChoices.find((pot) => pot.id === selectedPotId)
+  const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId);
+  const resolved = selectedSize ? resolveCardConfiguration(selectedSize, colorMemory) : null;
+  const resolvedVariant = resolved
+    ? selectedSize?.variants.find((variant) => variant.id === resolved.sellableVariantId)
     : undefined;
-  const summary = formatCatalogPriceSummary(plant.priceMin, plant.priceMax, plant.currency, locale);
-  const price = selectedSize
-    ? formatCatalogPrice(
-        selectedSize.catalogPrice + (selectedPot?.catalogPrice ?? 0),
-        plant.currency,
-        locale,
-      )
-    : summary;
-  const unavailable = selectedSize ? selectedSize.quantity <= 0 : plant.unavailable;
+  const extraColors =
+    resolvedVariant && resolved
+      ? additionalInStockColorCount(resolvedVariant, resolved.potColorId)
+      : 0;
+  const price = resolved ? formatCatalogPrice(resolved.unitPrice, plant.currency, locale) : null;
   const cartQty =
-    selectedSize == null
+    resolved == null || cart.v !== 2
       ? 0
       : (cart.items.find(
           (item) =>
             catalogCartItemKey(item) ===
             catalogCartItemKey({
               plantId: plant.id,
-              plantVariantId: selectedSize.id,
-              potVariantId: selectedPot?.id ?? null,
+              plantSizeId: resolved.plantSizeId,
+              sellableVariantId: resolved.sellableVariantId,
+              offerId: resolved.offerId,
+              potColorId: resolved.potColorId,
             }),
         )?.quantity ?? 0);
-  const canAdd =
-    selectedSize != null && selectedSize.quantity > 0 && cartQty < selectedSize.quantity;
+  const canAdd = resolved != null && cartQty < resolved.availableQuantity;
 
   useEffect(() => {
     if (!justAdded) return;
@@ -60,31 +91,52 @@ export function ShopPlantCard({ plant, locale }: { plant: CatalogShopCard; local
   }, [justAdded]);
 
   function selectSize(id: string) {
-    const nextSize = sizeOptions.find((size) => size.id === id);
     setSelectedSizeId(id);
-    setSelectedPotId(
-      retainCompatiblePotId(
-        selectedPotId,
-        uniquePotColorChoices(nextSize?.pots ?? []).choices,
-      ),
-    );
+    setColorMemory(null);
   }
 
-  function addToCart() {
-    if (!selectedSize || !canAdd) return;
-    const potVariantId = selectedPot?.id ?? null;
+  async function currentCart(): Promise<Extract<CatalogCart, { v: 2 }>> {
+    if (cart.v === 2) return cart;
+    const response = await fetch(routes.api.shopCartResolve(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cart),
+    });
+    if (!response.ok) return { v: 2, items: [] };
+    const payload = (await response.json()) as { items?: CatalogCartResolvedLine[] };
+    const stored = storedCatalogCartItems(Array.isArray(payload.items) ? payload.items : []);
+    return { v: 2, items: stored };
+  }
+
+  async function addToCart() {
+    if (!resolved || !canAdd) return;
+    const base = await currentCart();
     const result = addCatalogCartItem(
-      cart,
+      base,
       {
         plantId: plant.id,
-        plantVariantId: selectedSize.id,
-        potVariantId,
+        plantSizeId: resolved.plantSizeId,
+        sellableVariantId: resolved.sellableVariantId,
+        offerId: resolved.offerId,
+        potColorId: resolved.potColorId,
       },
-      selectedSize.quantity,
+      resolved.availableQuantity,
     );
-    if (!result.added) return;
+    if (!result.added || result.cart.v !== 2) return;
     writeCatalogCart(result.cart);
+    captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.addToCart, {
+      plant_id: plant.id,
+      plant_variant_id: resolved.plantSizeId,
+      sellable_variant_id: resolved.sellableVariantId,
+      offer_id: resolved.offerId,
+      ...(resolved.potColorId ? { pot_color_id: resolved.potColorId } : {}),
+      quantity: 1,
+      amount: catalogCartLineAmount(resolved.unitPrice, 1),
+    });
     setJustAdded(true);
+    if (resolvedVariant) {
+      setColorMemory({ colorId: resolved.potColorId, setKey: colorSetKey(resolvedVariant) });
+    }
   }
 
   return (
@@ -93,16 +145,18 @@ export function ShopPlantCard({ plant, locale }: { plant: CatalogShopCard; local
         href={routes.shop.plant(plant.id)}
         className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2"
       >
-        <div className="relative aspect-[3/4] overflow-hidden rounded-[28px] bg-neutral-100">
-          {plant.image ? (
-            <Image
-              src={plant.image}
-              alt={name}
-              fill
-              className={`object-cover ${unavailable ? "opacity-60" : ""}`}
-              sizes="(max-width: 768px) 50vw, 240px"
-            />
-          ) : null}
+        <div className="mx-auto w-4/5">
+          <div className="relative aspect-[3/4] overflow-hidden rounded-[28px] bg-neutral-100">
+            {plant.image ? (
+              <Image
+                src={plant.image}
+                alt={name}
+                fill
+                className={`object-cover ${plant.unavailable ? "opacity-60" : ""}`}
+                sizes="(max-width: 768px) 40vw, 192px"
+              />
+            ) : null}
+          </div>
         </div>
         <h2 className="text-body mt-2 font-medium leading-snug text-foreground">{name}</h2>
       </Link>
@@ -118,33 +172,44 @@ export function ShopPlantCard({ plant, locale }: { plant: CatalogShopCard; local
         </div>
       ) : null}
       {price ? <p className="text-caption mt-1 text-neutral-600">{price}</p> : null}
-      {selectedSize || plant.unavailable ? (
+      {selectedSize ? (
         <p className="text-caption mt-1 text-neutral-600">
-          {unavailable ? t(locale, "shop.unavailable") : t(locale, "shop.inStock")}
+          {resolved ? t(locale, "shop.inStock") : t(locale, "shop.unavailable")}
         </p>
       ) : null}
-      {selectedSize ? (
-        <CatalogPotColorOptions
-          pots={selectedSize.pots}
-          selectedId={selectedPot?.id ?? null}
-          onSelect={setSelectedPotId}
-          locale={locale}
-        />
-      ) : null}
-      {selectedSize ? (
-        <button
-          type="button"
-          disabled={!canAdd}
-          onClick={addToCart}
-          className={`text-caption mt-2 flex min-h-8 w-full items-center justify-center rounded-full px-2 py-1.5 text-center font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
-            canAdd
-              ? "bg-brand text-white transition hover:bg-brand-soft"
-              : "cursor-not-allowed bg-neutral-200 text-neutral-500"
-          }`}
+      {resolved && resolvedVariant?.potImage ? (
+        <Link
+          href={routes.shop.plant(plant.id)}
+          aria-label={t(locale, "shop.morePotColors")}
+          className="mt-2 inline-flex items-center gap-1.5 text-neutral-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2"
         >
-          {justAdded ? t(locale, "shop.addedToCart") : t(locale, "shop.addToCart")}
-        </button>
+          <span className="relative h-5 w-5 overflow-hidden rounded-md border border-black/15 bg-neutral-100">
+            <Image
+              src={resolvedVariant.potImage}
+              alt=""
+              fill
+              className="object-cover"
+              sizes="20px"
+            />
+          </span>
+          {extraColors > 0 ? <span className="text-caption">+{extraColors}</span> : null}
+          <GalleryCue />
+        </Link>
       ) : null}
+      <button
+        type="button"
+        disabled={!canAdd}
+        onClick={() => {
+          void addToCart();
+        }}
+        className={`text-caption mt-2 flex min-h-8 w-full items-center justify-center rounded-full px-2 py-1.5 text-center font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
+          canAdd
+            ? "bg-brand text-white transition hover:bg-brand-soft"
+            : "cursor-not-allowed bg-neutral-200 text-neutral-500"
+        }`}
+      >
+        {justAdded ? t(locale, "shop.addedToCart") : t(locale, "shop.addToCart")}
+      </button>
     </article>
   );
 }

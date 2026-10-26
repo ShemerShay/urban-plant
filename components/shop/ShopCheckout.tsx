@@ -9,10 +9,10 @@ import { DeliveryAddressFields } from "@/components/checkout/DeliveryAddressFiel
 import { useLocale } from "@/components/locale/LocaleProvider";
 import { ShopSoftSpinner } from "@/components/shop/ShopSoftSpinner";
 import {
+  catalogCartItemKey,
   catalogCartItemsEqual,
   catalogCartLineAmount,
   storedCatalogCartItems,
-  type CatalogCartItem,
   type CatalogCartResolvedLine,
 } from "@/lib/catalogCart";
 import {
@@ -58,14 +58,15 @@ const EMPTY_FIELDS: CheckoutFormValues = {
   apartmentOrNotes: "",
 };
 
-async function fetchResolvedCart(
-  items: CatalogCartItem[],
-): Promise<CatalogCartResolvedLine[] | null> {
+async function fetchResolvedCart(cart: {
+  v: 1 | 2;
+  items: unknown[];
+}): Promise<CatalogCartResolvedLine[] | null> {
   try {
     const response = await fetch(routes.api.shopCartResolve(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify(cart),
     });
     if (!response.ok) return null;
     const payload = (await response.json()) as { items?: CatalogCartResolvedLine[] };
@@ -175,10 +176,10 @@ function resumeSummaryLines(locale: Locale, resume: CatalogCheckoutResume): Summ
     name: localizedPlantText(locale, line.name, line.nameHe ?? undefined),
     ...(line.sizeLabel ? { sizeLabel: line.sizeLabel } : {}),
     quantity: line.quantity,
-    plantPrice: formatCatalogPrice(line.plantPrice, line.currency, locale),
-    ...(line.potPrice != null
+    plantPrice: formatCatalogPrice(line.unitPrice, line.currency, locale),
+    ...([line.potName, line.potSizeLabel, line.potColor].some(Boolean)
       ? {
-          pot: `${[line.potName, line.potColor].filter(Boolean).join(" ")} ${formatCatalogPrice(line.potPrice, line.currency, locale)}`.trim(),
+          pot: [line.potName, line.potSizeLabel, line.potColor].filter(Boolean).join(" "),
         }
       : {}),
     lineTotal: formatCatalogPrice(line.lineTotal, line.currency, locale),
@@ -227,7 +228,7 @@ export function ShopCheckout({
     setLoading(true);
     setLoadError(false);
     void (async () => {
-      const next = await fetchResolvedCart(cart.items);
+      const next = await fetchResolvedCart(cart);
       if (cancelled) return;
       if (!next) {
         setLoadError(true);
@@ -238,8 +239,8 @@ export function ShopCheckout({
       resolvedKeyRef.current = JSON.stringify(stored);
       setLines(next);
       setLoading(false);
-      if (!catalogCartItemsEqual(cart.items, stored)) {
-        writeCatalogCart({ v: 1, items: stored });
+      if (cart.v !== 2 || !catalogCartItemsEqual(cart.items, stored)) {
+        writeCatalogCart({ v: 2, items: stored });
       }
     })();
 
@@ -249,13 +250,13 @@ export function ShopCheckout({
   }, [cart.items, resume]);
 
   async function refreshResolved(): Promise<CatalogCartResolvedLine[] | null> {
-    const next = await fetchResolvedCart(cart.items);
+    const next = await fetchResolvedCart(cart);
     if (!next) return null;
     const stored = storedCatalogCartItems(next);
     resolvedKeyRef.current = JSON.stringify(stored);
     setLines(next);
-    if (!catalogCartItemsEqual(cart.items, stored)) {
-      writeCatalogCart({ v: 1, items: stored });
+    if (cart.v !== 2 || !catalogCartItemsEqual(cart.items, stored)) {
+      writeCatalogCart({ v: 2, items: stored });
     }
     return next;
   }
@@ -313,7 +314,7 @@ export function ShopCheckout({
     setNotice(null);
     let redirected = false;
     try {
-      const fresh = await fetchResolvedCart(cart.items);
+      const fresh = await fetchResolvedCart(cart);
       if (!fresh) {
         setSubmitError(t(locale, "common.networkError"));
         return;
@@ -322,8 +323,8 @@ export function ShopCheckout({
         const stored = storedCatalogCartItems(fresh);
         resolvedKeyRef.current = JSON.stringify(stored);
         setLines(fresh);
-        if (!catalogCartItemsEqual(cart.items, stored)) {
-          writeCatalogCart({ v: 1, items: stored });
+        if (cart.v !== 2 || !catalogCartItemsEqual(cart.items, stored)) {
+          writeCatalogCart({ v: 2, items: stored });
         }
         setNotice("cart_changed");
         setReviewRequired(true);
@@ -470,7 +471,7 @@ export function ShopCheckout({
   );
   const currency = lines[0]?.currency ?? "ILS";
   const merchandise = lines.reduce(
-    (sum, line) => sum + catalogCartLineAmount(line.plantPrice, line.potPrice, line.quantity),
+    (sum, line) => sum + catalogCartLineAmount(line.unitPrice, line.quantity),
     0,
   );
   const submitLocked = submitting || loading || loadError;
@@ -507,18 +508,17 @@ export function ShopCheckout({
           total={formatCatalogPrice(merchandise, currency, locale)}
           lines={lines.map((line) => {
             const potColor = localizedPlantText(locale, line.potColor, line.potColorHe);
-            const lineTotal = catalogCartLineAmount(line.plantPrice, line.potPrice, line.quantity);
+            const potLabel = [localizedPlantText(locale, line.potName, line.potNameHe), line.potSizeLabel, potColor]
+              .filter(Boolean)
+              .join(" ");
+            const lineTotal = catalogCartLineAmount(line.unitPrice, line.quantity);
             return {
-              key: `${line.plantId}:${line.plantVariantId}:${line.potVariantId ?? ""}`,
+              key: catalogCartItemKey(line),
               name: localizedPlantText(locale, line.name, line.nameHe),
               ...(line.sizeLabel ? { sizeLabel: line.sizeLabel } : {}),
               quantity: line.quantity,
-              plantPrice: formatCatalogPrice(line.plantPrice, line.currency, locale),
-              ...(line.potPrice != null
-                ? {
-                    pot: `${potColor || localizedPlantText(locale, line.potName, line.potNameHe)} ${formatCatalogPrice(line.potPrice, line.currency, locale)}`.trim(),
-                  }
-                : {}),
+              plantPrice: formatCatalogPrice(line.unitPrice, line.currency, locale),
+              ...(potLabel ? { pot: potLabel } : {}),
               lineTotal: formatCatalogPrice(lineTotal, line.currency, locale),
             };
           })}

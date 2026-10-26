@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState } from "react";
 import { usePostHog } from "posthog-js/react";
 
@@ -13,81 +12,50 @@ import {
   ANALYTICS_EVENTS,
   captureAnalyticsEvent,
 } from "@/lib/analyticsEvents";
-import { addCatalogCartItem, catalogCartItemKey, catalogCartLineAmount } from "@/lib/catalogCart";
+import {
+  addCatalogCartItem,
+  catalogCartItemKey,
+  catalogCartLineAmount,
+  storedCatalogCartItems,
+  type CatalogCart,
+  type CatalogCartResolvedLine,
+} from "@/lib/catalogCart";
 import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
 import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
-import type { CatalogShopDetail, CatalogShopPotOption } from "@/lib/catalogShop";
-import { catalogSizeChoices, retainCompatiblePotId } from "@/lib/catalogShopSelection";
+import type { CatalogShopDetail, CatalogShopVariant } from "@/lib/catalogShop";
+import {
+  catalogSizeChoices,
+  defaultPotColorId,
+  inStockColors,
+  resolveCardVariant,
+  resolveExplicitConfiguration,
+} from "@/lib/catalogShopSelection";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
+import { routes } from "@/lib/routes";
 import type { Locale } from "@/lib/locale";
-
-function PotSelector({
-  pots,
-  selectedId,
-  onSelect,
-  locale,
-  currency,
-}: {
-  pots: CatalogShopPotOption[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  locale: Locale;
-  currency: CatalogShopDetail["currency"];
-}) {
-  return (
-    <section className="w-full">
-      <h2 id="shop-pots-heading" className="text-heading-sm font-medium text-foreground">
-        {t(locale, "shop.pots")}
-      </h2>
-      <ul className="mt-4 flex flex-wrap items-start justify-center gap-3" aria-labelledby="shop-pots-heading">
-        {pots.map((pot) => {
-          const selected = pot.id === selectedId;
-          const name = localizedPlantText(locale, pot.name, pot.nameHe);
-          const color = localizedPlantText(locale, pot.color, pot.colorHe);
-          const price = formatCatalogPrice(pot.catalogPrice, currency, locale);
-          return (
-            <li key={pot.id} className="w-[5.5rem] sm:w-24">
-              <button
-                type="button"
-                aria-pressed={selected}
-                aria-label={`${name}, ${color}, ${price}`}
-                onClick={() => onSelect(pot.id)}
-                className="flex w-full flex-col items-center gap-1.5 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2"
-              >
-                <span
-                  className={`relative block aspect-square w-full overflow-hidden rounded-2xl bg-neutral-100 ${
-                    selected ? "ring-2 ring-brand ring-offset-2" : ""
-                  }`}
-                >
-                  {pot.image ? (
-                    <Image src={pot.image} alt="" fill className="object-cover" sizes="96px" />
-                  ) : (
-                    <span className="text-caption flex h-full items-center justify-center p-2 text-neutral-600">
-                      {color}
-                    </span>
-                  )}
-                </span>
-                <span className="text-caption leading-snug text-neutral-600">{color}</span>
-                <span className="text-caption leading-snug text-neutral-600">{price}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
 
 const ctaFocusClass =
   "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
+
+function variantChoiceLabel(variant: CatalogShopVariant, locale: Locale): string {
+  if (!variant.potSizeId) return t(locale, "shop.noPot");
+  const name = localizedPlantText(locale, variant.potName, variant.potNameHe);
+  return [name, variant.potSizeLabel].filter(Boolean).join(" ") || t(locale, "shop.pots");
+}
 
 export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; locale: Locale }) {
   const posthog = usePostHog();
   const cart = useCatalogCart();
   const sizeOptions = catalogSizeChoices(plant.sizes);
   const [selectedSizeId, setSelectedSizeId] = useState(sizeOptions[0]?.id ?? "");
-  const [selectedPotId, setSelectedPotId] = useState<string | null>(null);
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    () => resolveCardVariant(sizeOptions[0] ?? { id: "", quantity: 0, variants: [] })?.id ?? "",
+  );
+  const [selectedColorId, setSelectedColorId] = useState<string | null>(() => {
+    const variant = resolveCardVariant(sizeOptions[0] ?? { id: "", quantity: 0, variants: [] });
+    return variant ? defaultPotColorId(variant) : null;
+  });
   const [justAdded, setJustAdded] = useState(false);
 
   const name = localizedPlantText(locale, plant.name, plant.nameHe);
@@ -95,25 +63,28 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   const description = localizedPlantText(locale, plant.description, plant.descriptionHe);
   const water = localizedPlantText(locale, plant.water, plant.waterHe);
   const showCare = Boolean(plant.light && water);
-  const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId) ?? sizeOptions[0];
-  const compatiblePots = selectedSize?.pots ?? [];
-  const selectedPot = selectedPotId
-    ? compatiblePots.find((pot) => pot.id === selectedPotId)
-    : undefined;
+  const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId);
+  const selectedVariant = selectedSize?.variants.find((variant) => variant.id === selectedVariantId);
+  const colors = selectedVariant ? inStockColors(selectedVariant) : [];
+  const resolved =
+    selectedSize && selectedVariant
+      ? resolveExplicitConfiguration(selectedSize, selectedVariant.id, selectedColorId)
+      : null;
   const cartQty =
-    selectedSize == null
+    resolved == null || cart.v !== 2
       ? 0
       : (cart.items.find(
           (item) =>
             catalogCartItemKey(item) ===
             catalogCartItemKey({
               plantId: plant.id,
-              plantVariantId: selectedSize.id,
-              potVariantId: selectedPotId,
+              plantSizeId: resolved.plantSizeId,
+              sellableVariantId: resolved.sellableVariantId,
+              offerId: resolved.offerId,
+              potColorId: resolved.potColorId,
             }),
         )?.quantity ?? 0);
-  const canAdd =
-    selectedSize != null && selectedSize.quantity > 0 && cartQty < selectedSize.quantity;
+  const canAdd = resolved != null && cartQty < resolved.availableQuantity;
 
   useEffect(() => {
     if (!justAdded) return;
@@ -123,39 +94,57 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
 
   function selectSize(id: string) {
     const nextSize = sizeOptions.find((size) => size.id === id);
+    const nextVariant = nextSize ? resolveCardVariant(nextSize) : null;
     setSelectedSizeId(id);
-    setSelectedPotId(retainCompatiblePotId(selectedPotId, nextSize?.pots ?? []));
+    setSelectedVariantId(nextVariant?.id ?? "");
+    setSelectedColorId(nextVariant ? defaultPotColorId(nextVariant) : null);
   }
 
-  function selectPot(id: string) {
-    setSelectedPotId((current) => (current === id ? null : id));
+  function selectVariant(id: string) {
+    const nextVariant = selectedSize?.variants.find((variant) => variant.id === id);
+    setSelectedVariantId(id);
+    setSelectedColorId(nextVariant ? defaultPotColorId(nextVariant) : null);
   }
 
-  function addToCart() {
-    if (!selectedSize || !canAdd) return;
+  async function currentCart(): Promise<Extract<CatalogCart, { v: 2 }>> {
+    if (cart.v === 2) return cart;
+    const response = await fetch(routes.api.shopCartResolve(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cart),
+    });
+    if (!response.ok) return { v: 2, items: [] };
+    const payload = (await response.json()) as { items?: CatalogCartResolvedLine[] };
+    return {
+      v: 2,
+      items: storedCatalogCartItems(Array.isArray(payload.items) ? payload.items : []),
+    };
+  }
+
+  async function addToCart() {
+    if (!resolved || !canAdd) return;
+    const base = await currentCart();
     const result = addCatalogCartItem(
-      cart,
+      base,
       {
         plantId: plant.id,
-        plantVariantId: selectedSize.id,
-        potVariantId: selectedPotId,
+        plantSizeId: resolved.plantSizeId,
+        sellableVariantId: resolved.sellableVariantId,
+        offerId: resolved.offerId,
+        potColorId: resolved.potColorId,
       },
-      selectedSize.quantity,
+      resolved.availableQuantity,
     );
-    if (!result.added) return;
+    if (!result.added || result.cart.v !== 2) return;
     writeCatalogCart(result.cart);
     captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.addToCart, {
       plant_id: plant.id,
-      plant_variant_id: selectedSize.id,
-      ...(selectedPotId ? { pot_variant_id: selectedPotId } : {}),
+      plant_variant_id: resolved.plantSizeId,
+      sellable_variant_id: resolved.sellableVariantId,
+      offer_id: resolved.offerId,
+      ...(resolved.potColorId ? { pot_color_id: resolved.potColorId } : {}),
       quantity: 1,
-      plant_price: selectedSize.catalogPrice,
-      ...(selectedPot ? { pot_price: selectedPot.catalogPrice } : {}),
-      amount: catalogCartLineAmount(
-        selectedSize.catalogPrice,
-        selectedPot?.catalogPrice,
-        1,
-      ),
+      amount: catalogCartLineAmount(resolved.unitPrice, 1),
     });
     setJustAdded(true);
   }
@@ -163,11 +152,11 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center">
       {plant.images.length > 0 ? (
-        <div className="w-full">
+        <div className="mx-auto w-full max-w-md">
           <PlantImageGallery
             images={plant.images}
             name={name}
-            sizes="(min-width: 672px) 42rem, calc(100vw - 3rem)"
+            sizes="(min-width: 448px) 28rem, calc(100vw - 3rem)"
           />
         </div>
       ) : null}
@@ -195,43 +184,101 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
             </section>
 
             <div className="w-full">
-              <p className="text-heading-sm font-medium text-foreground">
-                {formatCatalogPrice(selectedSize.catalogPrice, plant.currency, locale)}
-              </p>
+              {selectedVariant ? (
+                <p className="text-heading-sm font-medium text-foreground">
+                  {formatCatalogPrice(selectedVariant.unitPrice, plant.currency, locale)}
+                </p>
+              ) : null}
               {selectedSize.nurseryPotDiameterCm != null ? (
                 <p className="text-caption mt-1 text-neutral-600">
                   {t(locale, "shop.diameter", { cm: selectedSize.nurseryPotDiameterCm })}
                 </p>
               ) : null}
               <p className="text-caption mt-1 text-neutral-600">
-                {selectedSize.quantity > 0 ? t(locale, "shop.inStock") : t(locale, "shop.unavailable")}
+                {resolved ? t(locale, "shop.inStock") : t(locale, "shop.unavailable")}
               </p>
             </div>
 
-            {compatiblePots.length > 0 ? (
-              <PotSelector
-                pots={compatiblePots}
-                selectedId={selectedPotId}
-                onSelect={selectPot}
-                locale={locale}
-                currency={plant.currency}
-              />
+            {selectedSize.variants.length > 0 ? (
+              <section className="w-full">
+                <h2 id="shop-pots-heading" className="text-heading-sm font-medium text-foreground">
+                  {t(locale, "shop.pots")}
+                </h2>
+                <div
+                  className="mt-4 flex flex-wrap items-center justify-center gap-2"
+                  role="radiogroup"
+                  aria-labelledby="shop-pots-heading"
+                >
+                  {selectedSize.variants.map((variant) => {
+                    const selected = variant.id === selectedVariantId;
+                    return (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => selectVariant(variant.id)}
+                        className={`text-caption min-h-10 rounded-full px-4 py-2 font-medium ${ctaFocusClass} ${
+                          selected
+                            ? "bg-brand text-white"
+                            : "bg-neutral-100 text-foreground hover:bg-neutral-200/80"
+                        }`}
+                      >
+                        {variantChoiceLabel(variant, locale)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
             ) : null}
 
-            {plant.sizes.length > 0 ? (
-              <button
-                type="button"
-                disabled={!canAdd}
-                onClick={addToCart}
-                className={`text-body flex min-h-12 w-full items-center justify-center rounded-2xl px-5 py-4 text-center font-semibold ${ctaFocusClass} ${
-                  canAdd
-                    ? "bg-brand text-white shadow-[0_6px_18px_rgba(27,67,50,0.14)] transition hover:bg-brand-soft active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100"
-                    : "cursor-not-allowed bg-neutral-300 text-neutral-600"
-                }`}
-              >
-                {justAdded ? t(locale, "shop.addedToCart") : t(locale, "shop.addToCart")}
-              </button>
+            {selectedVariant?.potSizeId && colors.length > 0 ? (
+              <section className="w-full">
+                <h2 id="shop-colors-heading" className="text-heading-sm font-medium text-foreground">
+                  {t(locale, "shop.potColors")}
+                </h2>
+                <div
+                  className="mt-4 flex flex-wrap items-center justify-center gap-2"
+                  role="radiogroup"
+                  aria-labelledby="shop-colors-heading"
+                >
+                  {colors.map((color) => {
+                    const selected = color.id === selectedColorId;
+                    const label = localizedPlantText(locale, color.color, color.colorHe);
+                    return (
+                      <button
+                        key={color.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={label}
+                        title={label}
+                        onClick={() => setSelectedColorId(color.id)}
+                        className={`h-8 w-8 rounded-full border border-black/15 ${ctaFocusClass} ${
+                          selected ? "ring-2 ring-brand ring-offset-2" : ""
+                        }`}
+                        style={{ backgroundColor: color.color }}
+                      />
+                    );
+                  })}
+                </div>
+              </section>
             ) : null}
+
+            <button
+              type="button"
+              disabled={!canAdd}
+              onClick={() => {
+                void addToCart();
+              }}
+              className={`text-body flex min-h-12 w-full items-center justify-center rounded-2xl px-5 py-4 text-center font-semibold ${ctaFocusClass} ${
+                canAdd
+                  ? "bg-brand text-white shadow-[0_6px_18px_rgba(27,67,50,0.14)] transition hover:bg-brand-soft active:scale-[0.99] motion-reduce:transition-none motion-reduce:active:scale-100"
+                  : "cursor-not-allowed bg-neutral-300 text-neutral-600"
+              }`}
+            >
+              {justAdded ? t(locale, "shop.addedToCart") : t(locale, "shop.addToCart")}
+            </button>
           </>
         ) : null}
 
