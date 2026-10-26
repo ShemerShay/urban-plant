@@ -1,7 +1,8 @@
 /**
  * Catalog checkout line snapshot and supplier-cost capture.
- * Cost is copied from plants.supplier_price when a catalog attempt is created.
- * Later plant edits do not rewrite a stored snapshot.
+ * Cost is copied when a catalog attempt is created.
+ * Later product edits do not rewrite a stored snapshot.
+ * Supplier cost 0 is a real cost. Null means the source price was null.
  */
 
 import "server-only";
@@ -10,34 +11,42 @@ import { sql } from "@/lib/db";
 import { parseNumeric } from "@/lib/storageUtils";
 
 export const PLANT_UNIT_COST_SOURCE = "plants.supplier_price@sale" as const;
+export const POT_UNIT_COST_SOURCE = "pot_sizes.supplier_price@sale" as const;
 
 export type PlantUnitCostSource = typeof PLANT_UNIT_COST_SOURCE;
+export type PotUnitCostSource = typeof POT_UNIT_COST_SOURCE;
 
 export type CatalogCurrency = "ILS" | "USD" | "EUR";
 
-export type PlantUnitCostSnapshot = {
-  plantUnitCost: number | null;
-  plantUnitCostSource: PlantUnitCostSource | null;
+export type SupplierCostSnapshot<Source extends string> = {
+  cost: number | null;
+  source: Source | null;
 };
 
-/** One historical catalog line. Sale prices are customer prices. Cost is supplier cost only. */
+/** One historical catalog line. Sale price is the Offer price. Cost is supplier cost only. */
 export type CatalogPaymentSnapshotLine = {
   lineNo: number;
   plantId: string;
   plantVariantId: string;
-  potVariantId: string | null;
+  sellableVariantId: string;
+  offerId: string;
+  potSizeId: string | null;
+  potColorId: string | null;
   quantity: number;
-  plantUnitPrice: number;
-  potUnitPrice: number | null;
+  unitPrice: number;
   lineTotal: number;
   currency: CatalogCurrency;
   plantName: string;
   plantNameHe: string | null;
   sizeLabel: string | null;
   potName: string | null;
+  potSizeLabel: string | null;
   potColor: string | null;
+  potColorHe: string | null;
   plantUnitCost: number | null;
   plantUnitCostSource: PlantUnitCostSource | null;
+  potUnitCost: number | null;
+  potUnitCostSource: PotUnitCostSource | null;
 };
 
 export type CatalogPaymentSnapshot = {
@@ -49,35 +58,46 @@ function moneyCents(value: number): number {
   return Math.round(value * 100);
 }
 
-export function catalogLineTotal(
-  plantUnitPrice: number,
-  potUnitPrice: number | null,
-  quantity: number,
-): number {
-  return (plantUnitPrice + (potUnitPrice ?? 0)) * quantity;
+export function catalogLineTotal(unitPrice: number, quantity: number): number {
+  return unitPrice * quantity;
 }
 
 /**
- * plants.supplier_price is Urban Plant's supplier cost.
- * A positive supplier cost is snapshotted. Missing, zero, and negative become null.
- * There is no pot cost.
+ * A supplier price of 0 is stored. Missing and negative prices become null.
+ * Supplier cost is never a selling price.
  */
-export function plantUnitCostFromSupplierPrice(supplierPrice: unknown): PlantUnitCostSnapshot {
+export function supplierCostFromPrice<Source extends string>(
+  supplierPrice: unknown,
+  source: Source,
+): SupplierCostSnapshot<Source> {
   if (
     supplierPrice == null ||
     supplierPrice === "" ||
     (typeof supplierPrice !== "number" && typeof supplierPrice !== "string")
   ) {
-    return { plantUnitCost: null, plantUnitCostSource: null };
+    return { cost: null, source: null };
   }
   const supplierCost = parseNumeric(supplierPrice);
-  if (supplierCost <= 0) {
-    return { plantUnitCost: null, plantUnitCostSource: null };
+  if (!Number.isFinite(supplierCost) || supplierCost < 0) {
+    return { cost: null, source: null };
   }
-  return {
-    plantUnitCost: supplierCost,
-    plantUnitCostSource: PLANT_UNIT_COST_SOURCE,
-  };
+  return { cost: supplierCost, source };
+}
+
+export function plantUnitCostFromSupplierPrice(supplierPrice: unknown): {
+  plantUnitCost: number | null;
+  plantUnitCostSource: PlantUnitCostSource | null;
+} {
+  const snapshot = supplierCostFromPrice(supplierPrice, PLANT_UNIT_COST_SOURCE);
+  return { plantUnitCost: snapshot.cost, plantUnitCostSource: snapshot.source };
+}
+
+export function potUnitCostFromSupplierPrice(supplierPrice: unknown): {
+  potUnitCost: number | null;
+  potUnitCostSource: PotUnitCostSource | null;
+} {
+  const snapshot = supplierCostFromPrice(supplierPrice, POT_UNIT_COST_SOURCE);
+  return { potUnitCost: snapshot.cost, potUnitCostSource: snapshot.source };
 }
 
 function parseRequiredText(value: unknown): string | null {
@@ -98,9 +118,10 @@ function parsePositiveMoney(value: unknown): number | null {
   return value;
 }
 
-function parseOptionalPositiveMoney(value: unknown): number | null | undefined {
+function parseNonNegativeMoney(value: unknown): number | null | undefined {
   if (value == null) return null;
-  return parsePositiveMoney(value);
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+  return value;
 }
 
 function parsePositiveInt(value: unknown): number | null {
@@ -113,74 +134,89 @@ function parseCurrency(value: unknown): CatalogCurrency | null {
   return null;
 }
 
-function parseCostSnapshot(value: Record<string, unknown>): PlantUnitCostSnapshot | null {
-  const cost = value.plantUnitCost;
-  const source = value.plantUnitCostSource;
-  if (cost == null && source == null) {
-    return { plantUnitCost: null, plantUnitCostSource: null };
-  }
-  if (typeof cost !== "number" || !Number.isFinite(cost) || cost <= 0) return null;
-  if (source !== PLANT_UNIT_COST_SOURCE) return null;
-  return { plantUnitCost: cost, plantUnitCostSource: PLANT_UNIT_COST_SOURCE };
-}
-
 function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
   const lineNo = parsePositiveInt(row.lineNo);
   const plantId = parseRequiredText(row.plantId);
   const plantVariantId = parseRequiredText(row.plantVariantId);
-  const potVariantId = parseOptionalText(row.potVariantId);
+  const sellableVariantId = parseRequiredText(row.sellableVariantId);
+  const offerId = parseRequiredText(row.offerId);
+  const potSizeId = parseOptionalText(row.potSizeId);
+  const potColorId = parseOptionalText(row.potColorId);
   const quantity = parsePositiveInt(row.quantity);
-  const plantUnitPrice = parsePositiveMoney(row.plantUnitPrice);
-  const potUnitPrice = parseOptionalPositiveMoney(row.potUnitPrice);
+  const unitPrice = parsePositiveMoney(row.unitPrice);
   const lineTotal = parsePositiveMoney(row.lineTotal);
   const currency = parseCurrency(row.currency);
   const plantName = parseRequiredText(row.plantName);
   const plantNameHe = parseOptionalText(row.plantNameHe);
   const sizeLabel = parseOptionalText(row.sizeLabel);
   const potName = parseOptionalText(row.potName);
+  const potSizeLabel = parseOptionalText(row.potSizeLabel);
   const potColor = parseOptionalText(row.potColor);
-  const cost = parseCostSnapshot(row);
+  const potColorHe = parseOptionalText(row.potColorHe);
+  const plantUnitCost = parseNonNegativeMoney(row.plantUnitCost);
+  const potUnitCost = parseNonNegativeMoney(row.potUnitCost);
+  const plantSource = row.plantUnitCostSource;
+  const potSource = row.potUnitCostSource;
   if (
     lineNo == null ||
     !plantId ||
     !plantVariantId ||
-    potVariantId === undefined ||
+    !sellableVariantId ||
+    !offerId ||
+    potSizeId === undefined ||
+    potColorId === undefined ||
     quantity == null ||
-    plantUnitPrice == null ||
-    potUnitPrice === undefined ||
+    unitPrice == null ||
     lineTotal == null ||
     !currency ||
     !plantName ||
     plantNameHe === undefined ||
     sizeLabel === undefined ||
     potName === undefined ||
+    potSizeLabel === undefined ||
     potColor === undefined ||
-    !cost
+    potColorHe === undefined ||
+    plantUnitCost === undefined ||
+    potUnitCost === undefined
   ) {
     return null;
   }
-  if ((potVariantId == null) !== (potUnitPrice == null)) return null;
-  const expected = catalogLineTotal(plantUnitPrice, potUnitPrice, quantity);
-  if (moneyCents(expected) !== moneyCents(lineTotal)) return null;
+  const hasPlantCost = plantUnitCost != null;
+  const hasPlantSource = plantSource != null;
+  if (hasPlantCost !== hasPlantSource) return null;
+  if (hasPlantSource && plantSource !== PLANT_UNIT_COST_SOURCE) return null;
+  const hasPotCost = potUnitCost != null;
+  const hasPotSource = potSource != null;
+  if (hasPotCost !== hasPotSource) return null;
+  if (hasPotSource && potSource !== POT_UNIT_COST_SOURCE) return null;
+  if ((potSizeId == null) !== (potColorId == null)) return null;
+  if (potSizeId == null && (potName != null || potUnitCost != null)) return null;
+  if (moneyCents(catalogLineTotal(unitPrice, quantity)) !== moneyCents(lineTotal)) return null;
   return {
     lineNo,
     plantId,
     plantVariantId,
-    potVariantId,
+    sellableVariantId,
+    offerId,
+    potSizeId,
+    potColorId,
     quantity,
-    plantUnitPrice,
-    potUnitPrice,
+    unitPrice,
     lineTotal,
     currency,
     plantName,
     plantNameHe,
     sizeLabel,
     potName,
+    potSizeLabel,
     potColor,
-    plantUnitCost: cost.plantUnitCost,
-    plantUnitCostSource: cost.plantUnitCostSource,
+    potColorHe,
+    plantUnitCost,
+    plantUnitCostSource: hasPlantCost ? PLANT_UNIT_COST_SOURCE : null,
+    potUnitCost,
+    potUnitCostSource: hasPotCost ? POT_UNIT_COST_SOURCE : null,
   };
 }
 
@@ -205,14 +241,14 @@ export function parseCatalogPaymentSnapshot(value: unknown): CatalogPaymentSnaps
 
 export async function snapshotPlantUnitCosts(
   plantIds: string[],
-): Promise<Map<string, PlantUnitCostSnapshot>> {
+): Promise<Map<string, { plantUnitCost: number | null; plantUnitCostSource: PlantUnitCostSource | null }>> {
   const ids = [...new Set(plantIds.map((id) => id.trim()).filter(Boolean))];
-  const costs = new Map<string, PlantUnitCostSnapshot>();
-  for (const id of ids) {
-    costs.set(id, { plantUnitCost: null, plantUnitCostSource: null });
-  }
+  const costs = new Map<
+    string,
+    { plantUnitCost: number | null; plantUnitCostSource: PlantUnitCostSource | null }
+  >();
+  for (const id of ids) costs.set(id, plantUnitCostFromSupplierPrice(null));
   if (ids.length === 0) return costs;
-
   const rows = await sql`
     SELECT id, supplier_price
     FROM plants
@@ -224,35 +260,45 @@ export async function snapshotPlantUnitCosts(
   return costs;
 }
 
-/** Replace line costs from current plants.supplier_price. Drops any non-snapshot fields. */
+export async function snapshotPotUnitCosts(
+  potSizeIds: Array<string | null>,
+): Promise<Map<string, { potUnitCost: number | null; potUnitCostSource: PotUnitCostSource | null }>> {
+  const ids = [...new Set(potSizeIds.filter((id): id is string => Boolean(id?.trim())))];
+  const costs = new Map<
+    string,
+    { potUnitCost: number | null; potUnitCostSource: PotUnitCostSource | null }
+  >();
+  if (ids.length === 0) return costs;
+  const rows = await sql`
+    SELECT id::text AS id, supplier_price
+    FROM pot_sizes
+    WHERE id = ANY(${ids}::uuid[])
+  `;
+  for (const row of rows as { id: string; supplier_price: string | number | null }[]) {
+    costs.set(String(row.id), potUnitCostFromSupplierPrice(row.supplier_price));
+  }
+  return costs;
+}
+
+/** Replace line costs from current supplier prices. Drops any non-snapshot fields. */
 export async function snapshotCatalogPaymentPlantCosts(
   snapshot: CatalogPaymentSnapshot,
 ): Promise<CatalogPaymentSnapshot> {
-  const costs = await snapshotPlantUnitCosts(snapshot.lines.map((line) => line.plantId));
+  const plantCosts = await snapshotPlantUnitCosts(snapshot.lines.map((line) => line.plantId));
+  const potCosts = await snapshotPotUnitCosts(snapshot.lines.map((line) => line.potSizeId));
   return {
     sourcePartnerId: snapshot.sourcePartnerId,
     lines: snapshot.lines.map((line) => {
-      const cost = costs.get(line.plantId) ?? {
-        plantUnitCost: null,
-        plantUnitCostSource: null,
-      };
+      const plant = plantCosts.get(line.plantId) ?? plantUnitCostFromSupplierPrice(null);
+      const pot = line.potSizeId
+        ? (potCosts.get(line.potSizeId) ?? potUnitCostFromSupplierPrice(null))
+        : potUnitCostFromSupplierPrice(null);
       return {
-        lineNo: line.lineNo,
-        plantId: line.plantId,
-        plantVariantId: line.plantVariantId,
-        potVariantId: line.potVariantId,
-        quantity: line.quantity,
-        plantUnitPrice: line.plantUnitPrice,
-        potUnitPrice: line.potUnitPrice,
-        lineTotal: line.lineTotal,
-        currency: line.currency,
-        plantName: line.plantName,
-        plantNameHe: line.plantNameHe,
-        sizeLabel: line.sizeLabel,
-        potName: line.potName,
-        potColor: line.potColor,
-        plantUnitCost: cost.plantUnitCost,
-        plantUnitCostSource: cost.plantUnitCostSource,
+        ...line,
+        plantUnitCost: plant.plantUnitCost,
+        plantUnitCostSource: plant.plantUnitCostSource,
+        potUnitCost: line.potSizeId ? pot.potUnitCost : null,
+        potUnitCostSource: line.potSizeId ? pot.potUnitCostSource : null,
       };
     }),
   };

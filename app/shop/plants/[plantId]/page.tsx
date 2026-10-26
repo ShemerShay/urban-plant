@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 
 import { TrackProductView } from "@/components/analytics/TrackProductView";
+import { PlantPageContactLink } from "@/components/plant/PlantPageContactLink";
 import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
 import { ShopCatalogBar } from "@/components/shop/ShopCatalogBar";
 import { ShopPlantDetail } from "@/components/shop/ShopPlantDetail";
 import { readCatalogShopDetail } from "@/lib/catalogShop";
+import { localizedPlantText } from "@/lib/plantDisplay";
 import { getLocale } from "@/lib/getLocale";
+import { t } from "@/lib/messages";
 
 interface PageProps {
   params: Promise<{ plantId: string }>;
@@ -28,6 +31,11 @@ export default async function ShopPlantPage({ params }: PageProps) {
       <PlantPageHeader knownPartner="" />
       <ShopCatalogBar locale={locale} showBack />
       <ShopPlantDetail key={plant.id} plant={plant} locale={locale} />
+      <PlantPageContactLink
+        whatsAppMessage={t(locale, "plant.whatsapp.withoutPartner", {
+          plantName: localizedPlantText(locale, plant.name, plant.nameHe),
+        })}
+      />
     </main>
   );
 }

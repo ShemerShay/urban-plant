@@ -389,7 +389,9 @@ export function AdminPotsManager() {
           <span className={labelClassName}>{t(locale, "admin.pots.nameHe")}</span>
           <input className={inputClassName} value={nameHe} onChange={(e) => setNameHe(e.target.value)} />
         </label>
+        <p className={labelClassName}>{t(locale, "admin.pots.photo")}</p>
         <PlantImagePicker
+          single
           images={image ? [image] : []}
           onChange={(urls) => setImage(urls[urls.length - 1] ?? "")}
           plantName={name || t(locale, "admin.pots.title")}
@@ -438,7 +440,9 @@ export function AdminPotsManager() {
                         onChange={(e) => setEditNameHe(e.target.value)}
                       />
                     </label>
+                    <p className={labelClassName}>{t(locale, "admin.pots.photo")}</p>
                     <PlantImagePicker
+                      single
                       images={editImage ? [editImage] : []}
                       onChange={(urls) => setEditImage(urls[urls.length - 1] ?? "")}
                       plantName={editName}
@@ -454,20 +458,33 @@ export function AdminPotsManager() {
                     </button>
                   </div>
                 ) : (
-                  <div>
-                    <p className="font-medium text-emerald-950">{pot.name}</p>
-                    {pot.nameHe ? <p className="text-sm text-slate-600">{pot.nameHe}</p> : null}
-                    <div className="mt-2 flex gap-3">
-                      <button type="button" className="text-sm text-emerald-800" onClick={() => startEdit(pot)}>
-                        {t(locale, "admin.pots.edit")}
-                      </button>
-                      <button
-                        type="button"
-                        className="text-sm text-red-700"
-                        onClick={() => setDeleteTarget({ kind: "pot", potId: pot.id })}
-                      >
-                        {t(locale, "admin.pots.delete")}
-                      </button>
+                  <div className="flex gap-3">
+                    {pot.image ? (
+                      <img
+                        src={pot.image}
+                        alt=""
+                        className="h-16 w-16 shrink-0 rounded-xl object-cover ring-1 ring-slate-200"
+                      />
+                    ) : (
+                      <p className="max-w-40 text-sm text-amber-800">
+                        {t(locale, "admin.pots.photoRequired")}
+                      </p>
+                    )}
+                    <div>
+                      <p className="font-medium text-emerald-950">{pot.name}</p>
+                      {pot.nameHe ? <p className="text-sm text-slate-600">{pot.nameHe}</p> : null}
+                      <div className="mt-2 flex gap-3">
+                        <button type="button" className="text-sm text-emerald-800" onClick={() => startEdit(pot)}>
+                          {t(locale, "admin.pots.edit")}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-sm text-red-700"
+                          onClick={() => setDeleteTarget({ kind: "pot", potId: pot.id })}
+                        >
+                          {t(locale, "admin.pots.delete")}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

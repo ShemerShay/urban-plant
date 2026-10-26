@@ -116,7 +116,7 @@ export function ShopCart({
         const response = await fetch(routes.api.shopCartResolve(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: cart.items }),
+          body: JSON.stringify(cart),
         });
         if (!response.ok) throw new Error("resolve failed");
         const payload = (await response.json()) as { items?: CatalogCartResolvedLine[] };
@@ -126,8 +126,8 @@ export function ShopCart({
         resolvedKeyRef.current = JSON.stringify(stored);
         setLines(nextLines);
         setLoading(false);
-        if (!catalogCartItemsEqual(cart.items, stored)) {
-          writeCatalogCart({ v: 1, items: stored });
+        if (!catalogCartItemsEqual(cart.v === 2 ? cart.items : [], stored) || cart.v !== 2) {
+          writeCatalogCart({ v: 2, items: stored });
         }
       } catch {
         if (cancelled) return;
@@ -164,12 +164,12 @@ export function ShopCart({
     writeCatalogCart(nextCart);
     captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.removeFromCart, {
       plant_id: line.plantId,
-      plant_variant_id: line.plantVariantId,
-      ...(line.potVariantId ? { pot_variant_id: line.potVariantId } : {}),
+      plant_variant_id: line.plantSizeId,
+      sellable_variant_id: line.sellableVariantId,
+      offer_id: line.offerId,
+      ...(line.potColorId ? { pot_color_id: line.potColorId } : {}),
       quantity: line.quantity,
-      plant_price: line.plantPrice,
-      ...(line.potPrice != null ? { pot_price: line.potPrice } : {}),
-      amount: catalogCartLineAmount(line.plantPrice, line.potPrice, line.quantity),
+      amount: catalogCartLineAmount(line.unitPrice, line.quantity),
     });
   }
 
@@ -177,7 +177,7 @@ export function ShopCart({
 
   const currency = lines[0]?.currency ?? "ILS";
   const total = lines.reduce(
-    (sum, line) => sum + catalogCartLineAmount(line.plantPrice, line.potPrice, line.quantity),
+    (sum, line) => sum + catalogCartLineAmount(line.unitPrice, line.quantity),
     0,
   );
 
@@ -221,11 +221,14 @@ export function ShopCart({
               {lines.map((line) => {
                 const name = localizedPlantText(locale, line.name, line.nameHe);
                 const potColor = localizedPlantText(locale, line.potColor, line.potColorHe);
-                const lineTotal = catalogCartLineAmount(
-                  line.plantPrice,
-                  line.potPrice,
-                  line.quantity,
-                );
+                const potLabel = [
+                  localizedPlantText(locale, line.potName, line.potNameHe),
+                  line.potSizeLabel,
+                  potColor,
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                const lineTotal = catalogCartLineAmount(line.unitPrice, line.quantity);
                 return (
                   <li key={catalogCartItemKey(line)}>
                     <article className="flex gap-3 text-start">
@@ -246,13 +249,10 @@ export function ShopCart({
                           <p className="text-caption mt-1 text-neutral-600">{sizeLabel(line)}</p>
                         ) : null}
                         <p className="text-caption mt-1 text-neutral-600">
-                          {formatCatalogPrice(line.plantPrice, line.currency, locale)}
+                          {formatCatalogPrice(line.unitPrice, line.currency, locale)}
                         </p>
-                        {line.potPrice != null ? (
-                          <p className="text-caption mt-1 text-neutral-600">
-                            {potColor || localizedPlantText(locale, line.potName, line.potNameHe)}{" "}
-                            {formatCatalogPrice(line.potPrice, line.currency, locale)}
-                          </p>
+                        {potLabel ? (
+                          <p className="text-caption mt-1 text-neutral-600">{potLabel}</p>
                         ) : null}
                         <div className="mt-3 flex flex-wrap items-center gap-3">
                           <div

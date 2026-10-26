@@ -36,12 +36,14 @@ function read(rel: string): string {
 function line(patch: Partial<CatalogCartResolvedLine> = {}): CatalogCartResolvedLine {
   return {
     plantId: "plant-1",
-    plantVariantId: "variant-1",
-    potVariantId: null,
+    plantSizeId: "size-1",
+    sellableVariantId: "sv-1",
+    offerId: "offer-1",
+    potColorId: null,
     quantity: 1,
     availableQuantity: 4,
     name: "Fern",
-    plantPrice: 40,
+    unitPrice: 40,
     currency: "ILS",
     ...patch,
   };
@@ -105,6 +107,10 @@ function assertWiring(): void {
   assert.match(shopReads, /Does not write inventory/);
   assert.doesNotMatch(shopReads, /UPDATE inventory/);
   assert.doesNotMatch(shopReads, /applyInventoryDelta/);
+  assert.doesNotMatch(shopReads, /!potImage\) continue/);
+  const catalogPrep = read("lib/catalogPaymentPrep.ts");
+  assert.doesNotMatch(catalogPrep, /parent_pot\.image/);
+  assert.doesNotMatch(catalogPrep, /potImage/);
 
   const posCreate = read("app/api/payments/cardcom/create/route.ts");
   assert.match(posCreate, /startCardcomPaymentPrep/);
@@ -169,15 +175,16 @@ function assertWiring(): void {
 }
 
 function assertDecisions(): void {
-  const shown = [line({ plantPrice: 40, quantity: 2 })];
-  const same = [line({ plantPrice: 40, quantity: 2 })];
-  const repriced = [line({ plantPrice: 55, quantity: 2 })];
+  const shown = [line({ unitPrice: 40, quantity: 2 })];
+  const same = [line({ unitPrice: 40, quantity: 2 })];
+  const repriced = [line({ unitPrice: 55, quantity: 2 })];
   assert.equal(catalogCheckoutLinesMatch(shown, same), true);
   assert.equal(catalogCheckoutLinesMatch(shown, repriced), false);
 
-  const withPot = [line({ potVariantId: "pot-1", potPrice: 15 })];
-  assert.equal(catalogCheckoutPaymentLines(withPot)?.[0]?.potUnitPrice, 15);
-  assert.equal(catalogCheckoutPaymentLines([line({ potVariantId: "pot-1" })]), null);
+  const withColor = [line({ potColorId: "color-1", unitPrice: 55 })];
+  assert.equal(catalogCheckoutPaymentLines(withColor)?.[0]?.unitPrice, 55);
+  assert.equal(catalogCheckoutPaymentLines(withColor)?.[0]?.potColorId, "color-1");
+  assert.equal(catalogCheckoutPaymentLines([line({ unitPrice: 0 })]), null);
 
   assert.deepEqual(catalogCheckoutPaymentFailure("cart_changed"), {
     notice: "cart_changed",
@@ -226,25 +233,27 @@ function assertDecisions(): void {
     false,
   );
 
-  const cart = {
-    v: 1 as const,
-    items: [
-      { plantId: "plant-1", plantVariantId: "variant-1", potVariantId: null, quantity: 3 },
-      { plantId: "plant-2", plantVariantId: "variant-2", potVariantId: "pot-2", quantity: 1 },
-    ],
+  const item = {
+    plantId: "plant-1",
+    plantSizeId: "size-1",
+    sellableVariantId: "sv-1",
+    offerId: "offer-1",
+    potColorId: null as string | null,
+    quantity: 3,
   };
-  const purchased = subtractPurchasedCatalogItems(cart, [
-    { plantId: "plant-1", plantVariantId: "variant-1", potVariantId: null, quantity: 2 },
-  ]);
-  assert.deepEqual(purchased.items, [
-    { plantId: "plant-1", plantVariantId: "variant-1", potVariantId: null, quantity: 1 },
-    { plantId: "plant-2", plantVariantId: "variant-2", potVariantId: "pot-2", quantity: 1 },
-  ]);
+  const other = {
+    plantId: "plant-2",
+    plantSizeId: "size-2",
+    sellableVariantId: "sv-2",
+    offerId: "offer-2",
+    potColorId: "color-2",
+    quantity: 1,
+  };
+  const cart = { v: 2 as const, items: [item, other] };
+  const purchased = subtractPurchasedCatalogItems(cart, [{ ...item, quantity: 2 }]);
+  assert.deepEqual(purchased.items, [{ ...item, quantity: 1 }, other]);
   assert.equal(
-    subtractPurchasedCatalogItems(cart, [
-      { plantId: "plant-1", plantVariantId: "variant-1", potVariantId: null, quantity: 3 },
-      { plantId: "plant-2", plantVariantId: "variant-2", potVariantId: "pot-2", quantity: 1 },
-    ]),
+    subtractPurchasedCatalogItems(cart, [item, other]),
     EMPTY_CATALOG_CART,
   );
 

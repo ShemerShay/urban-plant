@@ -70,6 +70,10 @@ async function main(): Promise<void> {
   const { buildPurchaseEmailHtml } = await import("../lib/purchaseEmail");
   const { getPaymentAttemptById } = await import("../lib/paymentAttemptStorage");
   const { startCatalogCardcomPayment } = await import("../lib/catalogPaymentPrep");
+  const { createPotSize, createPotColor } = await import("../lib/potSizeStorage");
+  const { applyPotInventoryDelta } = await import("../lib/potInventoryStorage");
+  const { createSellableVariant } = await import("../lib/sellableVariantStorage");
+  const { createOrReusePlantOffer } = await import("../lib/offerStorage");
   const { processCardcomWebhook } = await import("../lib/processCardcomWebhook");
 
   const holdTable = await sql`
@@ -85,16 +89,14 @@ async function main(): Promise<void> {
           plantName: "Monstera",
           potName: null,
           quantity: 1,
-          plantUnitPrice: 40,
-          potUnitPrice: null,
+          unitPrice: 40,
           lineTotal: 40,
         },
         {
           plantName: "Pothos",
           potName: "Clay",
           quantity: 2,
-          plantUnitPrice: 40,
-          potUnitPrice: 15,
+          unitPrice: 55,
           lineTotal: 110,
         },
       ],
@@ -162,8 +164,7 @@ async function main(): Promise<void> {
               plantName: "Monstera",
               potName: null,
               quantity: 1,
-              plantUnitPrice: 40,
-              potUnitPrice: null,
+              unitPrice: 40,
               lineTotal: 40,
             },
           ],
@@ -303,7 +304,6 @@ async function main(): Promise<void> {
   const variantB = randomUUID();
   const variantC = randomUUID();
   const potId = randomUUID();
-  const potM = randomUUID();
   const street = TEL_AVIV_STREETS[0] ?? "Rothschild Blvd";
   const phone = "0546605603";
   const attemptIds: string[] = [];
@@ -394,11 +394,12 @@ async function main(): Promise<void> {
   async function startLines(
     lines: {
       plantId: string;
-      plantVariantId: string;
-      potVariantId: string | null;
+      plantSizeId: string;
+      sellableVariantId: string;
+      offerId: string;
+      potColorId: string | null;
       quantity: number;
-      plantUnitPrice: number;
-      potUnitPrice: number | null;
+      unitPrice: number;
     }[],
     email: string,
     emailOptIn: boolean,
@@ -445,12 +446,8 @@ async function main(): Promise<void> {
         (${variantB}::uuid, ${plantId}, 'S', 55)
     `;
     await sql`
-      INSERT INTO pots (id, name, name_he)
-      VALUES (${potId}::uuid, ${`Pot ${tag}`}, 'עציץ')
-    `;
-    await sql`
-      INSERT INTO pot_variants (id, pot_id, size_label, color, color_he, catalog_price)
-      VALUES (${potM}::uuid, ${potId}::uuid, 'M', ${`clay-${tag}`}, 'חרס', 15)
+      INSERT INTO pots (id, name, name_he, image)
+      VALUES (${potId}::uuid, ${`Pot ${tag}`}, 'עציץ', '/plant-library/catalog-pay-pot.jpg')
     `;
     await sql`
       INSERT INTO plants (
@@ -477,30 +474,75 @@ async function main(): Promise<void> {
         (${variantB}::uuid, 10, now()),
         (${variantC}::uuid, 6, now())
     `;
+    const potSize = await createPotSize({ potId, sizeLabel: "M", supplierPrice: 12 });
+    const colorM = await createPotColor({
+      potId,
+      sizeId: potSize.id,
+      color: `clay-${tag}`,
+      colorHe: "חרס",
+    });
+    await applyPotInventoryDelta({
+      potId,
+      sizeId: potSize.id,
+      potColorId: colorM.id,
+      delta: 8,
+      note: `${tag} color`,
+    });
+    const noPotA = await createSellableVariant({ plantId, plantSizeId: variantA, potSizeId: null });
+    const withPotA = await createSellableVariant({
+      plantId,
+      plantSizeId: variantA,
+      potSizeId: potSize.id,
+    });
+    const noPotB = await createSellableVariant({ plantId, plantSizeId: variantB, potSizeId: null });
+    const noPotC = await createSellableVariant({ plantId: plantId2, plantSizeId: variantC, potSizeId: null });
+    const offerA = await createOrReusePlantOffer({
+      sellableVariantId: noPotA.sellableVariantId,
+      consumerPrice: 40,
+      availabilities: [{ scope: "catalog" }],
+    });
+    const offerPot = await createOrReusePlantOffer({
+      sellableVariantId: withPotA.sellableVariantId,
+      consumerPrice: 55,
+      availabilities: [{ scope: "catalog" }],
+    });
+    const offerB = await createOrReusePlantOffer({
+      sellableVariantId: noPotB.sellableVariantId,
+      consumerPrice: 55,
+      availabilities: [{ scope: "catalog" }],
+    });
+    const offerC = await createOrReusePlantOffer({
+      sellableVariantId: noPotC.sellableVariantId,
+      consumerPrice: 55,
+      availabilities: [{ scope: "catalog" }],
+    });
 
     const lineA = {
       plantId,
-      plantVariantId: variantA,
-      potVariantId: null as string | null,
+      plantSizeId: variantA,
+      sellableVariantId: noPotA.sellableVariantId,
+      offerId: offerA.offer.id,
+      potColorId: null as string | null,
       quantity: 1,
-      plantUnitPrice: 40,
-      potUnitPrice: null as number | null,
+      unitPrice: 40,
     };
     const linePot = {
       plantId,
-      plantVariantId: variantA,
-      potVariantId: potM,
+      plantSizeId: variantA,
+      sellableVariantId: withPotA.sellableVariantId,
+      offerId: offerPot.offer.id,
+      potColorId: colorM.id,
       quantity: 2,
-      plantUnitPrice: 40,
-      potUnitPrice: 15,
+      unitPrice: 55,
     };
     const lineB = {
       plantId,
-      plantVariantId: variantB,
-      potVariantId: null as string | null,
+      plantSizeId: variantB,
+      sellableVariantId: noPotB.sellableVariantId,
+      offerId: offerB.offer.id,
+      potColorId: null as string | null,
       quantity: 1,
-      plantUnitPrice: 55,
-      potUnitPrice: null as number | null,
+      unitPrice: 55,
     };
 
     // 1. No customer email: one document, no PDF email, skipped.
@@ -696,10 +738,10 @@ async function main(): Promise<void> {
       assert.equal(order?.orderStatus, "sold");
       const items = await getOrderItemsByOrderId(attempt.finalizedOrderId);
       assert.equal(items.length, 2);
-      assert.equal(items[0]?.plantUnitPrice, 40);
-      assert.equal(items[0]?.potUnitPrice, null);
-      assert.equal(items[1]?.plantUnitPrice, 40);
-      assert.equal(items[1]?.potUnitPrice, 15);
+    assert.equal(items[0]?.unitPrice, 40);
+    assert.equal(items[0]?.potColorId, null);
+    assert.equal(items[1]?.unitPrice, 55);
+    assert.equal(items[1]?.potColorId, colorM.id);
       assert.equal(items[1]?.lineTotal, 110);
       assert.equal(items[0]?.plantUnitCost, 18.5);
       const expectedLabel = catalogCustomerProductLabel(items);
@@ -846,11 +888,12 @@ async function main(): Promise<void> {
       const email = `two-${tag}@example.com`;
       const secondLine = {
         plantId: plantId2,
-        plantVariantId: variantC,
-        potVariantId: null as string | null,
+        plantSizeId: variantC,
+        sellableVariantId: noPotC.sellableVariantId,
+        offerId: offerC.offer.id,
+        potColorId: null as string | null,
         quantity: 1,
-        plantUnitPrice: 55,
-        potUnitPrice: null as number | null,
+        unitPrice: 55,
       };
       const started = await startLines([lineA, secondLine], email, true);
       const created: CreateCardcomDocumentInput[] = [];
@@ -957,11 +1000,12 @@ async function main(): Promise<void> {
       const started = await startLines(
         [{
           plantId: plantId2,
-          plantVariantId: variantC,
-          potVariantId: null,
+          plantSizeId: variantC,
+          sellableVariantId: noPotC.sellableVariantId,
+          offerId: offerC.offer.id,
+          potColorId: null,
           quantity: 1,
-          plantUnitPrice: 55,
-          potUnitPrice: null,
+          unitPrice: 55,
         }],
         email,
         true,
@@ -1211,7 +1255,24 @@ async function main(): Promise<void> {
     await sql`DELETE FROM orders WHERE product_id IN (${plantId}, ${plantId2})`;
     await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)`;
     await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)`;
-    await sql`DELETE FROM pot_variants WHERE pot_id = ${potId}::uuid`;
+    await sql`DELETE FROM pot_inventory_history WHERE pot_color_id IN (
+      SELECT c.id FROM pot_colors c JOIN pot_sizes s ON s.id = c.pot_size_id WHERE s.pot_id = ${potId}::uuid
+    )`;
+    await sql`DELETE FROM pot_inventory WHERE pot_color_id IN (
+      SELECT c.id FROM pot_colors c JOIN pot_sizes s ON s.id = c.pot_size_id WHERE s.pot_id = ${potId}::uuid
+    )`;
+    await sql`DELETE FROM offer_availabilities WHERE offer_id IN (
+      SELECT o.id FROM offers o
+      JOIN sellable_variants sv ON sv.id = o.sellable_variant_id
+      WHERE sv.plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)
+    )`;
+    await sql`DELETE FROM offers WHERE sellable_variant_id IN (
+      SELECT id FROM sellable_variants
+      WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)
+    )`;
+    await sql`DELETE FROM sellable_variants WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)`;
+    await sql`DELETE FROM pot_colors WHERE pot_size_id IN (SELECT id FROM pot_sizes WHERE pot_id = ${potId}::uuid)`;
+    await sql`DELETE FROM pot_sizes WHERE pot_id = ${potId}::uuid`;
     await sql`DELETE FROM pots WHERE id = ${potId}::uuid`;
     await sql`DELETE FROM plant_variants WHERE plant_id IN (${plantId}, ${plantId2})`;
     await sql`DELETE FROM plants WHERE id IN (${plantId}, ${plantId2})`;

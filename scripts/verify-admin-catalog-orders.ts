@@ -34,8 +34,7 @@ function line(patch: Partial<ReturnType<typeof catalogLineViewFromStoredLine>> =
     potName: "Clay",
     potColor: "Terracotta",
     quantity: 2,
-    plantUnitPrice: 40,
-    potUnitPrice: 10,
+    unitPrice: 50,
     lineTotal: 100,
     currency: "ILS",
     ...patch,
@@ -140,9 +139,8 @@ async function assertHelpers(): Promise<void> {
     plantNameHe: "שרך",
     potName: null,
     potColor: null,
-    potUnitPrice: null,
     quantity: 1,
-    plantUnitPrice: 55,
+    unitPrice: 55,
     lineTotal: 55,
   });
   const items = {

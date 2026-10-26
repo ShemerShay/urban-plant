@@ -1,3 +1,4 @@
+import { PlantPageContactLink } from "@/components/plant/PlantPageContactLink";
 import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
 import { ShopCatalogBar } from "@/components/shop/ShopCatalogBar";
 import { ShopCatalogGrid } from "@/components/shop/ShopCatalogGrid";
@@ -40,6 +41,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
       />
       <h1 className="sr-only">{t(locale, "shop.title")}</h1>
       <ShopCatalogGrid plants={plants} locale={locale} />
+      <PlantPageContactLink whatsAppMessage={t(locale, "shop.whatsapp")} />
     </main>
   );
 }

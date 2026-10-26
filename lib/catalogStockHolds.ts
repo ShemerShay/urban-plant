@@ -1,7 +1,10 @@
 /**
- * Catalog stock reservations against central plant-variant inventory.
- * Available = inventory.quantity - active unexpired holds.
- * Acquire, release, expire, and consume do not change inventory.quantity.
+ * Catalog stock reservations.
+ * A hold is either a Plant Size or a Pot Color, never both and never a Variant.
+ * Available plant quantity = inventory.quantity - active unexpired plant holds.
+ * Available color quantity = pot_inventory.quantity - active unexpired color holds.
+ * A missing pot inventory row is 0.
+ * Acquire, release, expire, and consume do not change inventory quantities.
  */
 
 import "server-only";
@@ -15,7 +18,8 @@ export type CatalogStockHoldStatus = "active" | "consumed" | "released" | "expir
 export type CatalogStockHold = {
   id: string;
   attemptId: string;
-  plantVariantId: string;
+  plantVariantId: string | null;
+  potColorId: string | null;
   quantity: number;
   status: CatalogStockHoldStatus;
   expiresAt: string;
@@ -24,13 +28,15 @@ export type CatalogStockHold = {
 };
 
 export type CatalogHoldRequestLine = {
-  plantVariantId: string;
+  plantVariantId?: string | null;
+  potColorId?: string | null;
   quantity: number;
 };
 
 export type CatalogStockHoldErrorCode =
   | "invalid_quantity"
   | "variant_not_found"
+  | "color_not_found"
   | "attempt_not_found"
   | "not_catalog_attempt"
   | "insufficient_quantity"
@@ -49,13 +55,16 @@ export class CatalogStockHoldError extends Error {
 type HoldRow = {
   id: string;
   attempt_id: string;
-  plant_variant_id: string;
+  plant_variant_id: string | null;
+  pot_color_id: string | null;
   quantity: string | number;
   status: string;
   expires_at: string | Date;
   created_at: string | Date;
   updated_at: string | Date;
 };
+
+type HoldResource = { kind: "plant" | "color"; id: string; quantity: number };
 
 const HOLD_STATUSES = new Set<CatalogStockHoldStatus>([
   "active",
@@ -77,7 +86,8 @@ function mapHoldRow(row: HoldRow): CatalogStockHold {
   return {
     id: String(row.id),
     attemptId: String(row.attempt_id),
-    plantVariantId: String(row.plant_variant_id),
+    plantVariantId: row.plant_variant_id ? String(row.plant_variant_id) : null,
+    potColorId: row.pot_color_id ? String(row.pot_color_id) : null,
     quantity: parseNumeric(row.quantity),
     status,
     expiresAt,
@@ -101,65 +111,75 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-function aggregateLines(lines: CatalogHoldRequestLine[]): Map<string, number> {
+function aggregateLines(lines: CatalogHoldRequestLine[]): HoldResource[] {
   if (!Array.isArray(lines) || lines.length === 0) {
-    throw new CatalogStockHoldError(
-      "invalid_quantity",
-      "At least one plant variant quantity is required",
-    );
+    throw new CatalogStockHoldError("invalid_quantity", "At least one hold quantity is required");
   }
-  const totals = new Map<string, number>();
+  const totals = new Map<string, HoldResource>();
   for (const line of lines) {
-    const variantId = line.plantVariantId?.trim() ?? "";
-    if (!variantId) {
-      throw new CatalogStockHoldError("variant_not_found", "Plant variant is required");
-    }
-    if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+    const plantId = line.plantVariantId?.trim() || "";
+    const colorId = line.potColorId?.trim() || "";
+    if ((plantId && colorId) || (!plantId && !colorId)) {
       throw new CatalogStockHoldError(
         "invalid_quantity",
-        "Hold quantity must be a positive integer",
+        "A catalog hold is a plant size or a pot color",
       );
     }
-    totals.set(variantId, (totals.get(variantId) ?? 0) + line.quantity);
+    if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+      throw new CatalogStockHoldError("invalid_quantity", "Hold quantity must be a positive integer");
+    }
+    const kind = plantId ? "plant" : "color";
+    const id = plantId || colorId;
+    const key = `${kind}:${id.toLowerCase()}`;
+    const existing = totals.get(key);
+    if (existing) existing.quantity += line.quantity;
+    else totals.set(key, { kind, id, quantity: line.quantity });
   }
-  return totals;
+  return [...totals.values()];
 }
 
-async function canonicalPlantVariantTotals(
-  totals: Map<string, number>,
-): Promise<Map<string, number>> {
-  const variantIds = [...totals.keys()];
-  let rows: { id: string }[];
+async function canonicalResources(resources: HoldResource[]): Promise<HoldResource[]> {
+  const plantIds = resources.filter((row) => row.kind === "plant").map((row) => row.id);
+  const colorIds = resources.filter((row) => row.kind === "color").map((row) => row.id);
+  let plantRows: { id: string }[] = [];
+  let colorRows: { id: string }[] = [];
   try {
-    rows = (await sql`
-      SELECT id
-      FROM plant_variants
-      WHERE id = ANY(${variantIds}::uuid[])
-    `) as { id: string }[];
+    if (plantIds.length > 0) {
+      plantRows = (await sql`
+        SELECT id::text AS id FROM plant_variants WHERE id = ANY(${plantIds}::uuid[])
+      `) as { id: string }[];
+    }
+    if (colorIds.length > 0) {
+      colorRows = (await sql`
+        SELECT id::text AS id FROM pot_colors WHERE id = ANY(${colorIds}::uuid[])
+      `) as { id: string }[];
+    }
   } catch (error) {
     if (pgCode(error) === "22P02") {
-      throw new CatalogStockHoldError(
-        "variant_not_found",
-        "Catalog holds are plant variants only",
-      );
+      throw new CatalogStockHoldError("variant_not_found", "Catalog hold resource was not found");
     }
     throw error;
   }
-  const byLower = new Map(
-    (rows as { id: string }[]).map((row) => [String(row.id).toLowerCase(), String(row.id)]),
-  );
-  const canonical = new Map<string, number>();
-  for (const [variantId, quantity] of totals) {
-    const storedId = byLower.get(variantId.toLowerCase());
-    if (!storedId) {
+  const plants = new Map(plantRows.map((row) => [row.id.toLowerCase(), row.id]));
+  const colors = new Map(colorRows.map((row) => [row.id.toLowerCase(), row.id]));
+  const canonical = new Map<string, HoldResource>();
+  for (const resource of resources) {
+    const stored =
+      resource.kind === "plant"
+        ? plants.get(resource.id.toLowerCase())
+        : colors.get(resource.id.toLowerCase());
+    if (!stored) {
       throw new CatalogStockHoldError(
-        "variant_not_found",
-        "Catalog holds are plant variants only",
+        resource.kind === "plant" ? "variant_not_found" : "color_not_found",
+        resource.kind === "plant" ? "Plant size was not found" : "Pot color was not found",
       );
     }
-    canonical.set(storedId, (canonical.get(storedId) ?? 0) + quantity);
+    const key = `${resource.kind}:${stored}`;
+    const existing = canonical.get(key);
+    if (existing) existing.quantity += resource.quantity;
+    else canonical.set(key, { kind: resource.kind, id: stored, quantity: resource.quantity });
   }
-  return canonical;
+  return [...canonical.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 async function assertCatalogAttempt(attemptId: string): Promise<void> {
@@ -170,9 +190,7 @@ async function assertCatalogAttempt(attemptId: string): Promise<void> {
     LIMIT 1
   `;
   const channel = (rows as { channel: string }[])[0]?.channel;
-  if (!channel) {
-    throw new CatalogStockHoldError("attempt_not_found", "Payment attempt not found");
-  }
+  if (!channel) throw new CatalogStockHoldError("attempt_not_found", "Payment attempt not found");
   if (channel !== "catalog") {
     throw new CatalogStockHoldError(
       "not_catalog_attempt",
@@ -187,26 +205,20 @@ function mapAcquireError(error: unknown, attemptId: string): Promise<never> {
     const code = pgCode(error);
     const message = errorMessage(error);
     if (code === "23505") {
-      throw new CatalogStockHoldError(
-        "already_held",
-        "This payment attempt already holds that plant variant",
-      );
+      throw new CatalogStockHoldError("already_held", "This payment attempt already holds that resource");
     }
     if (code === "23503" && /payment_attempts/i.test(message)) {
       throw new CatalogStockHoldError("attempt_not_found", "Payment attempt not found");
     }
+    if (code === "23514" || (code === "23503" && /pot_colors/i.test(message))) {
+      throw new CatalogStockHoldError("color_not_found", "Pot color was not found");
+    }
     if (code === "23503") {
-      throw new CatalogStockHoldError(
-        "variant_not_found",
-        "Catalog holds are plant variants only",
-      );
+      throw new CatalogStockHoldError("variant_not_found", "Plant size was not found");
     }
     if (/division by zero/i.test(message)) {
       const existing = await sql`
-        SELECT 1
-        FROM catalog_stock_holds
-        WHERE attempt_id = ${attemptId}::uuid
-        LIMIT 1
+        SELECT 1 FROM catalog_stock_holds WHERE attempt_id = ${attemptId}::uuid LIMIT 1
       `;
       if ((existing as unknown[]).length > 0) {
         throw new CatalogStockHoldError(
@@ -214,44 +226,38 @@ function mapAcquireError(error: unknown, attemptId: string): Promise<never> {
           "This payment attempt already has catalog stock holds",
         );
       }
-      throw new CatalogStockHoldError(
-        "insufficient_quantity",
-        "Not enough catalog stock to hold",
-      );
+      throw new CatalogStockHoldError("insufficient_quantity", "Not enough catalog stock to hold");
     }
     throw error;
   })();
 }
 
 /**
- * Reserve aggregated plant-variant quantities for one catalog attempt.
- * Same variant on multiple lines becomes one hold. Inventory quantity is unchanged.
+ * Reserve plant-size and pot-color quantities for one catalog attempt.
+ * Same resource on multiple lines becomes one hold. Inventory quantity is unchanged.
+ * A short plant or color bucket inserts nothing.
  */
 export async function acquireCatalogStockHolds(input: {
   attemptId: string;
   lines: CatalogHoldRequestLine[];
 }): Promise<CatalogStockHold[]> {
   const attemptId = input.attemptId.trim();
-  if (!attemptId) {
-    throw new CatalogStockHoldError("attempt_not_found", "Payment attempt not found");
-  }
-  const totals = await canonicalPlantVariantTotals(aggregateLines(input.lines));
-  const variantIds = [...totals.keys()].sort();
+  if (!attemptId) throw new CatalogStockHoldError("attempt_not_found", "Payment attempt not found");
+  const resources = await canonicalResources(aggregateLines(input.lines));
   await assertCatalogAttempt(attemptId);
-
   const payload = JSON.stringify(
-    variantIds.map((plantVariantId) => ({
-      plantVariantId,
-      quantity: totals.get(plantVariantId),
+    resources.map((resource) => ({
+      kind: resource.kind,
+      id: resource.id,
+      quantity: resource.quantity,
     })),
   );
-
-  const lockQueries = variantIds.map(
-    (variantId) => sql`
-        SELECT pg_advisory_xact_lock(
-          hashtext('catalog_stock_hold'),
-          hashtext(${variantId}::text)
-        )
+  const lockQueries = resources.map(
+    (resource) => sql`
+      SELECT pg_advisory_xact_lock(
+        hashtext('catalog_stock_hold'),
+        hashtext(${resource.id}::text)
+      )
     `,
   );
 
@@ -268,31 +274,47 @@ export async function acquireCatalogStockHolds(input: {
       sql`
         WITH requested AS (
           SELECT
-            (elem->>'plantVariantId')::uuid AS plant_variant_id,
+            elem->>'kind' AS kind,
+            (elem->>'id')::uuid AS resource_id,
             (elem->>'quantity')::int AS quantity
           FROM jsonb_array_elements(${payload}::jsonb) AS elem
         ),
         availability AS (
           SELECT
-            r.plant_variant_id,
+            r.kind,
+            r.resource_id,
             r.quantity,
-            GREATEST(
-              COALESCE(i.quantity, 0) - COALESCE((
-                SELECT SUM(h.quantity)::int
-                FROM catalog_stock_holds h
-                WHERE h.plant_variant_id = r.plant_variant_id
-                  AND h.status = 'active'
-                  AND h.expires_at > now()
-              ), 0),
-              0
-            ) AS available_qty
+            CASE
+              WHEN r.kind = 'plant' THEN GREATEST(
+                COALESCE((SELECT i.quantity FROM inventory i WHERE i.variant_id = r.resource_id), 0)
+                - COALESCE((
+                  SELECT SUM(h.quantity)::int
+                  FROM catalog_stock_holds h
+                  WHERE h.plant_variant_id = r.resource_id
+                    AND h.status = 'active'
+                    AND h.expires_at > now()
+                ), 0),
+                0
+              )
+              ELSE GREATEST(
+                COALESCE((SELECT pi.quantity FROM pot_inventory pi WHERE pi.pot_color_id = r.resource_id), 0)
+                - COALESCE((
+                  SELECT SUM(h.quantity)::int
+                  FROM catalog_stock_holds h
+                  WHERE h.pot_color_id = r.resource_id
+                    AND h.status = 'active'
+                    AND h.expires_at > now()
+                ), 0),
+                0
+              )
+            END AS available_qty
           FROM requested r
-          LEFT JOIN inventory i ON i.variant_id = r.plant_variant_id
         ),
         ins AS (
           INSERT INTO catalog_stock_holds (
             attempt_id,
             plant_variant_id,
+            pot_color_id,
             quantity,
             status,
             expires_at,
@@ -301,7 +323,8 @@ export async function acquireCatalogStockHolds(input: {
           )
           SELECT
             ${attemptId}::uuid,
-            a.plant_variant_id,
+            CASE WHEN a.kind = 'plant' THEN a.resource_id ELSE NULL END,
+            CASE WHEN a.kind = 'color' THEN a.resource_id ELSE NULL END,
             a.quantity,
             'active',
             now() + (${PAYMENT_HOLD_TTL_MS} * interval '1 millisecond'),
@@ -309,20 +332,16 @@ export async function acquireCatalogStockHolds(input: {
             now()
           FROM availability a
           WHERE NOT EXISTS (
-            SELECT 1
-            FROM catalog_stock_holds existing
-            WHERE existing.attempt_id = ${attemptId}::uuid
+            SELECT 1 FROM catalog_stock_holds existing WHERE existing.attempt_id = ${attemptId}::uuid
           )
             AND NOT EXISTS (
-              SELECT 1
-              FROM availability short
-              WHERE short.quantity > short.available_qty
+              SELECT 1 FROM availability short WHERE short.quantity > short.available_qty
             )
           RETURNING id
         )
         SELECT 1 / (
           CASE
-            WHEN (SELECT COUNT(*)::int FROM ins) = ${variantIds.length} THEN 1
+            WHEN (SELECT COUNT(*)::int FROM ins) = ${resources.length} THEN 1
             ELSE 0
           END
         ) AS hold_ok
@@ -345,6 +364,7 @@ export async function listCatalogStockHoldsForAttempt(
       id,
       attempt_id,
       plant_variant_id,
+      pot_color_id,
       quantity,
       status,
       expires_at,
@@ -352,25 +372,42 @@ export async function listCatalogStockHoldsForAttempt(
       updated_at
     FROM catalog_stock_holds
     WHERE attempt_id = ${id}::uuid
-    ORDER BY plant_variant_id ASC, id ASC
+    ORDER BY plant_variant_id ASC NULLS LAST, pot_color_id ASC NULLS LAST, id ASC
   `;
   return (rows as HoldRow[]).map(mapHoldRow);
 }
 
-/** Central quantity minus active holds that have not reached expires_at. */
+/** Central plant quantity minus active holds that have not reached expires_at. */
 export async function getCatalogAvailableQuantity(plantVariantId: string): Promise<number> {
   const id = plantVariantId.trim();
   if (!id) return 0;
   const rows = await sql`
     SELECT GREATEST(
-      COALESCE((
-        SELECT quantity
-        FROM inventory
-        WHERE variant_id = ${id}::uuid
-      ), 0) - COALESCE((
+      COALESCE((SELECT quantity FROM inventory WHERE variant_id = ${id}::uuid), 0)
+      - COALESCE((
         SELECT SUM(quantity)::int
         FROM catalog_stock_holds
         WHERE plant_variant_id = ${id}::uuid
+          AND status = 'active'
+          AND expires_at > now()
+      ), 0),
+      0
+    )::int AS available
+  `;
+  return parseNumeric((rows as { available: string | number }[])[0]?.available);
+}
+
+/** Pot color quantity minus active holds. A missing inventory row is 0. */
+export async function getCatalogPotColorAvailableQuantity(potColorId: string): Promise<number> {
+  const id = potColorId.trim();
+  if (!id) return 0;
+  const rows = await sql`
+    SELECT GREATEST(
+      COALESCE((SELECT quantity FROM pot_inventory WHERE pot_color_id = ${id}::uuid), 0)
+      - COALESCE((
+        SELECT SUM(quantity)::int
+        FROM catalog_stock_holds
+        WHERE pot_color_id = ${id}::uuid
           AND status = 'active'
           AND expires_at > now()
       ), 0),

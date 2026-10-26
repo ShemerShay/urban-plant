@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { parseCatalogCartRequestItems } from "@/lib/catalogCart";
+import { parseCatalogCartRequest } from "@/lib/catalogCart";
+import { migrateLegacyCatalogCartLines } from "@/lib/catalogLegacyCart";
 import { resolveCatalogCartLines } from "@/lib/catalogShop";
 
 export async function POST(request: NextRequest) {
@@ -11,11 +12,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const items = parseCatalogCartRequestItems(body);
-  if (!items) {
+  const requested = parseCatalogCartRequest(body);
+  if (!requested) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const resolved = await resolveCatalogCartLines(items);
+  const resolved =
+    requested.v === 1
+      ? await migrateLegacyCatalogCartLines(requested.items)
+      : await resolveCatalogCartLines(requested.items);
   return NextResponse.json({ items: resolved });
 }

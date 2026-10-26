@@ -7,8 +7,7 @@ export type CatalogDocumentLineSource = {
   plantName: string;
   potName: string | null;
   quantity: number;
-  plantUnitPrice: number;
-  potUnitPrice: number | null;
+  unitPrice: number;
   lineTotal: number;
 };
 
@@ -34,7 +33,7 @@ export function catalogLineDescription(line: {
 
 /**
  * One Cardcom product per purchased line.
- * Unit cost is the plant price plus the optional pot price. Quantity stays the purchased quantity.
+ * Unit cost is the Offer unit price. Quantity stays the purchased quantity.
  */
 export function buildCatalogDocumentProducts(
   lines: CatalogDocumentLineSource[],
@@ -48,21 +47,16 @@ export function buildCatalogDocumentProducts(
     if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
       throw new Error("Catalog document line quantity is invalid");
     }
-    if (!Number.isFinite(line.plantUnitPrice) || line.plantUnitPrice <= 0) {
-      throw new Error("Catalog document line plant price is invalid");
+    if (!Number.isFinite(line.unitPrice) || line.unitPrice <= 0) {
+      throw new Error("Catalog document line price is invalid");
     }
-    const potUnitPrice = line.potUnitPrice ?? 0;
-    if (!Number.isFinite(potUnitPrice) || potUnitPrice < 0) {
-      throw new Error("Catalog document line pot price is invalid");
-    }
-    const unitCost = line.plantUnitPrice + potUnitPrice;
-    if (moneyCents(unitCost * line.quantity) !== moneyCents(line.lineTotal)) {
-      throw new Error("Catalog document line total does not match purchased prices");
+    if (moneyCents(line.unitPrice * line.quantity) !== moneyCents(line.lineTotal)) {
+      throw new Error("Catalog document line total does not match the Offer price");
     }
     return {
       description: catalogLineDescription(line),
       quantity: line.quantity,
-      unitCost,
+      unitCost: line.unitPrice,
     };
   });
 

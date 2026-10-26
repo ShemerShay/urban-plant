@@ -1,7 +1,7 @@
 /**
  * Pot → Pot Size → Color.
  * Supplier cost lives on the Pot Size. A Color has no cost and no selling price.
- * Catalog selling rows stay on pot_variants until the Catalog cutover.
+ * Customer Catalog selling does not read pot_variants.
  */
 
 import { sql } from "@/lib/db";
@@ -104,12 +104,12 @@ function parseOptionalText(value: unknown): string | null {
   return trimmed || null;
 }
 
-/** Empty means no supplier cost. A present value must be a positive 2-decimal amount. */
+/** Empty means no supplier cost. A present value must be 0 or greater, with at most 2 decimals. */
 function parseSupplierPrice(value: unknown): number | null {
   if (value === undefined || value === null || value === "") return null;
   const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new PotWriteError("invalid_supplier_price", "supplierPrice must be greater than 0");
+  if (!Number.isFinite(n) || n < 0) {
+    throw new PotWriteError("invalid_supplier_price", "supplierPrice must be 0 or greater");
   }
   const cents = Math.round(n * 100);
   if (Math.abs(n * 100 - cents) > 1e-6) {
