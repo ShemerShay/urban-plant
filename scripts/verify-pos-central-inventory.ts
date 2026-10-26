@@ -95,9 +95,15 @@ async function main(): Promise<void> {
     getInventoryQuantity,
     readInventoryHistory,
   } = await import("../lib/inventoryStorage");
+  const {
+    PotInventoryChangeError,
+    applyPotInventoryDelta,
+    getPotInventoryQuantity,
+  } = await import("../lib/potInventoryStorage");
   const { insertPaymentAttempt, deletePaymentAttemptById } = await import(
     "../lib/paymentAttemptStorage"
   );
+  const { createPosCutoverFixture } = await import("./pos-offer-cutover-fixture.ts");
 
   const partners = await sql`SELECT id FROM partner_locations LIMIT 1`;
   const partnerLocationId = (partners as { id: string }[])[0]?.id;
@@ -115,15 +121,21 @@ async function main(): Promise<void> {
   assert.ok(flower, "need a flower catalog row");
 
   const tag = `inv-b-${randomUUID().slice(0, 8)}`;
-  const variantA = randomUUID();
-  const variantB = randomUUID();
-  const offerA = `inv-b-offer-a-${tag}`;
-  const offerB = `inv-b-offer-b-${tag}`;
-  const offerFlower = `inv-b-offer-f-${tag}`;
-  const offerEmpty = `inv-b-offer-e-${tag}`;
-  const offerLast = `inv-b-offer-last-${tag}`;
-  const emptyVariant = randomUUID();
-  const lastVariant = randomUUID();
+  const fixture = await createPosCutoverFixture({
+    sql,
+    tag,
+    partnerLocationId,
+    flowerPlantId: flower.id,
+  });
+  const variantA = fixture.variantS;
+  const variantB = fixture.variantL;
+  const offerA = fixture.offerS;
+  const offerB = fixture.offerL;
+  const offerFlower = fixture.offerFlower;
+  const offerEmpty = fixture.offerL;
+  const emptyVariant = fixture.variantL;
+  const offerLast = fixture.offerL;
+  const lastVariant = fixture.variantL;
   const attemptIds: string[] = [];
   const spotIds: string[] = [];
   let pocketId: string | undefined;
@@ -134,6 +146,59 @@ async function main(): Promise<void> {
 
   async function minusOneCount(variantId: string): Promise<number> {
     return (await readInventoryHistory(variantId)).filter((row) => row.delta === -1).length;
+  }
+
+  async function drainPotColor(potColorId: string): Promise<void> {
+    const qty = await getPotInventoryQuantity(potColorId);
+    if (qty > 0) {
+      await applyPotInventoryDelta({
+        potId: fixture.potId,
+        sizeId: fixture.potSizeId,
+        potColorId,
+        delta: -qty,
+        note: `${tag} drain`,
+      });
+    }
+  }
+
+  async function occupancySnapshot(posSpotId: string) {
+    const spot = await getPosSpotById(posSpotId);
+    const cycleRows = (await sql`
+      SELECT id, ended_at, end_reason
+      FROM placement_cycles
+      WHERE pos_spot_id = ${posSpotId}::uuid
+      ORDER BY started_at ASC, id ASC
+    `) as { id: string; ended_at: string | Date | null; end_reason: string | null }[];
+    const segmentRows = (await sql`
+      SELECT s.id, s.ended_at, s.offer_id, s.pot_color_id, s.sellable_variant_id
+      FROM placement_segments s
+      INNER JOIN placement_cycles c ON c.id = s.placement_cycle_id
+      WHERE c.pos_spot_id = ${posSpotId}::uuid
+      ORDER BY s.started_at ASC, s.id ASC
+    `) as {
+      id: string;
+      ended_at: string | Date | null;
+      offer_id: string | null;
+      pot_color_id: string | null;
+      sellable_variant_id: string | null;
+    }[];
+    return {
+      plantVariantId: spot?.plantVariantId ?? null,
+      currentOfferId: spot?.currentOfferId ?? null,
+      potColorId: spot?.potColorId ?? null,
+      cycles: cycleRows.map((row) => ({
+        id: row.id,
+        ended_at: row.ended_at ? new Date(row.ended_at).toISOString() : null,
+        end_reason: row.end_reason,
+      })),
+      segments: segmentRows.map((row) => ({
+        id: row.id,
+        ended_at: row.ended_at ? new Date(row.ended_at).toISOString() : null,
+        offer_id: row.offer_id,
+        pot_color_id: row.pot_color_id,
+        sellable_variant_id: row.sellable_variant_id,
+      })),
+    };
   }
 
   function emptySpot(slug: string, posNumber: string) {
@@ -156,19 +221,23 @@ async function main(): Promise<void> {
     variantId: string,
     offerId: string,
     source: unknown,
+    potColorId?: string,
   ) {
     const occupancy = await resolveOccupancyForPosPatch({
       existing,
+      partnerLocationId: existing.partnerLocationId,
       occupancyIntent: "place",
-      requestedVariantId: variantId,
       requestedOfferId: offerId,
+      requestedPotColorId: potColorId,
     });
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: source,
+      introducesNewPotColor: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
+      potColorId: occupancy.potColorId,
       patch: {
         partnerLocationId: existing.partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -184,20 +253,24 @@ async function main(): Promise<void> {
     offerId: string,
     source: unknown,
     sameVariant = false,
+    potColorId?: string,
   ) {
     const occupancy = await resolveOccupancyForPosPatch({
       existing,
+      partnerLocationId: existing.partnerLocationId,
       occupancyIntent: "replace",
-      requestedVariantId: variantId,
       requestedOfferId: offerId,
       sameVariantReplace: sameVariant,
+      requestedPotColorId: potColorId,
     });
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: source,
+      introducesNewPotColor: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
+      potColorId: occupancy.potColorId,
       patch: {
         partnerLocationId: existing.partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -239,29 +312,14 @@ async function main(): Promise<void> {
       await sql`DELETE FROM plant_variants WHERE id = ANY(${leftoverIds}::uuid[])`;
     }
 
-    await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
-      VALUES
-        (${variantA}::uuid, ${plant.id}, ${`${tag}-small`}),
-        (${variantB}::uuid, ${plant.id}, ${`${tag}-large`})
-    `;
-    await sql`
-      INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
-      VALUES
-        (${offerA}, ${plant.id}, ${variantA}::uuid, 40, 'active', now()),
-        (${offerB}, ${plant.id}, ${variantB}::uuid, 55, 'active', now()),
-        (${offerFlower}, ${flower.id}, NULL, 25, 'active', now())
-    `;
-
     await applyInventoryDelta({ variantId: variantA, delta: 5, note: `${tag} seed A` });
-    await applyInventoryDelta({ variantId: variantB, delta: 4, note: `${tag} seed B` });
     assert.equal(await getInventoryQuantity(variantA), 5);
-    assert.equal(await getInventoryQuantity(variantB), 4);
+    assert.equal(await getInventoryQuantity(variantB), 0);
 
     // 1. Place from central decrements by 1 and adds one -1 history row.
     const createOccupancy = await resolveOccupancyForPosCreate({
       offerId: offerA,
-      plantVariantId: variantA,
+      partnerLocationId,
     });
     assert.equal(createOccupancy.action, "place");
     const createdAt = new Date().toISOString();
@@ -294,14 +352,6 @@ async function main(): Promise<void> {
     // 2. Zero stock fails with no occupancy/history change.
     const emptyZero = await appendPosSpot(emptySpot(`inv-b-zero-${tag}`, "72"));
     spotIds.push(emptyZero.id);
-    await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
-      VALUES (${emptyVariant}::uuid, ${plant.id}, ${`${tag}-empty`})
-    `;
-    await sql`
-      INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
-      VALUES (${offerEmpty}, ${plant.id}, ${emptyVariant}::uuid, 12, 'active', now())
-    `;
     const historyEmptyBefore = await historyCount(emptyVariant);
     let zeroFailed = false;
     try {
@@ -316,6 +366,9 @@ async function main(): Promise<void> {
     assert.equal(afterZero?.plantVariantId, undefined);
     assert.equal(await getInventoryQuantity(emptyVariant), 0);
     assert.equal(await historyCount(emptyVariant), historyEmptyBefore);
+
+    await applyInventoryDelta({ variantId: variantB, delta: 4, note: `${tag} seed B` });
+    assert.equal(await getInventoryQuantity(variantB), 4);
 
     // 3. Place already-at-partner changes occupancy only.
     const emptyPartner = await appendPosSpot(emptySpot(`inv-b-atp-${tag}`, "73"));
@@ -406,9 +459,9 @@ async function main(): Promise<void> {
     assert.ok(occupied);
     const updated = await resolveOccupancyForPosPatch({
       existing: occupied,
+      partnerLocationId,
       occupancyIntent: "update",
       requestedOfferId: offerA,
-      requestedVariantId: variantA,
     });
     assert.equal(updated.action, "update");
     await writePosUpdate({
@@ -472,7 +525,7 @@ async function main(): Promise<void> {
       id: holdAttempt,
       status: "created",
       posSpotId: plantSpotInput.id,
-      productId: plant.id,
+      productId: fixture.plantId,
       productName: "Inv B Verify Plant",
       fullName: "Inv B",
       customerEmail: "inv-b@example.com",
@@ -497,7 +550,7 @@ async function main(): Promise<void> {
       id: saleAttempt,
       status: "created",
       posSpotId: plantSpotInput.id,
-      productId: plant.id,
+      productId: fixture.plantId,
       productName: "Inv B Verify Plant",
       fullName: "Inv B",
       customerEmail: "inv-b@example.com",
@@ -537,7 +590,10 @@ async function main(): Promise<void> {
     assert.equal(await getInventoryQuantity(variantA), qtyBeforePocket);
 
     // 9. Flowers never affect inventory.
-    const flowerCreate = await resolveOccupancyForPosCreate({ offerId: offerFlower });
+    const flowerCreate = await resolveOccupancyForPosCreate({
+      offerId: offerFlower,
+      partnerLocationId,
+    });
     assert.equal(flowerCreate.action, "update");
     const slugFlower = `inv-b-flower-${tag}`;
     const flowerSpot = {
@@ -577,8 +633,8 @@ async function main(): Promise<void> {
     const histABeforeRace = await historyCount(variantA);
     const raceOccupancy = await resolveOccupancyForPosPatch({
       existing: stale,
+      partnerLocationId,
       occupancyIntent: "place",
-      requestedVariantId: variantA,
       requestedOfferId: offerA,
     });
     let raceFailed = false;
@@ -588,6 +644,8 @@ async function main(): Promise<void> {
         existing: stale,
         variantId: variantA,
         action: "place",
+        decrementPlant: true,
+        decrementPotColor: false,
         patch: {
           partnerLocationId,
           posNumber: stale.posNumber ?? "77",
@@ -603,16 +661,132 @@ async function main(): Promise<void> {
     assert.equal(await getInventoryQuantity(variantA), qtyABeforeRace);
     assert.equal(await historyCount(variantA), histABeforeRace);
 
+    // 10b. Plant decrement + failed Pot Color write rolls Place/Replace/Update back.
+    async function assertPotWriteRolledBack(run: () => Promise<unknown>, before: {
+      spotId: string;
+      occupancy: Awaited<ReturnType<typeof occupancySnapshot>>;
+      plantQty: number;
+      plantHist: number;
+      colorAQty: number;
+      colorBQty: number;
+    }) {
+      let failed = false;
+      try {
+        await run();
+      } catch (error) {
+        failed = true;
+        assert.ok(
+          error instanceof PotInventoryChangeError ||
+            error instanceof OccupancyWriteFailedError ||
+            error instanceof InventoryChangeError,
+          String(error),
+        );
+      }
+      assert.equal(failed, true);
+      assert.deepEqual(await occupancySnapshot(before.spotId), before.occupancy);
+      assert.equal(await getInventoryQuantity(variantA), before.plantQty);
+      assert.equal(await historyCount(variantA), before.plantHist);
+      assert.equal(await getPotInventoryQuantity(fixture.colorA), before.colorAQty);
+      assert.equal(await getPotInventoryQuantity(fixture.colorB), before.colorBQty);
+    }
+
+    await drainPotColor(fixture.colorA);
+    await drainPotColor(fixture.colorB);
+    if ((await getInventoryQuantity(variantA)) < 1) {
+      await applyInventoryDelta({ variantId: variantA, delta: 2, note: `${tag} pot-fail plant` });
+    }
+
+    const failPlaceSpot = await appendPosSpot(emptySpot(`inv-b-potfail-place-${tag}`, "80"));
+    spotIds.push(failPlaceSpot.id);
+    await assertPotWriteRolledBack(
+      () => writePlace(failPlaceSpot, variantA, fixture.offerPot, "central", fixture.colorA),
+      {
+        spotId: failPlaceSpot.id,
+        occupancy: await occupancySnapshot(failPlaceSpot.id),
+        plantQty: await getInventoryQuantity(variantA),
+        plantHist: await historyCount(variantA),
+        colorAQty: await getPotInventoryQuantity(fixture.colorA),
+        colorBQty: await getPotInventoryQuantity(fixture.colorB),
+      },
+    );
+
+    const failReplaceSpot = await appendPosSpot(emptySpot(`inv-b-potfail-replace-${tag}`, "81"));
+    spotIds.push(failReplaceSpot.id);
+    await writePlace(failReplaceSpot, variantA, offerA, "already_at_partner");
+    await assertPotWriteRolledBack(
+      async () => {
+        const occupied = await getPosSpotById(failReplaceSpot.id);
+        assert.ok(occupied);
+        return writeReplace(
+          occupied,
+          variantA,
+          fixture.offerPot,
+          "central",
+          false,
+          fixture.colorA,
+        );
+      },
+      {
+        spotId: failReplaceSpot.id,
+        occupancy: await occupancySnapshot(failReplaceSpot.id),
+        plantQty: await getInventoryQuantity(variantA),
+        plantHist: await historyCount(variantA),
+        colorAQty: await getPotInventoryQuantity(fixture.colorA),
+        colorBQty: await getPotInventoryQuantity(fixture.colorB),
+      },
+    );
+
+    const failUpdateSpot = await appendPosSpot(emptySpot(`inv-b-potfail-update-${tag}`, "82"));
+    spotIds.push(failUpdateSpot.id);
+    await writePlace(failUpdateSpot, variantA, fixture.offerPot, "already_at_partner", fixture.colorA);
+    const failUpdateExisting = await getPosSpotById(failUpdateSpot.id);
+    assert.ok(failUpdateExisting);
+    const failUpdateOccupancy = await resolveOccupancyForPosPatch({
+      existing: failUpdateExisting,
+      partnerLocationId,
+      occupancyIntent: "update",
+      requestedOfferId: fixture.offerPot,
+      requestedPotColorId: fixture.colorB,
+    });
+    assert.equal(failUpdateOccupancy.introducesNewPotColor, true);
+    await assertPotWriteRolledBack(
+      () =>
+        writePosUpdate({
+          occupancyAction: failUpdateOccupancy.action,
+          inventorySource: "central",
+          introducesNewPotColor: failUpdateOccupancy.introducesNewPotColor,
+          id: failUpdateSpot.id,
+          existing: failUpdateExisting,
+          variantId: failUpdateOccupancy.plantVariantId,
+          potColorId: failUpdateOccupancy.potColorId,
+          patch: {
+            partnerLocationId,
+            posNumber: failUpdateExisting.posNumber ?? "82",
+            posName: failUpdateExisting.posName,
+            ...occupancyToSpotFields(failUpdateOccupancy),
+          },
+        }),
+      {
+        spotId: failUpdateSpot.id,
+        occupancy: await occupancySnapshot(failUpdateSpot.id),
+        plantQty: await getInventoryQuantity(variantA),
+        plantHist: await historyCount(variantA),
+        colorAQty: await getPotInventoryQuantity(fixture.colorA),
+        colorBQty: await getPotInventoryQuantity(fixture.colorB),
+      },
+    );
+
     // 11. Two concurrent Places using the last unit allow only one success.
-    await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
-      VALUES (${lastVariant}::uuid, ${plant.id}, ${`${tag}-last`})
-    `;
-    await sql`
-      INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
-      VALUES (${offerLast}, ${plant.id}, ${lastVariant}::uuid, 18, 'active', now())
-    `;
-    await applyInventoryDelta({ variantId: lastVariant, delta: 1, note: `${tag} last unit` });
+    const lastQty = await getInventoryQuantity(lastVariant);
+    if (lastQty > 1) {
+      await applyInventoryDelta({
+        variantId: lastVariant,
+        delta: 1 - lastQty,
+        note: `${tag} last unit`,
+      });
+    } else if (lastQty === 0) {
+      await applyInventoryDelta({ variantId: lastVariant, delta: 1, note: `${tag} last unit` });
+    }
     const concurrentOne = await appendPosSpot(emptySpot(`inv-b-c1-${tag}`, "78"));
     const concurrentTwo = await appendPosSpot(emptySpot(`inv-b-c2-${tag}`, "79"));
     spotIds.push(concurrentOne.id, concurrentTwo.id);
@@ -660,18 +834,7 @@ async function main(): Promise<void> {
       }
     }
     await sql`DELETE FROM pockets WHERE name LIKE ${`${tag}-pocket%`}`;
-    await sql`DELETE FROM offers WHERE id = ${offerA} OR id = ${offerB} OR id = ${offerFlower} OR id = ${offerEmpty} OR id = ${offerLast}`;
-    await sql`
-      DELETE FROM placement_segments
-      WHERE placement_cycle_id IN (
-        SELECT id FROM placement_cycles
-        WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)
-      )
-    `;
-    await sql`DELETE FROM placement_cycles WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
-    await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
-    await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
-    await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid, ${lastVariant}::uuid)`;
+    await fixture.cleanup();
   }
 }
 

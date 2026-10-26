@@ -962,7 +962,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         status = 'sold',
         payment_hold_started_at = NULL,
         payment_hold_attempt_id = NULL,
-        plant_variant_id = NULL
+        plant_variant_id = NULL,
+        pot_color_id = NULL
       FROM eligible e
       WHERE p.id = e.pos_spot_id
         AND e.inventory_type <> 'flowers'

@@ -32,6 +32,13 @@ type PotRow = {
   name: string;
   nameHe?: string;
   image?: string;
+  family?: string;
+  diameterCm?: number;
+  material?: string;
+  color?: string;
+  form?: "classic" | "tall" | "bowl";
+  texture?: string;
+  active?: boolean;
   sizes: PotSizeRow[];
 };
 
@@ -415,6 +422,15 @@ export function AdminPotsManager() {
       ) : (
         <ul className="mt-6 space-y-4">
           {pots.map((pot) => {
+            const specLine = [
+              pot.diameterCm != null ? `${pot.diameterCm} cm` : null,
+              pot.color,
+              pot.form,
+              pot.material,
+              pot.texture,
+            ]
+              .filter(Boolean)
+              .join(" · ");
             const sizeChoices = openSizes(
               pot,
               editingSizeId ? pot.sizes.find((size) => size.id === editingSizeId)?.sizeLabel : undefined,
@@ -472,7 +488,16 @@ export function AdminPotsManager() {
                     )}
                     <div>
                       <p className="font-medium text-emerald-950">{pot.name}</p>
-                      {pot.nameHe ? <p className="text-sm text-slate-600">{pot.nameHe}</p> : null}
+                      {pot.nameHe && pot.nameHe !== pot.name ? (
+                        <p className="text-sm text-slate-600">{pot.nameHe}</p>
+                      ) : null}
+                      {pot.family ? <p className="text-sm text-slate-600">{pot.family}</p> : null}
+                      {specLine ? <p className="text-xs text-slate-500">{specLine}</p> : null}
+                      <p className="text-xs text-slate-500">
+                        {pot.active === false
+                          ? t(locale, "admin.pots.inactive")
+                          : t(locale, "admin.pots.active")}
+                      </p>
                       <div className="mt-2 flex gap-3">
                         <button type="button" className="text-sm text-emerald-800" onClick={() => startEdit(pot)}>
                           {t(locale, "admin.pots.edit")}

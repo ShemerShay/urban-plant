@@ -136,6 +136,7 @@ async function main(): Promise<void> {
   const { applyInventoryDelta, getInventoryQuantity } = await import("../lib/inventoryStorage");
   const { insertPaymentAttempt, deletePaymentAttemptById, finalizeVerifiedPaymentAttemptAtomic } =
     await import("../lib/paymentAttemptStorage");
+  const { createPosCutoverFixture } = await import("./pos-offer-cutover-fixture.ts");
 
   const table = await sql`
     SELECT column_name
@@ -180,14 +181,20 @@ async function main(): Promise<void> {
   assert.ok(flower, "need a flower catalog row");
 
   const tag = `cyc-${randomUUID().slice(0, 8)}`;
-  const variantA = randomUUID();
-  const variantB = randomUUID();
-  const emptyVariant = randomUUID();
-  const offerA = `cyc-offer-a-${tag}`;
-  const offerB = `cyc-offer-b-${tag}`;
-  const offerFlower = `cyc-offer-f-${tag}`;
-  const offerEmpty = `cyc-offer-e-${tag}`;
-  const offerLegacy = `cyc-offer-l-${tag}`;
+  const fixture = await createPosCutoverFixture({
+    sql,
+    tag,
+    partnerLocationId,
+    flowerPlantId: flower.id,
+  });
+  const variantA = fixture.variantS;
+  const variantB = fixture.variantL;
+  const emptyVariant = fixture.variantL;
+  const offerA = fixture.offerS;
+  const offerB = fixture.offerL;
+  const offerFlower = fixture.offerFlower;
+  const offerEmpty = fixture.offerL;
+  const offerLegacy = fixture.offerLegacy;
   const attemptIds: string[] = [];
   const orderIds: string[] = [];
   const spotIds: string[] = [];
@@ -239,16 +246,18 @@ async function main(): Promise<void> {
   ) {
     const occupancy = await resolveOccupancyForPosPatch({
       existing,
+      partnerLocationId: existing.partnerLocationId,
       occupancyIntent: "place",
-      requestedVariantId: variantId,
       requestedOfferId: offerId,
     });
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: source,
+      introducesNewPotColor: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
+      potColorId: occupancy.potColorId,
       patch: {
         partnerLocationId: existing.partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -266,17 +275,19 @@ async function main(): Promise<void> {
   ) {
     const occupancy = await resolveOccupancyForPosPatch({
       existing,
+      partnerLocationId: existing.partnerLocationId,
       occupancyIntent: "replace",
-      requestedVariantId: variantId,
       requestedOfferId: offerId,
       sameVariantReplace: sameVariant,
     });
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: "already_at_partner",
+      introducesNewPotColor: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
+      potColorId: occupancy.potColorId,
       patch: {
         partnerLocationId: existing.partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -287,22 +298,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
-      VALUES
-        (${variantA}::uuid, ${plant.id}, ${`${tag}-small`}),
-        (${variantB}::uuid, ${plant.id}, ${`${tag}-large`}),
-        (${emptyVariant}::uuid, ${plant.id}, ${`${tag}-empty`})
-    `;
-    await sql`
-      INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
-      VALUES
-        (${offerA}, ${plant.id}, ${variantA}::uuid, 40, 'active', now()),
-        (${offerB}, ${plant.id}, ${variantB}::uuid, 55, 'active', now()),
-        (${offerFlower}, ${flower.id}, NULL, 25, 'active', now()),
-        (${offerEmpty}, ${plant.id}, ${emptyVariant}::uuid, 12, 'active', now()),
-        (${offerLegacy}, ${plant.id}, NULL, 33, 'active', now())
-    `;
+    await sql`SELECT 1`;
 
     const cycleCountBefore = await sql`SELECT COUNT(*)::int AS n FROM placement_cycles`;
     const cyclesAtStart = (cycleCountBefore as { n: number }[])[0].n;
@@ -319,7 +315,7 @@ async function main(): Promise<void> {
 
     const createOccupancy = await resolveOccupancyForPosCreate({
       offerId: offerA,
-      plantVariantId: variantA,
+      partnerLocationId,
     });
     const slugPlant = `cyc-plant-${tag}`;
     const createdAt = new Date().toISOString();
@@ -387,9 +383,9 @@ async function main(): Promise<void> {
     assert.ok(occupied);
     const updated = await resolveOccupancyForPosPatch({
       existing: occupied,
+      partnerLocationId,
       occupancyIntent: "update",
-      requestedOfferId: offerB,
-      requestedVariantId: variantB,
+      requestedOfferId: fixture.offerL2,
     });
     assert.equal(updated.action, "update");
     await writePosUpdate({
@@ -433,7 +429,7 @@ async function main(): Promise<void> {
       status: "created",
       posSpotId: created.id,
       offerId: offerB,
-      productId: plant.id,
+      productId: fixture.plantId,
       productName: "Cycle Verify Plant",
       fullName: "Cycle Verify",
       customerEmail: "cycle-verify@example.com",
@@ -567,7 +563,7 @@ async function main(): Promise<void> {
       status: "awaiting_payment",
       posSpotId: created.id,
       offerId: offerA,
-      productId: plant.id,
+      productId: fixture.plantId,
       productName: "Cycle Verify Plant",
       fullName: "Cycle Verify",
       customerEmail: "cycle-verify@example.com",
@@ -579,7 +575,7 @@ async function main(): Promise<void> {
       checkoutSessionId: saleSession,
       paymentResumeToken: `resume-${randomUUID()}`,
       snapshot: {
-        productId: plant.id,
+        productId: fixture.plantId,
         productName: "Cycle Verify Plant",
         offerId: offerA,
         consumerPrice: 40,
@@ -617,7 +613,10 @@ async function main(): Promise<void> {
       assert.equal(afterDup?.order_id, sold.order.orderId);
     }
 
-    const flowerCreate = await resolveOccupancyForPosCreate({ offerId: offerFlower });
+    const flowerCreate = await resolveOccupancyForPosCreate({
+      offerId: offerFlower,
+      partnerLocationId,
+    });
     const flowerSlug = `cyc-flower-${tag}`;
     const flowerSpot = await writePosCreate({
       occupancyAction: flowerCreate.action,
@@ -687,11 +686,11 @@ async function main(): Promise<void> {
     assert.equal((await cyclesFor(legacySpot.id)).length, 0);
     const assigned = await resolveOccupancyForPosPatch({
       existing: legacySpot,
-      occupancyIntent: "assign_variant",
-      requestedVariantId: variantA,
+      partnerLocationId,
+      occupancyIntent: "place",
       requestedOfferId: offerA,
     });
-    assert.equal(assigned.action, "assign_variant");
+    assert.equal(assigned.action, "place");
     await writePosUpdate({
       occupancyAction: assigned.action,
       inventorySource: "already_at_partner",
@@ -743,6 +742,8 @@ async function main(): Promise<void> {
         },
         variantId: variantB,
         action: "place",
+        decrementPlant: true,
+        decrementPotColor: false,
         existing: occupiedForGuard,
       });
     } catch (error) {
@@ -799,18 +800,7 @@ async function main(): Promise<void> {
       }
     }
     await sql`DELETE FROM pockets WHERE name LIKE ${`${tag}-pocket%`}`;
-    await sql`DELETE FROM offers WHERE id = ${offerA} OR id = ${offerB} OR id = ${offerFlower} OR id = ${offerEmpty} OR id = ${offerLegacy}`;
-    await sql`
-      DELETE FROM placement_segments
-      WHERE placement_cycle_id IN (
-        SELECT id FROM placement_cycles
-        WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)
-      )
-    `;
-    await sql`DELETE FROM placement_cycles WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)`;
-    await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)`;
-    await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)`;
-    await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid, ${emptyVariant}::uuid)`;
+    await fixture.cleanup();
   }
 }
 

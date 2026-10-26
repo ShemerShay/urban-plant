@@ -70,10 +70,11 @@ export type UpdateOfferInput = {
 export type OfferRow = {
   id: string;
   product_id: string;
-  variant_id?: string | null;
   sellable_variant_id?: string | null;
   variant_plant_name?: string | null;
+  plant_size_id?: string | null;
   plant_size_label?: string | null;
+  pot_size_id?: string | null;
   pot_name?: string | null;
   pot_size_label?: string | null;
   availabilities?: unknown;
@@ -87,19 +88,22 @@ type VariantPlant = {
   inventoryType: string;
 };
 
-function mapVariantId(value: string | null | undefined): string | null {
+function mapUuid(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 }
 
 function mapSellableVariant(row: OfferRow): OfferSellableVariant | null {
-  const sellableVariantId = mapVariantId(row.sellable_variant_id);
-  if (!sellableVariantId) return null;
+  const sellableVariantId = mapUuid(row.sellable_variant_id);
+  const plantSizeId = mapUuid(row.plant_size_id);
+  if (!sellableVariantId || !plantSizeId) return null;
   return {
     sellableVariantId,
     plantName: row.variant_plant_name?.trim() || "",
+    plantSizeId,
     plantSizeLabel: row.plant_size_label?.trim() || "",
+    potSizeId: mapUuid(row.pot_size_id),
     potName: row.pot_name?.trim() || null,
     potSizeLabel: row.pot_size_label?.trim() || null,
   };
@@ -133,7 +137,6 @@ export function mapOfferRow(row: OfferRow): Offer {
   return {
     id: row.id,
     productId: row.product_id,
-    variantId: mapVariantId(row.variant_id),
     sellableVariantId: sellableVariant?.sellableVariantId ?? null,
     sellableVariant,
     availabilities: mapAvailabilities(row.availabilities),
@@ -295,13 +298,14 @@ async function queryOffers(filter?: {
     SELECT
       o.id,
       o.product_id,
-      o.variant_id,
       o.sellable_variant_id,
       o.consumer_price,
       o.status,
       o.created_at,
       variant_plant.name AS variant_plant_name,
+      sv.plant_variant_id AS plant_size_id,
       pv.size_label AS plant_size_label,
+      sv.pot_size_id AS pot_size_id,
       pot.name AS pot_name,
       ps.size_label AS pot_size_label,
       COALESCE(
@@ -387,12 +391,15 @@ function offerPriceStatusUpdate(offer: {
         p.pocket_id,
         pk.name AS pocket_name,
         p.current_offer_id AS offer_id,
+        o.sellable_variant_id,
+        p.pot_color_id,
         u.consumer_price
       FROM price_upd u
       INNER JOIN pos_spots p ON p.current_offer_id = u.id
       INNER JOIN placement_cycles c
         ON c.pos_spot_id = p.id
        AND c.ended_at IS NULL
+      INNER JOIN offers o ON o.id = p.current_offer_id
       LEFT JOIN pockets pk ON pk.id = p.pocket_id
       WHERE u.consumer_price IS DISTINCT FROM u.previous_price
     ),
@@ -414,7 +421,9 @@ function offerPriceStatusUpdate(offer: {
         pocket_id,
         pocket_name,
         offer_id,
-        consumer_price
+        consumer_price,
+        sellable_variant_id,
+        pot_color_id
       )
       SELECT
         gen_random_uuid(),
@@ -424,7 +433,9 @@ function offerPriceStatusUpdate(offer: {
         a.pocket_id,
         CASE WHEN a.pocket_id IS NULL THEN NULL ELSE a.pocket_name END,
         a.offer_id,
-        a.consumer_price
+        a.consumer_price,
+        a.sellable_variant_id,
+        a.pot_color_id
       FROM affected a
       INNER JOIN closed_segments cs ON cs.placement_cycle_id = a.cycle_id
       WHERE (

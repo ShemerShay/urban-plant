@@ -5,7 +5,7 @@
  */
 
 import { sql } from "@/lib/db";
-import { getPotById, isDatabaseUuid, PotWriteError, type Pot } from "@/lib/potStorage";
+import { getPotById, isDatabaseUuid, potFromRow, PotWriteError, type Pot, type PotRow } from "@/lib/potStorage";
 import { isPotSizeLabel, POT_SIZE_LABELS, type PotSizeLabel } from "@/lib/potSizes";
 
 export type PotSize = {
@@ -137,27 +137,22 @@ function sizeRank(label: PotSizeLabel): number {
   return POT_SIZE_LABELS.indexOf(label);
 }
 
-type PotRow = {
-  id: string;
-  name: string;
-  name_he: string | null;
-  image: string | null;
-};
-
-function mapPotRow(row: PotRow): Pot {
-  const nameHe = optionalTrimmed(row.name_he);
-  const image = optionalTrimmed(row.image);
-  return {
-    id: row.id,
-    name: row.name.trim(),
-    ...(nameHe ? { nameHe } : {}),
-    ...(image ? { image } : {}),
-  };
+export async function readColorsForPotSizeIds(potSizeIds: string[]): Promise<PotColor[]> {
+  const ids = [...new Set(potSizeIds.map((id) => id.trim()).filter((id) => isDatabaseUuid(id)))];
+  if (ids.length === 0) return [];
+  const rows = await sql`
+    SELECT c.id, c.pot_size_id, c.color, c.color_he, i.quantity
+    FROM pot_colors c
+    LEFT JOIN pot_inventory i ON i.pot_color_id = c.id
+    WHERE c.pot_size_id = ANY(${ids}::uuid[])
+    ORDER BY c.color ASC, c.id ASC
+  `;
+  return (rows as PotColorRow[]).map(mapColor);
 }
 
 export async function readPotsWithSizes(): Promise<PotWithSizes[]> {
   const potRows = await sql`
-    SELECT id, name, name_he, image
+    SELECT id, name, name_he, image, family, diameter_cm, material, color, form, texture, active
     FROM pots
     ORDER BY name ASC, id ASC
   `;
@@ -192,7 +187,7 @@ export async function readPotsWithSizes(): Promise<PotWithSizes[]> {
   }
 
   return (potRows as PotRow[]).map((row) => {
-    const pot = mapPotRow(row);
+    const pot = potFromRow(row);
     return { ...pot, sizes: sizesByPot.get(pot.id) ?? [] };
   });
 }

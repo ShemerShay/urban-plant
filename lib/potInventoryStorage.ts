@@ -116,6 +116,62 @@ function mapWriteError(error: unknown): never {
   throw error;
 }
 
+export type PotInventorySqlQuery = ReturnType<typeof sql>;
+
+/** Validate a color and return lock + decrement queries. Does not write. */
+export async function preparePotInventoryDelta(input: {
+  potColorId: string;
+  delta: number;
+  note?: string | null;
+}): Promise<{ queries: PotInventorySqlQuery[] }> {
+  const potColorId = input.potColorId.trim();
+  assertWritableDelta(input.delta);
+  if (!isDatabaseUuid(potColorId)) {
+    throw new PotInventoryChangeError("color_not_found", "Color not found");
+  }
+  const existing = await sql`
+    SELECT id FROM pot_colors WHERE id = ${potColorId}::uuid LIMIT 1
+  `;
+  if ((existing as { id: string }[]).length === 0) {
+    throw new PotInventoryChangeError("color_not_found", "Color not found");
+  }
+  const note = parseNote(input.note);
+  const queries: PotInventorySqlQuery[] = [
+    sql`
+      SELECT quantity
+      FROM pot_inventory
+      WHERE pot_color_id = ${potColorId}::uuid
+      FOR UPDATE
+    `,
+  ];
+  if (input.delta > 0) {
+    queries.push(sql`
+      INSERT INTO pot_inventory (pot_color_id, quantity, updated_at)
+      VALUES (${potColorId}::uuid, 0, now())
+      ON CONFLICT (pot_color_id) DO NOTHING
+    `);
+  }
+  queries.push(sql`
+    WITH updated AS (
+      UPDATE pot_inventory
+      SET quantity = quantity + ${input.delta}::integer,
+          updated_at = now()
+      WHERE pot_color_id = ${potColorId}::uuid
+        AND quantity + ${input.delta}::integer >= 0
+      RETURNING pot_color_id
+    ),
+    recorded AS (
+      INSERT INTO pot_inventory_history (pot_color_id, delta, note)
+      SELECT pot_color_id, ${input.delta}::integer, ${note}
+      FROM updated
+      RETURNING id
+    )
+    SELECT 1 / COUNT(*)::integer AS ok
+    FROM updated
+  `);
+  return { queries };
+}
+
 /** Apply a signed central-stock change for one Pot Color and append history. */
 export async function applyPotInventoryDelta(input: {
   potId: string;

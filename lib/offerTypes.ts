@@ -17,7 +17,9 @@ export interface OfferAvailability {
 export interface OfferSellableVariant {
   sellableVariantId: string;
   plantName: string;
+  plantSizeId: string;
   plantSizeLabel: string;
+  potSizeId: string | null;
   potName: string | null;
   potSizeLabel: string | null;
 }
@@ -25,8 +27,6 @@ export interface OfferSellableVariant {
 export interface Offer {
   id: string;
   productId: string;
-  /** Legacy Plant Size. Null on new plant Offers; still read by POS until Slice 6. */
-  variantId?: string | null;
   /** Plant Offers point at one Sellable Variant. Flowers and legacy rows stay null. */
   sellableVariantId: string | null;
   sellableVariant: OfferSellableVariant | null;
@@ -44,6 +44,27 @@ export function isPosAssignableOffer(
     return false;
   }
   return offer.status === "active";
+}
+
+export function offerAvailableAtPartnerLocation(
+  offer: Pick<Offer, "availabilities">,
+  partnerLocationId: string,
+): boolean {
+  const locationId = partnerLocationId.trim();
+  if (!locationId) return false;
+  return offer.availabilities.some(
+    (row) => row.scope === "partner_location" && row.partnerLocationId === locationId,
+  );
+}
+
+/** Plant Offer that may start or change occupancy at this Partner Location. */
+export function isPlantPosEligibleOffer(
+  offer: Pick<Offer, "id" | "productId" | "status" | "sellableVariantId" | "availabilities">,
+  partnerLocationId: string,
+): boolean {
+  if (!isPosAssignableOffer(offer)) return false;
+  if (!offer.sellableVariantId?.trim()) return false;
+  return offerAvailableAtPartnerLocation(offer, partnerLocationId);
 }
 
 /** Offer row enriched with catalog plant fields (images, currency). */

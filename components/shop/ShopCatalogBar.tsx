@@ -28,7 +28,21 @@ export function ShopCatalogBar({
   return (
     <div className={`mb-6 flex items-center gap-4 ${showBack ? "justify-between" : "justify-end"}`}>
       {showBack ? (
-        <Link href={routes.shop.index()} className={linkClass}>
+        <Link href={routes.shop.index()} className={`${linkClass} inline-flex items-center gap-1`}>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden
+            className="h-3.5 w-3.5 rtl:rotate-180"
+          >
+            <path
+              d="M14.5 5.5 8 12l6.5 6.5"
+              stroke="currentColor"
+              strokeWidth="2.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           {t(locale, "shop.back")}
         </Link>
       ) : null}

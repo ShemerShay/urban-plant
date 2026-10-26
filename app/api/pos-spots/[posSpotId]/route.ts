@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
-import { readPlantVariants } from "@/lib/plantVariantStorage";
 import { readOffers } from "@/lib/offerStorage";
-import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID } from "@/lib/offerTypes";
+import {
+  isPlantPosEligibleOffer,
+  isPosAssignableOffer,
+  MANUAL_OFFER_ID,
+  MANUAL_PRODUCT_ID,
+} from "@/lib/offerTypes";
+import { readColorsForPotSizeIds } from "@/lib/potSizeStorage";
 import { getPocketById } from "@/lib/pocketStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
@@ -72,12 +77,21 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   if (!posSpot) {
     return NextResponse.json({ error: "POS Spot not found" }, { status: 404 });
   }
-  const [offers, locations, plantVariants] = await Promise.all([
+  const [allOffers, locations] = await Promise.all([
     mapOffersForResponse(),
     readPartnerLocations(),
-    readPlantVariants(),
   ]);
-  return NextResponse.json({ posSpot, offers, locations, plantVariants });
+  const offers = allOffers.filter((offer) => {
+    if (offer.id === posSpot.currentOfferId) return true;
+    if (!isPosAssignableOffer(offer)) return false;
+    if (offer.inventoryType === "flowers") return true;
+    return isPlantPosEligibleOffer(offer, posSpot.partnerLocationId);
+  });
+  const potSizeIds = offers
+    .map((offer) => offer.sellableVariant?.potSizeId)
+    .filter((id): id is string => Boolean(id));
+  const potColors = await readColorsForPotSizeIds(potSizeIds);
+  return NextResponse.json({ posSpot, offers, locations, potColors });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
@@ -114,10 +128,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       ? null
       : cleanString(record.currentOfferId) || null
     : undefined;
-  const requestedVariantId = "plantVariantId" in record
-    ? record.plantVariantId === null
+  const requestedPotColorId = "potColorId" in record
+    ? record.potColorId === null
       ? null
-      : cleanString(record.plantVariantId) || null
+      : cleanString(record.potColorId) || null
     : undefined;
   const sameVariantReplace = record.sameVariantReplace === true;
   const hasPocketId = "pocketId" in record;
@@ -167,9 +181,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     occupancy = await resolveOccupancyForPosPatch({
       existing,
+      partnerLocationId,
       occupancyIntent: occupancyIntentRaw,
       requestedOfferId,
-      requestedVariantId,
+      requestedPotColorId,
       sameVariantReplace,
       requestedStatus: parsedStatus,
     });
@@ -235,9 +250,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const posSpot = await writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: record.inventorySource,
+      introducesNewPotColor: occupancy.introducesNewPotColor,
       id,
       existing,
       variantId: occupancy.plantVariantId,
+      potColorId: occupancy.potColorId,
       patch: {
         partnerLocationId,
         posNumber,

@@ -39,7 +39,7 @@ export function cycleEffectForPosWrite(input: {
     return { kind: "replace" };
   }
 
-  if (action === "place" || action === "assign_variant" || (!existingVariant && nextVariant)) {
+  if (action === "place" || (!existingVariant && nextVariant)) {
     return { kind: "open" };
   }
 

@@ -25,8 +25,13 @@ async function assertScanner(): Promise<void> {
   assert.ok(files.includes("001_initial_schema.sql"));
   assert.ok(files.includes("048_offers_on_sellable_variants.sql"));
 
+  const dollarQuoted = new Set([
+    "048_offers_on_sellable_variants.sql",
+    "049_catalog_offer_cutover.sql",
+    "050_pos_offer_cutover.sql",
+  ]);
   for (const name of files) {
-    if (name === "048_offers_on_sellable_variants.sql") continue;
+    if (dollarQuoted.has(name)) continue;
     const sql = readFileSync(join(migrationDir, name), "utf8");
     assert.deepEqual(
       splitSqlStatements(sql),
@@ -79,26 +84,26 @@ COMMIT;
   );
   assert.match(migration, /UNIQUE NULLS NOT DISTINCT \(offer_id, scope, partner_location_id\)/);
   assert.match(migration, /offers_sellable_variant_consumer_price_key/);
+
+  const cutover = read("db/migrations/050_pos_offer_cutover.sql");
+  const cutoverStatements = splitSqlStatements(cutover);
+  const occupancyFn = cutoverStatements.find((statement) =>
+    statement.includes("FUNCTION enforce_pos_occupancy_offer_color"),
+  );
+  assert.ok(occupancyFn && occupancyFn.includes("RETURNS trigger"));
+  assert.ok(splitSqlStatementsLegacy(cutover).length > cutoverStatements.length);
   console.log("verify-offer-variants: migration parser matches existing files");
 }
 
 function assertCustomerPathsUntouched(): void {
-  for (const rel of [
-    "lib/catalogShop.ts",
-    "lib/catalogCart.ts",
-    "lib/catalogCheckoutFlow.ts",
-    "lib/catalogStockHolds.ts",
-    "lib/posOccupancy.ts",
-    "lib/posSpotStorage.ts",
-    "components/admin/AdminPosSpotEditForm.tsx",
-    "components/admin/AdminQrGenerator.tsx",
-    "components/admin/AdminPartnerDetail.tsx",
-    "scripts/seed-from-json.mjs",
-  ]) {
+  for (const rel of ["scripts/seed-from-json.mjs"]) {
     const source = read(rel);
     assert.doesNotMatch(source, /offer_availabilities/, rel);
     assert.doesNotMatch(source, /sellable_variant_id/, rel);
   }
+  assert.doesNotMatch(read("lib/offerTypes.ts"), /variantId\?:/);
+  assert.match(read("lib/posOccupancy.ts"), /isPlantPosEligibleOffer/);
+  assert.match(read("components/admin/AdminPartnerDetail.tsx"), /potColorId/);
   const offersApi = read("app/api/offers/route.ts");
   const getFn = offersApi.slice(
     offersApi.indexOf("export async function GET"),
@@ -318,9 +323,9 @@ async function main(): Promise<void> {
       status: "inactive",
     });
     assert.equal(zero.status, 201);
-    const zeroOffer = zero.body.offer as { id: string; consumerPrice: number; variantId: string | null; productId: string; sellableVariantId: string };
+    const zeroOffer = zero.body.offer as { id: string; consumerPrice: number; productId: string; sellableVariantId: string };
     assert.equal(zeroOffer.consumerPrice, 0);
-    assert.equal(zeroOffer.variantId ?? null, null);
+    assert.equal("variantId" in zeroOffer, false);
     assert.equal(zeroOffer.productId, plantId);
     assert.equal(zeroOffer.sellableVariantId, noPot.sellableVariantId);
     assert.notEqual(zeroOffer.consumerPrice, noPot.supplierCost);
@@ -337,7 +342,7 @@ async function main(): Promise<void> {
     });
     assert.equal(potOffer.reused, false);
     assert.equal(potOffer.offer.productId, plantId);
-    assert.equal(potOffer.offer.variantId ?? null, null);
+    assert.equal("variantId" in potOffer.offer, false);
     assert.equal(potOffer.offer.sellableVariantId, withPot.sellableVariantId);
     assert.equal(potOffer.offer.sellableVariant?.potName, pot.name);
     assert.equal(potOffer.offer.consumerPrice, 99);
@@ -474,7 +479,7 @@ async function main(): Promise<void> {
     assert.equal(flowerAvailability.status, 400);
     const flowerCreated = await appendFlowerOffer({ productId: flowerId, consumerPrice: 18, status: "active" });
     assert.equal(flowerCreated.sellableVariantId, null);
-    assert.equal(flowerCreated.variantId ?? null, null);
+    assert.equal("variantId" in flowerCreated, false);
     assert.deepEqual(flowerCreated.availabilities, []);
 
     const legacyId = `offer-sv-legacy-${randomUUID()}`;
@@ -485,7 +490,7 @@ async function main(): Promise<void> {
     const legacyUpdated = await updateOffer(legacyId, { consumerPrice: 22, status: "inactive" });
     assert.equal(legacyUpdated?.consumerPrice, 22);
     assert.equal(legacyUpdated?.sellableVariantId, null);
-    assert.equal(legacyUpdated?.variantId ?? null, null);
+    assert.equal("variantId" in (legacyUpdated ?? {}), false);
     assert.deepEqual(legacyUpdated?.availabilities, []);
     let legacyGain = false;
     try {

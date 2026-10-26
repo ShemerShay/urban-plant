@@ -25,12 +25,14 @@ import {
   additionalInStockColorCount,
   catalogSizeChoices,
   colorSetKey,
+  defaultCatalogCardSizeId,
   resolveCardConfiguration,
 } from "@/lib/catalogShopSelection";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 import type { Locale } from "@/lib/locale";
+import type { PlantSizeLabel } from "@/lib/plantSizes";
 
 function GalleryCue() {
   return (
@@ -47,11 +49,21 @@ function GalleryCue() {
   );
 }
 
-export function ShopPlantCard({ plant, locale }: { plant: CatalogShopCard; locale: Locale }) {
+export function ShopPlantCard({
+  plant,
+  locale,
+  sizeFilter = "all",
+}: {
+  plant: CatalogShopCard;
+  locale: Locale;
+  sizeFilter?: "all" | PlantSizeLabel;
+}) {
   const posthog = usePostHog();
   const cart = useCatalogCart();
   const sizeOptions = catalogSizeChoices(plant.sizes);
-  const [selectedSizeId, setSelectedSizeId] = useState("");
+  const [selectedSizeId, setSelectedSizeId] = useState(() =>
+    defaultCatalogCardSizeId(plant.sizes, sizeFilter),
+  );
   const [colorMemory, setColorMemory] = useState<{ colorId: string | null; setKey: string } | null>(
     null,
   );
@@ -152,7 +164,7 @@ export function ShopPlantCard({ plant, locale }: { plant: CatalogShopCard; local
                 src={plant.image}
                 alt={name}
                 fill
-                className={`object-cover ${plant.unavailable ? "opacity-60" : ""}`}
+                className="object-cover"
                 sizes="(max-width: 768px) 40vw, 192px"
               />
             ) : null}

@@ -29,6 +29,12 @@ function assertShopWiring(): void {
   assert.match(shop, /plantSizeCodes/);
   assert.match(shop, /pot\.image AS pot_image/);
   assert.doesNotMatch(shop, /!potImage\) continue/);
+  const selectionSrc = read("lib/catalogShopSelection.ts");
+  const eligibility = selectionSrc.slice(
+    selectionSrc.indexOf("export function variantIsEligible"),
+    selectionSrc.indexOf("export function comparePotBearingVariants"),
+  );
+  assert.doesNotMatch(eligibility, /potImage/);
   assert.doesNotMatch(shop, /average_size/);
   assert.doesNotMatch(shop, /averageSize/);
 
@@ -36,6 +42,10 @@ function assertShopWiring(): void {
   assert.match(shopPage, /readCatalogShopCards/);
   assert.match(shopPage, /max-w-5xl/);
   assert.match(shopPage, /ShopCatalogBar/);
+  const catalogBar = read("components/shop/ShopCatalogBar.tsx");
+  assert.match(catalogBar, /shop\.back/);
+  assert.match(catalogBar, /rtl:rotate-180/);
+  assert.match(catalogBar, /routes\.shop\.index\(\)/);
   assert.match(shopPage, /ShopCatalogGrid/);
   assert.doesNotMatch(shopPage, /href=\"\/cart\"/);
   assert.doesNotMatch(shopPage, /TrackProductView/);
@@ -46,6 +56,7 @@ function assertShopWiring(): void {
   const grid = read("components/shop/ShopCatalogGrid.tsx");
   assert.match(grid, /plantMatchesCatalogSizeFilter/);
   assert.match(grid, /plantSizeCodes/);
+  assert.match(grid, /sizeFilter=\{filter\}/);
   assert.doesNotMatch(grid, /averageSize/);
 
   const detailPage = read("app/shop/plants/[plantId]/page.tsx");
@@ -84,6 +95,7 @@ function assertShopWiring(): void {
   assert.match(shopCard, /formatCatalogPrice/);
   assert.match(shopCard, /CatalogSizeOptions/);
   assert.match(shopCard, /resolveCardConfiguration/);
+  assert.match(shopCard, /defaultCatalogCardSizeId/);
   assert.match(shopCard, /addCatalogCartItem/);
   assert.match(shopCard, /w-4\/5/);
   assert.match(shopCard, /ANALYTICS_EVENTS\.addToCart/);
@@ -91,6 +103,8 @@ function assertShopWiring(): void {
   assert.match(shopCard, /resolved && resolvedVariant\?\.potImage/);
   assert.match(shopCard, /src=\{resolvedVariant\.potImage\}/);
   assert.doesNotMatch(shopCard, /useState\(sizeOptions\[0\]/);
+  assert.doesNotMatch(shopCard, /useState\(""\)/);
+  assert.doesNotMatch(shopCard, /opacity-60/);
   assert.doesNotMatch(shopCard, /startCardcom/);
 
   const tracker = read("components/analytics/TrackProductView.tsx");
@@ -146,6 +160,7 @@ async function main(): Promise<void> {
 
   const {
     catalogSizeChoices,
+    defaultCatalogCardSizeId,
     plantMatchesCatalogSizeFilter,
     resolveCardVariant,
     resolveExplicitConfiguration,
@@ -168,6 +183,34 @@ async function main(): Promise<void> {
   assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "M"), true);
   assert.equal(plantMatchesCatalogSizeFilter(["S", "M"], "L"), false);
   assert.equal(plantMatchesCatalogSizeFilter(["XL", "Medium"], "S"), false);
+  function sellableSize(id: string, label: string, quantity = 3) {
+    return {
+      id,
+      sizeLabel: label,
+      quantity,
+      variants: [
+        {
+          id: `${id}-v`,
+          potSizeId: null,
+          offerId: `${id}-o`,
+          unitPrice: 40,
+          colors: [],
+        },
+      ],
+    };
+  }
+  const sizeS = sellableSize("size-s", "S");
+  const sizeM = sellableSize("size-m", "M");
+  const sizeL = sellableSize("size-l", "L");
+  const soldOutM = sellableSize("size-m-out", "M", 0);
+  assert.equal(defaultCatalogCardSizeId([sizeS, sizeM, sizeL]), "size-m");
+  assert.equal(defaultCatalogCardSizeId([sizeS]), "size-s");
+  assert.equal(defaultCatalogCardSizeId([sizeL]), "size-l");
+  assert.equal(defaultCatalogCardSizeId([sizeS, sizeL]), "size-s");
+  assert.equal(defaultCatalogCardSizeId([sizeS, sizeM, sizeL], "L"), "size-l");
+  assert.equal(defaultCatalogCardSizeId([sizeS, sizeM, sizeL], "S"), "size-s");
+  assert.equal(defaultCatalogCardSizeId([sizeS, soldOutM, sizeL]), "size-s");
+  assert.equal(defaultCatalogCardSizeId([sizeS, soldOutM, sizeL], "M"), "size-m-out");
   const potA = {
     id: "sv-b",
     potSizeId: "ps-b",

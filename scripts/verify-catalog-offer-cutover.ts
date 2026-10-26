@@ -54,7 +54,9 @@ function assertSources(): void {
   assert.doesNotMatch(purchase, /plant_price|pot_price|pot_variant_id|plantUnitPrice/);
 
   const card = read("components/shop/ShopPlantCard.tsx");
-  assert.match(card, /useState\(""\)/);
+  assert.match(card, /defaultCatalogCardSizeId/);
+  assert.doesNotMatch(card, /useState\(""\)/);
+  assert.doesNotMatch(card, /opacity-60/);
   assert.match(card, /resolveCardConfiguration/);
   assert.match(card, /additionalInStockColorCount/);
   assert.match(card, /w-4\/5/);
@@ -100,6 +102,37 @@ function assertSources(): void {
 
 async function assertSelection(): Promise<void> {
   const selection = await import("../lib/catalogShopSelection");
+  const sellable = (id: string, label: string, quantity = 2) => ({
+    id,
+    sizeLabel: label,
+    quantity,
+    variants: [
+      {
+        id: `${id}-sv`,
+        potSizeId: null,
+        offerId: `${id}-offer`,
+        unitPrice: 40,
+        colors: [],
+      },
+    ],
+  });
+  assert.equal(
+    selection.defaultCatalogCardSizeId([sellable("s", "S"), sellable("m", "M"), sellable("l", "L")]),
+    "m",
+  );
+  assert.equal(selection.defaultCatalogCardSizeId([sellable("s", "S")]), "s");
+  assert.equal(selection.defaultCatalogCardSizeId([sellable("l", "L")]), "l");
+  assert.equal(
+    selection.defaultCatalogCardSizeId([sellable("s", "S"), sellable("l", "L")]),
+    "s",
+  );
+  assert.equal(
+    selection.defaultCatalogCardSizeId(
+      [sellable("s", "S"), sellable("m", "M"), sellable("l", "L")],
+      "L",
+    ),
+    "l",
+  );
   const noOffer = {
     id: "size",
     quantity: 4,

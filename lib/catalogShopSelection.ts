@@ -39,9 +39,36 @@ export type CatalogVariantChoice = {
 
 export type CatalogSizeChoice = {
   id: string;
+  sizeLabel?: string;
   quantity: number;
   variants: CatalogVariantChoice[];
 };
+
+/**
+ * Catalog-card default Plant Size. Filter wins when that size exists.
+ * Otherwise prefer eligible M, then a sole eligible size, then S, then L.
+ */
+export function defaultCatalogCardSizeId(
+  sizes: CatalogSizeChoice[],
+  filter: "all" | PlantSizeLabel = "all",
+): string {
+  const choices = catalogSizeChoices(sizes);
+  if (filter !== "all") {
+    const filtered = choices.find((size) => size.sizeLabel === filter);
+    if (filtered) return filtered.id;
+  }
+  const eligible = choices.filter((size) => resolveCardConfiguration(size, null) != null);
+  const medium = eligible.find((size) => size.sizeLabel === "M");
+  if (medium) return medium.id;
+  if (eligible.length === 1 && eligible[0]) return eligible[0].id;
+  for (const label of ["S", "L"] as const) {
+    const next = eligible.find((size) => size.sizeLabel === label);
+    if (next) return next.id;
+  }
+  const fallbackMedium = choices.find((size) => size.sizeLabel === "M");
+  if (fallbackMedium) return fallbackMedium.id;
+  return choices[0]?.id ?? "";
+}
 
 export type CatalogResolvedConfiguration = {
   plantSizeId: string;

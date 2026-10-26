@@ -6,11 +6,22 @@
 
 import { sql } from "@/lib/db";
 
+export const POT_FORMS = ["classic", "tall", "bowl"] as const;
+
+export type PotForm = (typeof POT_FORMS)[number];
+
 export type Pot = {
   id: string;
   name: string;
   nameHe?: string;
   image?: string;
+  family?: string;
+  diameterCm?: number;
+  material?: string;
+  color?: string;
+  form?: PotForm;
+  texture?: string;
+  active: boolean;
 };
 
 const DATABASE_UUID =
@@ -39,11 +50,18 @@ export class PotWriteError extends Error {
   }
 }
 
-type PotRow = {
+export type PotRow = {
   id: string;
   name: string;
   name_he: string | null;
   image: string | null;
+  family: string | null;
+  diameter_cm: string | number | null;
+  material: string | null;
+  color: string | null;
+  form: string | null;
+  texture: string | null;
+  active: boolean | null;
 };
 
 function optionalTrimmed(value: string | null | undefined): string | undefined {
@@ -52,14 +70,39 @@ function optionalTrimmed(value: string | null | undefined): string | undefined {
   return trimmed || undefined;
 }
 
-function mapPot(row: PotRow): Pot {
+function mapDiameter(value: string | number | null): number | undefined {
+  if (value == null) return undefined;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function mapForm(value: string | null): PotForm | undefined {
+  const form = optionalTrimmed(value);
+  if (form === "classic" || form === "tall" || form === "bowl") return form;
+  return undefined;
+}
+
+export function potFromRow(row: PotRow): Pot {
   const nameHe = optionalTrimmed(row.name_he);
   const image = optionalTrimmed(row.image);
+  const family = optionalTrimmed(row.family);
+  const material = optionalTrimmed(row.material);
+  const color = optionalTrimmed(row.color);
+  const texture = optionalTrimmed(row.texture);
+  const diameterCm = mapDiameter(row.diameter_cm);
+  const form = mapForm(row.form);
   return {
     id: row.id,
     name: row.name.trim(),
+    active: row.active !== false,
     ...(nameHe ? { nameHe } : {}),
     ...(image ? { image } : {}),
+    ...(family ? { family } : {}),
+    ...(diameterCm != null ? { diameterCm } : {}),
+    ...(material ? { material } : {}),
+    ...(color ? { color } : {}),
+    ...(form ? { form } : {}),
+    ...(texture ? { texture } : {}),
   };
 }
 
@@ -94,13 +137,13 @@ export async function getPotById(id: string): Promise<Pot | undefined> {
   const trimmed = id.trim();
   if (!isDatabaseUuid(trimmed)) return undefined;
   const rows = await sql`
-    SELECT id, name, name_he, image
+    SELECT id, name, name_he, image, family, diameter_cm, material, color, form, texture, active
     FROM pots
     WHERE id = ${trimmed}::uuid
     LIMIT 1
   `;
   const row = (rows as PotRow[])[0];
-  return row ? mapPot(row) : undefined;
+  return row ? potFromRow(row) : undefined;
 }
 
 export async function createPot(input: {
@@ -114,9 +157,9 @@ export async function createPot(input: {
   const rows = await sql`
     INSERT INTO pots (name, name_he, image)
     VALUES (${name}, ${nameHe}, ${image})
-    RETURNING id, name, name_he, image
+    RETURNING id, name, name_he, image, family, diameter_cm, material, color, form, texture, active
   `;
-  return mapPot((rows as PotRow[])[0]);
+  return potFromRow((rows as PotRow[])[0]);
 }
 
 export async function updatePot(input: {
@@ -135,11 +178,11 @@ export async function updatePot(input: {
     UPDATE pots
     SET name = ${name}, name_he = ${nameHe}, image = ${image}
     WHERE id = ${existing.id}::uuid
-    RETURNING id, name, name_he, image
+    RETURNING id, name, name_he, image, family, diameter_cm, material, color, form, texture, active
   `;
   const row = (rows as PotRow[])[0];
   if (!row) throw new PotWriteError("not_found", "Pot not found");
-  return mapPot(row);
+  return potFromRow(row);
 }
 
 export async function deletePot(potId: string): Promise<void> {

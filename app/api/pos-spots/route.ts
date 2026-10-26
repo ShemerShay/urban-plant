@@ -4,9 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { appendEvent } from "@/lib/eventStorage";
 import { readPartnerLocations } from "@/lib/mockLocations";
 import { getPlantById } from "@/lib/plantCatalog";
-import { readPlantVariants } from "@/lib/plantVariantStorage";
 import { readOffers } from "@/lib/offerStorage";
-import { isPosAssignableOffer } from "@/lib/offerTypes";
+import {
+  isPlantPosEligibleOffer,
+  isPosAssignableOffer,
+} from "@/lib/offerTypes";
+import { readColorsForPotSizeIds } from "@/lib/potSizeStorage";
 import { resolveSpotOffers, type PartnerPlantProduct } from "@/lib/partnerPlantSummary";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPocketById } from "@/lib/pocketStorage";
@@ -41,11 +44,10 @@ function cleanString(value: unknown): string {
 
 export async function GET(request: NextRequest) {
   const partnerId = cleanString(request.nextUrl.searchParams.get("partnerId"));
-  const [offers, allSpotsInitial, locations, plantVariants] = await Promise.all([
+  const [offers, allSpotsInitial, locations] = await Promise.all([
     readOffers(),
     readPosSpots(),
     readPartnerLocations(),
-    readPlantVariants(),
   ]);
 
   // Lazy-repair expired holds so Admin lists show truth without waiting for cron.
@@ -58,7 +60,6 @@ export async function GET(request: NextRequest) {
   const posSpots = partnerId
     ? allSpots.filter((spot) => spot.partnerLocationId === partnerId)
     : allSpots;
-  const posOffers = offers.filter(isPosAssignableOffer);
   const referencedOfferIds = new Set(
     posSpots
       .map((spot) => spot.currentOfferId)
@@ -73,6 +74,18 @@ export async function GET(request: NextRequest) {
     Array.from(productIds).map(async (id) => [id, await getPlantById(id)] as const),
   );
   const productById = new Map(productEntries);
+
+  const posOffers = offers.filter((offer) => {
+    if (referencedOfferIds.has(offer.id)) return true;
+    if (!isPosAssignableOffer(offer)) return false;
+    const inventoryType = productById.get(offer.productId)?.inventoryType ?? "plants";
+    if (inventoryType === "flowers") return true;
+    return partnerId ? isPlantPosEligibleOffer(offer, partnerId) : Boolean(offer.sellableVariantId);
+  });
+  const potSizeIds = posOffers
+    .map((offer) => offer.sellableVariant?.potSizeId)
+    .filter((id): id is string => Boolean(id));
+  const potColors = await readColorsForPotSizeIds(potSizeIds);
 
   const enrichedOffers = posOffers.map((offer) => {
     const product = productById.get(offer.productId);
@@ -94,7 +107,7 @@ export async function GET(request: NextRequest) {
     spotOffers: resolveSpotOffers(posSpots, offers, catalogById),
     locations,
     posSpots,
-    plantVariants,
+    potColors,
   });
 }
 
@@ -112,7 +125,7 @@ export async function POST(request: NextRequest) {
   const record = body as Record<string, unknown>;
   const partnerLocationId = cleanString(record.partnerLocationId);
   const currentOfferId = cleanString(record.currentOfferId);
-  const plantVariantId = cleanString(record.plantVariantId);
+  const potColorId = cleanString(record.potColorId);
   const spotDescription = cleanString(record.spotDescription);
   const posNumber = cleanString(record.posNumber);
   const placementNotes = cleanString(record.placementNotes);
@@ -143,7 +156,8 @@ export async function POST(request: NextRequest) {
   try {
     occupancy = await resolveOccupancyForPosCreate({
       offerId: currentOfferId,
-      plantVariantId: plantVariantId || null,
+      partnerLocationId,
+      potColorId: potColorId || null,
     });
   } catch (err) {
     if (err instanceof PosOccupancyError) {
@@ -200,6 +214,7 @@ export async function POST(request: NextRequest) {
     ...(occupancyFields.plantVariantId
       ? { plantVariantId: occupancyFields.plantVariantId }
       : {}),
+    ...(occupancyFields.potColorId ? { potColorId: occupancyFields.potColorId } : {}),
     status: occupancy.forceAvailable ? "available" : status,
     checkStatus: false as const,
     ...(occupancyFields.offerPlacedAt
@@ -214,6 +229,7 @@ export async function POST(request: NextRequest) {
       inventorySource: record.inventorySource,
       posSpot,
       variantId: occupancy.plantVariantId,
+      potColorId: occupancy.potColorId,
     });
   } catch (err) {
     if (err instanceof PosSpotSlugConflictError) {

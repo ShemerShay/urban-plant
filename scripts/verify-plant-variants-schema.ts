@@ -193,7 +193,7 @@ async function main(): Promise<void> {
 
   const offers = await readOffers();
   assert.ok(offers.length > 0);
-  assert.ok(offers.every((offer) => offer.variantId == null));
+  assert.ok(offers.every((offer) => !("variantId" in offer)));
 
   const posSpots = await readPosSpots();
   assert.ok(posSpots.length > 0);
@@ -235,7 +235,8 @@ async function main(): Promise<void> {
 
     const mapped = await getOfferById(offerOne);
     assert.equal(mapped?.productId, plantA.id);
-    assert.equal(mapped?.variantId, variantSmall);
+    assert.equal("variantId" in (mapped ?? {}), false);
+    assert.equal(mapped?.sellableVariantId ?? null, null);
     assert.equal(mapped?.consumerPrice, 10);
 
     await sql`
@@ -243,7 +244,8 @@ async function main(): Promise<void> {
       VALUES (${offerNull}, ${plantA.id}, 15, 'active', now())
     `;
     const nullOffer = await getOfferById(offerNull);
-    assert.equal(nullOffer?.variantId, null);
+    assert.equal("variantId" in (nullOffer ?? {}), false);
+    assert.equal(nullOffer?.sellableVariantId ?? null, null);
     assert.equal(nullOffer?.sellableVariantId ?? null, null);
 
     let mismatchRejected = false;
@@ -293,7 +295,7 @@ async function main(): Promise<void> {
   assert.equal((orderCountAfter as { n: number }[])[0].n, orderNBefore);
 
   const liveOffers = await readOffers();
-  assert.ok(liveOffers.every((offer) => offer.variantId == null));
+  assert.ok(liveOffers.every((offer) => !("variantId" in offer)));
   const liveSpots = await readPosSpots();
   assert.ok(
     liveSpots.every((spot) => !spot.plantVariantId || Boolean(spot.currentOfferId)),

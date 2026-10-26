@@ -29,6 +29,7 @@ const POS_SPOT_ROW_SQL = sql`
   spot_slug,
   current_offer_id,
   plant_variant_id,
+  pot_color_id,
   status,
   offer_placed_at,
   check_status,
@@ -54,6 +55,7 @@ type PosSpotRow = {
   spot_slug: string;
   current_offer_id: string | null;
   plant_variant_id: string | null;
+  pot_color_id: string | null;
   status: string;
   offer_placed_at: string | Date | null;
   check_status: boolean;
@@ -162,6 +164,9 @@ function mapPosSpotRow(row: PosSpotRow): PosSpot {
     ...(typeof row.plant_variant_id === "string" && row.plant_variant_id.trim()
       ? { plantVariantId: row.plant_variant_id.trim() }
       : {}),
+    ...(typeof row.pot_color_id === "string" && row.pot_color_id.trim()
+      ? { potColorId: row.pot_color_id.trim() }
+      : {}),
     status: normalizeStatus(row.status),
     ...(offerPlacedAt ? { offerPlacedAt } : {}),
     checkStatus,
@@ -217,6 +222,7 @@ export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boo
         spot_slug,
         current_offer_id,
         plant_variant_id,
+        pot_color_id,
         status,
         payment_hold_started_at,
         offer_placed_at,
@@ -240,6 +246,7 @@ export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boo
         ${posSpot.spotSlug},
         ${posSpot.currentOfferId ?? null},
         ${posSpot.plantVariantId ?? null}::uuid,
+        ${posSpot.potColorId ?? null}::uuid,
         ${posSpot.status},
         ${holdStartedAt}::timestamptz,
         ${posSpot.offerPlacedAt ?? null}::timestamptz,
@@ -267,6 +274,7 @@ export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boo
         spot_slug,
         current_offer_id,
         plant_variant_id,
+        pot_color_id,
         status,
         payment_hold_started_at,
         offer_placed_at,
@@ -290,6 +298,7 @@ export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boo
         ${posSpot.spotSlug},
         ${posSpot.currentOfferId ?? null},
         ${posSpot.plantVariantId ?? null}::uuid,
+        ${posSpot.potColorId ?? null}::uuid,
         ${posSpot.status},
         ${holdStartedAt}::timestamptz,
         ${posSpot.offerPlacedAt ?? null}::timestamptz,
@@ -299,7 +308,7 @@ export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boo
         ${posSpot.posWeeklyNote ?? null},
         ${posSpot.createdAt}::timestamptz
       )
-      RETURNING id, plant_variant_id, pocket_id, current_offer_id
+      RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_color_id
     )
     ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
     SELECT segment_guard.seg_ok AS cycle_ok
@@ -331,6 +340,7 @@ export function insertPosSpotWithOccupancyGuardQuery(posSpot: PosSpot, variantId
         spot_slug,
         current_offer_id,
         plant_variant_id,
+        pot_color_id,
         status,
         payment_hold_started_at,
         offer_placed_at,
@@ -354,6 +364,7 @@ export function insertPosSpotWithOccupancyGuardQuery(posSpot: PosSpot, variantId
         ${posSpot.spotSlug},
         ${posSpot.currentOfferId ?? null},
         ${expectedVariantId}::uuid,
+        ${posSpot.potColorId ?? null}::uuid,
         ${posSpot.status},
         ${holdStartedAt}::timestamptz,
         ${posSpot.offerPlacedAt ?? null}::timestamptz,
@@ -363,7 +374,7 @@ export function insertPosSpotWithOccupancyGuardQuery(posSpot: PosSpot, variantId
         ${posSpot.posWeeklyNote ?? null},
         ${posSpot.createdAt}::timestamptz
       )
-      RETURNING id, plant_variant_id, pocket_id, current_offer_id
+      RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_color_id
     )
     ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
     SELECT 1 / COUNT(*)::integer AS occupancy_ok
@@ -589,7 +600,8 @@ export async function completePosSpotSaleFromHold(
             status = 'sold',
             payment_hold_started_at = NULL,
             payment_hold_attempt_id = NULL,
-            plant_variant_id = NULL
+            plant_variant_id = NULL,
+            pot_color_id = NULL
           FROM e
           WHERE pos_spots.id = ${trimmed}::uuid
             AND pos_spots.status = 'held_for_payment'
@@ -642,7 +654,8 @@ export async function completePosSpotSaleFromHold(
             status = 'sold',
             payment_hold_started_at = NULL,
             payment_hold_attempt_id = NULL,
-            plant_variant_id = NULL
+            plant_variant_id = NULL,
+            pot_color_id = NULL
           FROM e
           WHERE pos_spots.id = ${trimmed}::uuid
             AND pos_spots.status = 'held_for_payment'
@@ -781,6 +794,7 @@ export type PosSpotUpdatePatch = {
   updateLegacyPocket?: boolean;
   currentOfferId?: string | null;
   plantVariantId?: string | null;
+  potColorId?: string | null;
   checkStatus?: boolean;
   checkBy?: string | null;
   updateCheckFields?: boolean;
@@ -916,6 +930,11 @@ export async function preparePosSpotUpdate(
     typeof patch.plantVariantId === "string" && patch.plantVariantId.trim()
       ? patch.plantVariantId.trim()
       : null;
+  const updatePotColor = patch.potColorId !== undefined;
+  const potColorIdForSql =
+    typeof patch.potColorId === "string" && patch.potColorId.trim()
+      ? patch.potColorId.trim()
+      : null;
 
   const skipOccupancyGuard = !patch.occupancyWriteGuard;
   const applyPlaceGuard = patch.occupancyWriteGuard?.kind === "place";
@@ -977,6 +996,10 @@ export async function preparePosSpotUpdate(
             plant_variant_id = CASE
               WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
               ELSE plant_variant_id
+            END,
+            pot_color_id = CASE
+              WHEN ${updatePotColor} THEN ${potColorIdForSql}::uuid
+              ELSE pot_color_id
             END,
             check_status = CASE
               WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
@@ -1043,6 +1066,10 @@ export async function preparePosSpotUpdate(
               WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
               ELSE plant_variant_id
             END,
+            pot_color_id = CASE
+              WHEN ${updatePotColor} THEN ${potColorIdForSql}::uuid
+              ELSE pot_color_id
+            END,
             check_status = CASE
               WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
               ELSE check_status
@@ -1080,7 +1107,7 @@ export async function preparePosSpotUpdate(
               ELSE payment_hold_attempt_id
             END
           WHERE ${occupancyWhere}
-          RETURNING id, plant_variant_id, pocket_id, current_offer_id
+          RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_color_id
         )
         ${placementBoundaryCtes({ shouldClose, shouldOpen, closeReason })}
         SELECT 1 / COUNT(*)::integer AS occupancy_ok

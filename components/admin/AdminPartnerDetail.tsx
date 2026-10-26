@@ -47,8 +47,18 @@ import {
 import { absoluteAppUrl, getClientOrigin, posSpotPath, routes } from "@/lib/routes";
 import {
   adminSaveNeedsInventorySource,
+  selectablePosPotColors,
   type InventorySource,
 } from "@/lib/inventorySource";
+
+type OfferSellableOption = {
+  sellableVariantId: string;
+  plantSizeId: string;
+  plantSizeLabel: string;
+  potSizeId: string | null;
+  potName: string | null;
+  potSizeLabel: string | null;
+};
 
 type OfferOption = {
   id: string;
@@ -58,23 +68,32 @@ type OfferOption = {
   currency: "ILS" | "USD" | "EUR";
   status: "active" | "inactive";
   inventoryType?: "plants" | "flowers" | null;
-  variantId?: string | null;
+  sellableVariantId?: string | null;
+  sellableVariant?: OfferSellableOption | null;
 };
 
-type PlantVariantOption = {
+type PotColorOption = {
   id: string;
-  plantId: string;
-  sizeLabel?: string;
-  nurseryPotDiameterCm?: number;
+  potSizeId: string;
+  color: string;
+  colorHe?: string;
+  quantity: number;
 };
 
-function variantOptionLabel(variant: PlantVariantOption): string {
-  const size = variant.sizeLabel?.trim();
-  const cm = variant.nurseryPotDiameterCm;
-  if (size && cm != null) return `${size} (${cm} cm)`;
-  if (size) return size;
-  if (cm != null) return `${cm} cm`;
-  return variant.id.slice(0, 8);
+function offerOptionLabel(offer: OfferOption): string {
+  const name = offer.productName;
+  const sv = offer.sellableVariant;
+  if (!sv) return name;
+  const bits = [name, sv.plantSizeLabel].filter((part) => part.trim());
+  if (sv.potName && sv.potSizeLabel) bits.push(`${sv.potName} ${sv.potSizeLabel}`);
+  else if (sv.potSizeLabel) bits.push(sv.potSizeLabel);
+  return bits.join(" · ");
+}
+
+function colorOptionLabel(color: PotColorOption, locale: Locale): string {
+  const name =
+    locale === "he" && color.colorHe?.trim() ? color.colorHe.trim() : color.color;
+  return `${name} (${color.quantity})`;
 }
 
 type AdminPartnerDetailProps = {
@@ -325,7 +344,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
   const [pockets, setPockets] = useState<Pocket[]>([]);
   const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
   const [offers, setOffers] = useState<OfferOption[]>([]);
-  const [plantVariants, setPlantVariants] = useState<PlantVariantOption[]>([]);
+  const [potColors, setPotColors] = useState<PotColorOption[]>([]);
   const [spotOffers, setSpotOffers] = useState<PartnerPlantOffer[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -346,7 +365,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
   const [posNumber, setPosNumber] = useState("");
   const [pocketId, setPocketId] = useState("");
   const [currentOfferId, setCurrentOfferId] = useState("");
-  const [plantVariantId, setPlantVariantId] = useState("");
+  const [potColorId, setPotColorId] = useState("");
   const [sameVariantReplace, setSameVariantReplace] = useState(false);
   const [inventorySource, setInventorySource] = useState<InventorySource | "">("");
   const [spotDescription, setSpotDescription] = useState("");
@@ -385,18 +404,36 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     () => offers.filter((offer) => offer.status === "active"),
     [offers],
   );
+  const offerChoices = useMemo(() => {
+    const list = [...activeOffers];
+    const occupyingId = editSpot?.currentOfferId;
+    if (occupyingId && !list.some((offer) => offer.id === occupyingId)) {
+      const occupying = offers.find((offer) => offer.id === occupyingId);
+      if (occupying) list.unshift(occupying);
+    }
+    return list;
+  }, [activeOffers, editSpot?.currentOfferId, offers]);
   const selectedOffer = useMemo(
     () => offers.find((offer) => offer.id === currentOfferId),
     [offers, currentOfferId],
   );
   const selectedIsPlant = Boolean(selectedOffer) && selectedOffer?.inventoryType !== "flowers";
-  const variantsForSelectedPlant = useMemo(() => {
-    if (!selectedOffer || !selectedIsPlant) return [];
-    return plantVariants.filter((variant) => variant.plantId === selectedOffer.productId);
-  }, [plantVariants, selectedOffer, selectedIsPlant]);
+  const derivedPlantSizeId = selectedOffer?.sellableVariant?.plantSizeId?.trim() || "";
+  const derivedPotSizeId = selectedOffer?.sellableVariant?.potSizeId?.trim() || "";
   const occupiedVariantId = editSpot?.plantVariantId ?? "";
-  const showSameVariantReplace =
-    Boolean(editSpot && occupiedVariantId && plantVariantId === occupiedVariantId);
+  const occupiedColorId = editSpot?.potColorId ?? "";
+  const colorsForSelectedPot = useMemo(() => {
+    if (!derivedPotSizeId) return [];
+    return potColors.filter((color) => color.potSizeId === derivedPotSizeId);
+  }, [derivedPotSizeId, potColors]);
+  const introducesNewPotColor =
+    selectedIsPlant &&
+    Boolean(derivedPotSizeId) &&
+    Boolean(potColorId) &&
+    potColorId !== occupiedColorId;
+  const showSameVariantReplace = Boolean(
+    editSpot && occupiedVariantId && derivedPlantSizeId === occupiedVariantId,
+  );
   const existingOfferIsFlower = (() => {
     const offerId = editSpot?.currentOfferId;
     if (!offerId) return false;
@@ -408,11 +445,19 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     selectedIsPlant,
     creating: !editSpot,
     occupiedVariantId,
-    selectedVariantId: plantVariantId,
+    selectedVariantId: derivedPlantSizeId,
     sameVariantReplace,
-    existingOfferId: editSpot?.currentOfferId ?? "",
     existingOfferIsFlower,
+    introducesNewPotColor,
   });
+  const selectableColors = useMemo(
+    () =>
+      selectablePosPotColors(colorsForSelectedPot, {
+        inventorySource,
+        occupiedColorId,
+      }),
+    [colorsForSelectedPot, inventorySource, occupiedColorId],
+  );
 
   const loadAll = useCallback(async () => {
     setLoadError(null);
@@ -453,7 +498,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
         posSpots?: PosSpot[];
         offers?: OfferOption[];
         spotOffers?: PartnerPlantOffer[];
-        plantVariants?: PlantVariantOption[];
+        potColors?: PotColorOption[];
       };
 
       const found = (partnersData.partners ?? []).find((p) => p.id === partnerId) ?? null;
@@ -467,7 +512,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       setPockets(pocketsData.pockets ?? []);
       setPosSpots(spotsData.posSpots ?? []);
       setOffers(spotsData.offers ?? []);
-      setPlantVariants(spotsData.plantVariants ?? []);
+      setPotColors(spotsData.potColors ?? []);
       setSpotOffers(spotsData.spotOffers ?? []);
     } catch {
       setLoadError(displayApiError(locale, undefined, "admin.partners.detail.loadFailed"));
@@ -637,7 +682,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     setPosNumber(suggestNextPosNumber(posSpots.map((s) => s.posNumber)));
     setPocketId("");
     setCurrentOfferId(activeOffers[0]?.id ?? "");
-    setPlantVariantId("");
+    setPotColorId("");
     setSameVariantReplace(false);
     setInventorySource("");
     setSpotDescription("");
@@ -652,7 +697,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
     setPosNumber(spot.posNumber ?? "");
     setPocketId(spot.pocketId ?? "");
     setCurrentOfferId(spot.currentOfferId ?? "");
-    setPlantVariantId(spot.plantVariantId ?? "");
+    setPotColorId(spot.potColorId ?? "");
     setSameVariantReplace(false);
     setInventorySource("");
     setSpotDescription(spot.spotDescription ?? "");
@@ -675,6 +720,8 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       const res = await fetch(routes.api.posSpot(spot.id), { cache: "no-store" });
       const data = (await res.json().catch(() => ({}))) as {
         posSpot?: PosSpot;
+        offers?: OfferOption[];
+        potColors?: PotColorOption[];
         error?: string;
       };
       if (!res.ok || !data.posSpot) {
@@ -683,6 +730,8 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       }
       const fresh = data.posSpot;
       setPosSpots((prev) => prev.map((s) => (s.id === fresh.id ? fresh : s)));
+      if (data.offers) setOffers(data.offers);
+      if (data.potColors) setPotColors(data.potColors);
       applySpotToEditForm(fresh);
       setCreateSpotOpen(true);
     } catch {
@@ -724,8 +773,8 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       setSpotError(t(locale, "admin.partners.detail.offerRequired"));
       return;
     }
-    if (selectedIsPlant && !plantVariantId.trim() && !editSpot?.plantVariantId) {
-      setSpotError(t(locale, "admin.partners.detail.variantRequired"));
+    if (selectedIsPlant && derivedPotSizeId && !potColorId.trim()) {
+      setSpotError(t(locale, "admin.partners.detail.potColorRequired"));
       return;
     }
     setSpotBusy(true);
@@ -741,7 +790,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             posNumber: posNumber.trim(),
             pocketId: pocketId || null,
             currentOfferId,
-            ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
+            ...(selectedIsPlant ? { potColorId: potColorId || null } : {}),
             ...(showSameVariantReplace && sameVariantReplace ? { sameVariantReplace: true } : {}),
             ...(showInventorySource && inventorySource ? { inventorySource } : {}),
             status: spotStatus,
@@ -763,7 +812,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
             posNumber: posNumber.trim(),
             ...(pocketId ? { pocketId } : {}),
             currentOfferId,
-            ...(selectedIsPlant && plantVariantId ? { plantVariantId } : {}),
+            ...(selectedIsPlant && potColorId ? { potColorId } : {}),
             ...(showInventorySource && inventorySource ? { inventorySource } : {}),
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
@@ -1233,7 +1282,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
         canSubmit={Boolean(
           posNumber.trim() &&
             currentOfferId.trim() &&
-            (editSpot || !selectedIsPlant || plantVariantId.trim()) &&
+            (!selectedIsPlant || !derivedPotSizeId || potColorId.trim()) &&
             (!showInventorySource || inventorySource),
         )}
         submitLabel={
@@ -1277,49 +1326,75 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
               const next = e.target.value;
               setCurrentOfferId(next);
               const nextOffer = offers.find((offer) => offer.id === next);
-              const nextVariants = plantVariants.filter(
-                (variant) => variant.plantId === nextOffer?.productId,
-              );
-              if (nextOffer?.variantId && nextVariants.some((variant) => variant.id === nextOffer.variantId)) {
-                setPlantVariantId(nextOffer.variantId);
-              } else if (!nextVariants.some((variant) => variant.id === plantVariantId)) {
-                setPlantVariantId("");
+              const nextPotSizeId = nextOffer?.sellableVariant?.potSizeId?.trim() || "";
+              if (!nextPotSizeId) {
+                setPotColorId("");
+              } else if (
+                potColorId &&
+                !potColors.some(
+                  (color) => color.id === potColorId && color.potSizeId === nextPotSizeId,
+                )
+              ) {
+                const occupyingMatches =
+                  occupiedColorId &&
+                  potColors.some(
+                    (color) => color.id === occupiedColorId && color.potSizeId === nextPotSizeId,
+                  );
+                setPotColorId(occupyingMatches ? occupiedColorId : "");
               }
               setSameVariantReplace(false);
             }}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
             <option value="">{t(locale, "admin.partners.detail.selectOffer")}</option>
-            {activeOffers.map((offer) => (
+            {offerChoices.map((offer) => (
               <option key={offer.id} value={offer.id}>
-                {offer.productName}
+                {offerOptionLabel(offer)}
               </option>
             ))}
           </select>
+          {selectedIsPlant && offerChoices.length === 0 ? (
+            <span className="text-xs text-amber-700">
+              {t(locale, "admin.partners.detail.noEligibleOffers")}
+            </span>
+          ) : null}
         </label>
-        {selectedIsPlant ? (
+        {selectedIsPlant && selectedOffer?.sellableVariant ? (
+          <p className="text-sm text-slate-600">
+            {t(locale, "admin.partners.detail.derivedPlantSize", {
+              size: selectedOffer.sellableVariant.plantSizeLabel || "—",
+            })}
+            {selectedOffer.sellableVariant.potSizeId
+              ? ` · ${
+                  selectedOffer.sellableVariant.potName
+                    ? `${selectedOffer.sellableVariant.potName} ${selectedOffer.sellableVariant.potSizeLabel ?? ""}`.trim()
+                    : selectedOffer.sellableVariant.potSizeLabel ?? ""
+                }`
+              : ` · ${t(locale, "admin.partners.detail.noPot")}`}
+          </p>
+        ) : selectedIsPlant && selectedOffer ? (
+          <p className="text-xs text-amber-700">{t(locale, "admin.partners.detail.legacyOfferHint")}</p>
+        ) : null}
+        {selectedIsPlant && derivedPotSizeId ? (
           <label className="block space-y-1">
             <span className="text-sm font-medium text-slate-700">
-              {t(locale, "admin.partners.detail.variant")}
+              {t(locale, "admin.partners.detail.potColor")}
             </span>
             <select
-              value={plantVariantId}
-              onChange={(e) => {
-                setPlantVariantId(e.target.value);
-                setSameVariantReplace(false);
-              }}
+              value={potColorId}
+              onChange={(e) => setPotColorId(e.target.value)}
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
             >
-              <option value="">{t(locale, "admin.partners.detail.selectVariant")}</option>
-              {variantsForSelectedPlant.map((variant) => (
-                <option key={variant.id} value={variant.id}>
-                  {variantOptionLabel(variant)}
+              <option value="">{t(locale, "admin.partners.detail.selectPotColor")}</option>
+              {selectableColors.map((color) => (
+                <option key={color.id} value={color.id}>
+                  {colorOptionLabel(color, locale)}
                 </option>
               ))}
             </select>
-            {selectedOffer && variantsForSelectedPlant.length === 0 ? (
+            {selectableColors.length === 0 ? (
               <span className="text-xs text-amber-700">
-                {t(locale, "admin.partners.detail.noVariants")}
+                {t(locale, "admin.partners.detail.noPotColors")}
               </span>
             ) : null}
           </label>
