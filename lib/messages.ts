@@ -600,7 +600,6 @@ const en = {
   "admin.plants.variants.legacyKept":
     "This size is stored as-is and is not an S, M, or L catalog size.",
   "admin.plants.variants.diameter": "Nursery pot (cm)",
-  "admin.plants.variants.catalogPrice": "Catalog price",
   "admin.plants.variants.quantity": "Central qty",
   "admin.plants.variants.new": "Add size",
   "admin.plants.variants.create": "Create size",
@@ -1263,7 +1262,6 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.plants.variants.sizeLabel": "גודל",
   "admin.plants.variants.legacyKept": "הגודל הזה שמור כפי שהוא ואינו גודל קטלוג S, M או L.",
   "admin.plants.variants.diameter": "עציץ משתלה (ס״מ)",
-  "admin.plants.variants.catalogPrice": "מחיר קטלוג",
   "admin.plants.variants.quantity": "כמות במחסן",
   "admin.plants.variants.new": "הוספת גודל",
   "admin.plants.variants.create": "יצירת גודל",

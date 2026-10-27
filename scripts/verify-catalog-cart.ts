@@ -124,8 +124,14 @@ async function assertCartHelpers(): Promise<void> {
       ],
     }),
   );
-  assert.equal(legacy.v, 1);
-  assert.equal(legacy.items.length, 2);
+  assert.deepEqual(legacy, cart.EMPTY_CATALOG_CART);
+  assert.equal(
+    cart.parseCatalogCartRequest({
+      v: 1,
+      items: [{ plantId: "p1", plantVariantId: "v1", potVariantId: null, quantity: 1 }],
+    }),
+    null,
+  );
 
   const noPot = {
     plantId: "p1",
@@ -297,13 +303,11 @@ async function main(): Promise<void> {
       plantId: testPlantId,
       sizeLabel: "S",
       nurseryPotDiameterCm: 12,
-      catalogPrice: 40,
     });
     const medium = await createPlantVariant({
       plantId: testPlantId,
       sizeLabel: "M",
       nurseryPotDiameterCm: 17,
-      catalogPrice: 90,
     });
     const unpriced = await createPlantVariant({
       plantId: testPlantId,

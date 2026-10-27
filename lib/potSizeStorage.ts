@@ -1,7 +1,7 @@
 /**
  * Pot → Pot Size → Color.
  * Supplier cost lives on the Pot Size. A Color has no cost and no selling price.
- * Customer Catalog selling does not read pot_variants.
+ * Customer Catalog selling reads Pot Size and Pot Color, then the Offer.
  */
 
 import { sql } from "@/lib/db";

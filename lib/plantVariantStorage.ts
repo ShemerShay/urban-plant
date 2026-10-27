@@ -1,5 +1,6 @@
 /**
- * Plant sizes (table: plant_variants): physical configuration plus Catalog price.
+ * Plant sizes (table: plant_variants): physical configuration.
+ * Customer selling price lives on the Offer.
  * New and changed size labels must be S, M, or L.
  * An existing label outside that set can be loaded and saved unchanged.
  * No database check is added: historical rows may keep other labels.
@@ -16,7 +17,6 @@ export type PlantVariant = {
   plantId: string;
   sizeLabel?: string;
   nurseryPotDiameterCm?: number;
-  catalogPrice?: number | null;
 };
 
 export type PlantVariantWithQuantity = PlantVariant & {
@@ -30,7 +30,6 @@ export type PlantVariantWriteCode =
   | "identity_required"
   | "invalid_size_label"
   | "duplicate_size_label"
-  | "invalid_catalog_price"
   | "plant_id_immutable"
   | "in_use";
 
@@ -49,7 +48,6 @@ type PlantVariantRow = {
   plant_id: string;
   size_label: string | null;
   nursery_pot_diameter_cm: string | number | null;
-  catalog_price?: string | number | null;
 };
 
 function mapDiameter(value: string | number | null): number | undefined {
@@ -61,26 +59,17 @@ function mapDiameter(value: string | number | null): number | undefined {
   return undefined;
 }
 
-function mapCatalogPrice(value: string | number | null | undefined): number | null {
-  if (value == null || value === "") return null;
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n)) return null;
-  return n;
-}
-
 export function mapPlantVariantRow(row: PlantVariantRow): PlantVariant {
   const sizeLabel =
     typeof row.size_label === "string" && row.size_label.trim()
       ? row.size_label.trim()
       : undefined;
   const diameter = mapDiameter(row.nursery_pot_diameter_cm);
-  const catalogPrice = mapCatalogPrice(row.catalog_price);
   return {
     id: row.id,
     plantId: row.plant_id,
     ...(sizeLabel ? { sizeLabel } : {}),
     ...(diameter != null ? { nurseryPotDiameterCm: diameter } : {}),
-    catalogPrice,
   };
 }
 
@@ -97,7 +86,7 @@ export async function getPlantVariantById(id: string): Promise<PlantVariant | un
   const trimmed = id.trim();
   if (!trimmed) return undefined;
   const rows = await sql`
-    SELECT id, plant_id, size_label, nursery_pot_diameter_cm, catalog_price
+    SELECT id, plant_id, size_label, nursery_pot_diameter_cm
     FROM plant_variants
     WHERE id = ${trimmed}::uuid
     LIMIT 1
@@ -108,7 +97,7 @@ export async function getPlantVariantById(id: string): Promise<PlantVariant | un
 
 export async function readPlantVariants(): Promise<PlantVariant[]> {
   const rows = await sql`
-    SELECT id, plant_id, size_label, nursery_pot_diameter_cm, catalog_price
+    SELECT id, plant_id, size_label, nursery_pot_diameter_cm
     FROM plant_variants
     ORDER BY plant_id ASC, size_label ASC NULLS LAST, id ASC
   `;
@@ -119,7 +108,7 @@ export async function readPlantVariantsByPlantId(plantId: string): Promise<Plant
   const trimmed = plantId.trim();
   if (!trimmed) return [];
   const rows = await sql`
-    SELECT id, plant_id, size_label, nursery_pot_diameter_cm, catalog_price
+    SELECT id, plant_id, size_label, nursery_pot_diameter_cm
     FROM plant_variants
     WHERE plant_id = ${trimmed}
     ORDER BY size_label ASC NULLS LAST, id ASC
@@ -157,26 +146,6 @@ function parseDiameter(value: unknown): number | null {
     );
   }
   return n;
-}
-
-export function parseCatalogPriceInput(value: unknown): number | null {
-  if (value === undefined || value === null || value === "") return null;
-  if (typeof value === "string" && !value.trim()) return null;
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new PlantVariantWriteError(
-      "invalid_catalog_price",
-      "catalogPrice must be greater than 0, or empty",
-    );
-  }
-  const cents = Math.round(n * 100);
-  if (Math.abs(n * 100 - cents) > 1e-6) {
-    throw new PlantVariantWriteError(
-      "invalid_catalog_price",
-      "catalogPrice must have at most 2 decimal places",
-    );
-  }
-  return cents / 100;
 }
 
 function assertVariantIdentity(sizeLabel: string | null, diameter: number | null): void {
@@ -259,7 +228,6 @@ export async function createPlantVariant(input: {
   plantId: string;
   sizeLabel?: unknown;
   nurseryPotDiameterCm?: unknown;
-  catalogPrice?: unknown;
 }): Promise<PlantVariant> {
   const plantId = input.plantId.trim();
   if (!plantId) {
@@ -271,17 +239,15 @@ export async function createPlantVariant(input: {
   assertVariantIdentity(sizeLabel, diameter);
   assertCanonicalPlantSize(sizeLabel, undefined);
   await assertUniqueSizeLabel({ plantId, sizeLabel });
-  const catalogPrice = parseCatalogPriceInput(input.catalogPrice);
 
   const rows = await sql`
-    INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm, catalog_price)
+    INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm)
     VALUES (
       ${plantId},
       ${sizeLabel},
-      ${diameter},
-      ${catalogPrice}
+      ${diameter}
     )
-    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm, catalog_price
+    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm
   `;
   const row = (rows as PlantVariantRow[])[0];
   if (!row) throw new Error("Could not create variant");
@@ -293,7 +259,6 @@ export async function updatePlantVariant(input: {
   variantId: string;
   sizeLabel?: unknown;
   nurseryPotDiameterCm?: unknown;
-  catalogPrice?: unknown;
   plantIdFromBody?: unknown;
 }): Promise<PlantVariant> {
   const plantId = input.plantId.trim();
@@ -324,19 +289,14 @@ export async function updatePlantVariant(input: {
   assertVariantIdentity(sizeLabel, diameter);
   assertCanonicalPlantSize(sizeLabel, previousSize);
   await assertUniqueSizeLabel({ plantId, sizeLabel, excludeId: variantId });
-  const catalogPrice =
-    input.catalogPrice === undefined
-      ? existing.catalogPrice ?? null
-      : parseCatalogPriceInput(input.catalogPrice);
 
   const rows = await sql`
     UPDATE plant_variants
     SET
       size_label = ${sizeLabel},
-      nursery_pot_diameter_cm = ${diameter},
-      catalog_price = ${catalogPrice}
+      nursery_pot_diameter_cm = ${diameter}
     WHERE id = ${variantId}::uuid AND plant_id = ${plantId}
-    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm, catalog_price
+    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm
   `;
   const row = (rows as PlantVariantRow[])[0];
   if (!row) throw new PlantVariantWriteError("not_found", "Variant not found");

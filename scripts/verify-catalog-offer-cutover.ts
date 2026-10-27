@@ -37,9 +37,10 @@ function assertSources(): void {
   assert.doesNotMatch(prep, /parent_pot\.image/);
   assert.match(prep, /NULLIF\(btrim\(parent_pot\.name\), ''\) IS NOT NULL/);
 
-  const legacy = read("lib/catalogLegacyCart.ts");
-  assert.match(legacy, /FROM pot_variants/);
-  assert.match(legacy, /Does not treat potVariantId as potColorId/);
+  const cartSource = read("lib/catalogCart.ts");
+  assert.doesNotMatch(cartSource, /potVariantId/);
+  assert.doesNotMatch(read("app/api/shop/cart/resolve/route.ts"), /catalogLegacyCart/);
+  assert.throws(() => read("lib/catalogLegacyCart.ts"));
 
   const events = read("lib/analyticsEvents.ts");
   assert.match(events, /sellable_variant_id\?: string/);
@@ -310,7 +311,6 @@ async function main(): Promise<void> {
     SELECT s.id FROM pot_sizes s JOIN pots pot ON pot.id = s.pot_id WHERE pot.name LIKE 'catalog-cutover-%'
   )`;
   await sql`DELETE FROM pot_sizes WHERE pot_id IN (SELECT id FROM pots WHERE name LIKE 'catalog-cutover-%')`;
-  await sql`DELETE FROM pot_variants WHERE pot_id IN (SELECT id FROM pots WHERE name LIKE 'catalog-cutover-%')`;
   await sql`DELETE FROM pots WHERE name LIKE 'catalog-cutover-%'`;
   await sql`DELETE FROM plants WHERE name LIKE 'catalog-cutover-%'`;
   const columns = await sql`
@@ -397,7 +397,6 @@ async function main(): Promise<void> {
   );
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
-  const { migrateLegacyCatalogCartLines } = await import("../lib/catalogLegacyCart");
   const { acquireCatalogStockHolds, releaseCatalogStockHolds, CatalogStockHoldError } =
     await import("../lib/catalogStockHolds");
   const { finalizeCatalogVerifiedPayment } = await import("../lib/finalizeCatalogPayment");
@@ -462,7 +461,6 @@ async function main(): Promise<void> {
         SELECT id FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])
       )`;
       await sql`DELETE FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])`;
-      await sql`DELETE FROM pot_variants WHERE pot_id = ANY(${potIds}::uuid[])`;
       await sql`DELETE FROM pots WHERE id = ANY(${potIds}::uuid[])`;
     }
   }
@@ -481,7 +479,6 @@ async function main(): Promise<void> {
       plantId: testPlantId,
       sizeLabel: "M",
       nurseryPotDiameterCm: 17,
-      catalogPrice: 40,
     });
     variantIds.push(size.id);
     await applyInventoryDelta({ variantId: size.id, delta: 4, note: `${tag} receive` });
@@ -510,19 +507,6 @@ async function main(): Promise<void> {
       delta: 3,
       note: `${tag} color`,
     });
-    const legacyPotId = randomUUID();
-    assert.notEqual(legacyPotId, color.id);
-    await sql`
-      INSERT INTO pot_variants (id, pot_id, size_label, color, color_he, catalog_price)
-      VALUES (
-        ${legacyPotId}::uuid,
-        ${pot.id}::uuid,
-        'M',
-        'Clay',
-        'חרס',
-        15
-      )
-    `;
     const noPotVariant = await createSellableVariant({
       plantId: testPlantId,
       plantSizeId: size.id,
@@ -545,32 +529,29 @@ async function main(): Promise<void> {
       availabilities: [{ scope: "catalog" }],
     });
 
-    const migrated = await migrateLegacyCatalogCartLines([
+    const resolved = await resolveCatalogCartLines([
       {
         plantId: testPlantId,
-        plantVariantId: size.id,
-        potVariantId: legacyPotId,
+        plantSizeId: size.id,
+        sellableVariantId: potVariant.sellableVariantId,
+        offerId: potOffer.offer.id,
+        potColorId: color.id,
         quantity: 1,
       },
       {
         plantId: testPlantId,
-        plantVariantId: size.id,
-        potVariantId: null,
-        quantity: 1,
-      },
-      {
-        plantId: testPlantId,
-        plantVariantId: size.id,
-        potVariantId: randomUUID(),
+        plantSizeId: size.id,
+        sellableVariantId: noPotVariant.sellableVariantId,
+        offerId: noPotOffer.offer.id,
+        potColorId: null,
         quantity: 1,
       },
     ]);
-    assert.equal(migrated.length, 2);
-    const potLine = migrated.find((line) => line.potColorId != null);
-    const bareLine = migrated.find((line) => line.potColorId == null);
+    assert.equal(resolved.length, 2);
+    const potLine = resolved.find((line) => line.potColorId != null);
+    const bareLine = resolved.find((line) => line.potColorId == null);
     assert.ok(potLine && bareLine);
     assert.equal(potLine.potColorId, color.id);
-    assert.notEqual(potLine.potColorId, legacyPotId);
     assert.equal(potLine.offerId, potOffer.offer.id);
     assert.equal(potLine.unitPrice, 55);
     assert.equal(bareLine.offerId, noPotOffer.offer.id);

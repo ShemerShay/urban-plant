@@ -113,7 +113,7 @@ async function main(): Promise<void> {
   const names = new Set((cols as { column_name: string }[]).map((row) => row.column_name));
   assert.equal(names.has("pot_color_id"), true);
   assert.equal(names.has("sellable_variant_id"), true);
-  assert.equal(names.has("variant_id"), true);
+  assert.equal(names.has("variant_id"), false);
 
   const cycleCols = await sql`
     SELECT column_name FROM information_schema.columns

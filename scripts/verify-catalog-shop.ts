@@ -321,29 +321,6 @@ async function main(): Promise<void> {
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
 
-  async function seedLegacyPotVariant(input: {
-    potId: string;
-    sizeLabel: string;
-    color: string;
-    colorHe?: string | null;
-    catalogPrice: number;
-  }): Promise<{ id: string }> {
-    const rows = await sql`
-      INSERT INTO pot_variants (pot_id, size_label, color, color_he, catalog_price)
-      VALUES (
-        ${input.potId}::uuid,
-        ${input.sizeLabel},
-        ${input.color},
-        ${input.colorHe ?? null},
-        ${input.catalogPrice}
-      )
-      RETURNING id
-    `;
-    const row = (rows as { id: string }[])[0];
-    assert.ok(row);
-    return row;
-  }
-
   const plantRows = await sql`SELECT id, inventory_type FROM plants`;
   const plantRow = (plantRows as { id: string; inventory_type: string | null }[]).find(
     (row) => (row.inventory_type ?? "plants") === "plants",
@@ -405,7 +382,6 @@ async function main(): Promise<void> {
         SELECT id FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])
       )`;
       await sql`DELETE FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])`;
-      await sql`DELETE FROM pot_variants WHERE pot_id = ANY(${potIds}::uuid[])`;
       await sql`DELETE FROM pots WHERE id = ANY(${potIds}::uuid[])`;
     }
   }
@@ -419,7 +395,6 @@ async function main(): Promise<void> {
       catalogPublished: false,
       createdAt: new Date().toISOString(),
     });
-    await sql`UPDATE plants SET average_size = 'x-large' WHERE id = ${testPlantId}`;
     const nextPetFriendly = createdPlant.petFriendly !== true;
     const petSaved = await updatePlant(testPlantId, {
       ...createdPlant,
@@ -451,7 +426,6 @@ async function main(): Promise<void> {
       plantId: testPlantId,
       sizeLabel: "S",
       nurseryPotDiameterCm: 12,
-      catalogPrice: 40,
     });
     variantIds.push(small.id);
     const pricedWithoutOffer = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
@@ -494,12 +468,11 @@ async function main(): Promise<void> {
     const legacyBare = await sql`
       INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm)
       VALUES (${testPlantId}, 'bare', 8)
-      RETURNING id, catalog_price
+      RETURNING id
     `;
-    const bare = (legacyBare as { id: string; catalog_price: string | null }[])[0];
+    const bare = (legacyBare as { id: string }[])[0];
     assert.ok(bare);
     variantIds.push(bare.id);
-    assert.equal(bare.catalog_price ?? null, null);
     const stillOne = await readCatalogShopDetail(testPlantId);
     assert.ok(stillOne);
     assert.equal(stillOne.sizes.length, 1);
@@ -510,7 +483,6 @@ async function main(): Promise<void> {
       plantId: testPlantId,
       sizeLabel: "M",
       nurseryPotDiameterCm: 17,
-      catalogPrice: 90,
     });
     await seedNoPotOffer(medium.id, 90);
     const withSmallAndMedium = (await readCatalogShopCards()).find(
@@ -526,7 +498,6 @@ async function main(): Promise<void> {
       plantId: testPlantId,
       sizeLabel: "L",
       nurseryPotDiameterCm: 21,
-      catalogPrice: 70,
     });
     let xlRejected = false;
     try {
@@ -534,7 +505,6 @@ async function main(): Promise<void> {
         plantId: testPlantId,
         sizeLabel: "XL",
         nurseryPotDiameterCm: 30,
-        catalogPrice: 15,
       });
     } catch (error) {
       xlRejected = true;
@@ -543,8 +513,8 @@ async function main(): Promise<void> {
     }
     assert.equal(xlRejected, true);
     const legacyXl = await sql`
-      INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm, catalog_price)
-      VALUES (${testPlantId}, 'XL', 30, 15)
+      INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm)
+      VALUES (${testPlantId}, 'XL', 30)
       RETURNING id
     `;
     const extra = (legacyXl as { id: string }[])[0];
@@ -561,25 +531,6 @@ async function main(): Promise<void> {
     const clay = await createPot({ name: `${tag} clay`, nameHe: "חימר", image: sourcePlant.images[0] });
     const stone = await createPot({ name: `${tag} stone` });
     potIds.push(clay.id, stone.id);
-    await seedLegacyPotVariant({
-      potId: clay.id,
-      sizeLabel: "S",
-      color: "White",
-      colorHe: "לבן",
-      catalogPrice: 25,
-    });
-    await seedLegacyPotVariant({
-      potId: clay.id,
-      sizeLabel: "M",
-      color: "Black",
-      catalogPrice: 35,
-    });
-    await seedLegacyPotVariant({
-      potId: stone.id,
-      sizeLabel: "L",
-      color: "Terracotta",
-      catalogPrice: 40,
-    });
 
     const cardWithPots = (await readCatalogShopCards()).find((card) => card.id === testPlantId);
     assert.ok(cardWithPots);
@@ -723,10 +674,12 @@ async function main(): Promise<void> {
     assert.ok(current);
     assert.equal("averageSize" in current, false);
     await updatePlant(testPlantId, { ...current, catalogPublished: false });
-    const storedAverage = await sql`
-      SELECT average_size FROM plants WHERE id = ${testPlantId}
+    const averageColumn = await sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'plants' AND column_name = 'average_size'
     `;
-    assert.equal((storedAverage as { average_size: string }[])[0]?.average_size, "x-large");
+    assert.equal((averageColumn as unknown[]).length, 0);
     assert.equal(
       (await readCatalogShopCards()).some((card) => card.id === testPlantId),
       false,

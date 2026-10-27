@@ -28,7 +28,8 @@ function assertWiring(): void {
   const shop = read("lib/catalogShop.ts");
   const cart = read("lib/catalogCart.ts");
   const pos = read("lib/posSpotStorage.ts");
-  for (const source of [shop, cart, pos]) {
+  assert.match(shop, /FROM sellable_variants/);
+  for (const source of [cart, pos]) {
     assert.doesNotMatch(source, /sellable_variants/);
   }
 
@@ -61,7 +62,7 @@ function assertWiring(): void {
   const snapshot = read("lib/catalogCheckoutSnapshot.ts");
   assert.doesNotMatch(snapshot, /const price = parseNumeric\(supplierPrice\)/);
 
-  console.log("verify-sellable-variants: wiring leaves Catalog, cart, and POS off sellable variants");
+  console.log("verify-sellable-variants: Catalog reads sellable variants; cart and POS storage do not name that table");
 }
 
 async function main(): Promise<void> {
@@ -168,12 +169,11 @@ async function main(): Promise<void> {
     const otherSize = await createPlantVariant({
       plantId: otherPlantId,
       sizeLabel: "M",
-      catalogPrice: 70,
     });
     const flower = await createPlant(flowerParsed.plant);
     flowerId = flower.id;
-    const medium = await createPlantVariant({ plantId, sizeLabel: "M", catalogPrice: 55 });
-    const small = await createPlantVariant({ plantId, sizeLabel: "S", catalogPrice: 30 });
+    const medium = await createPlantVariant({ plantId, sizeLabel: "M" });
+    const small = await createPlantVariant({ plantId, sizeLabel: "S" });
     const pot = await createPot({ name: `${tag} terracotta` });
     potId = pot.id;
     const potM = await createPotSize({ potId, sizeLabel: "M", supplierPrice: 12.5 });
@@ -348,10 +348,8 @@ async function main(): Promise<void> {
     const listed = await readSellableVariantsForPlant(plantId);
     assert.equal(listed.length, 3);
 
-    const variantRows = await sql`
-      SELECT count(*)::int AS count FROM pot_variants WHERE pot_id = ${potId}::uuid
-    `;
-    assert.equal((variantRows as { count: number }[])[0]?.count, 0);
+    const variantTable = await sql`SELECT to_regclass('public.pot_variants') AS name`;
+    assert.equal((variantTable as { name: string | null }[])[0]?.name, null);
 
     const smallOnly = await createSellableVariant({
       plantId,

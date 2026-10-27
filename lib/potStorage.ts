@@ -1,7 +1,6 @@
 /**
  * Pot records for admin.
- * Customer Catalog selling does not read pot_variants or catalog_price.
- * Pot sizes, colors, and central pot inventory are separate tables.
+ * Selling price lives on the Offer. Pot sizes, colors, and central pot inventory are separate tables.
  */
 
 import { sql } from "@/lib/db";

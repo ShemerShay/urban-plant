@@ -13,6 +13,7 @@ import {
   catalogCartItemsEqual,
   catalogCartLineAmount,
   storedCatalogCartItems,
+  type CatalogCart,
   type CatalogCartResolvedLine,
 } from "@/lib/catalogCart";
 import {
@@ -58,10 +59,7 @@ const EMPTY_FIELDS: CheckoutFormValues = {
   apartmentOrNotes: "",
 };
 
-async function fetchResolvedCart(cart: {
-  v: 1 | 2;
-  items: unknown[];
-}): Promise<CatalogCartResolvedLine[] | null> {
+async function fetchResolvedCart(cart: CatalogCart): Promise<CatalogCartResolvedLine[] | null> {
   try {
     const response = await fetch(routes.api.shopCartResolve(), {
       method: "POST",
@@ -239,7 +237,7 @@ export function ShopCheckout({
       resolvedKeyRef.current = JSON.stringify(stored);
       setLines(next);
       setLoading(false);
-      if (cart.v !== 2 || !catalogCartItemsEqual(cart.items, stored)) {
+      if (!catalogCartItemsEqual(cart.items, stored)) {
         writeCatalogCart({ v: 2, items: stored });
       }
     })();
@@ -255,7 +253,7 @@ export function ShopCheckout({
     const stored = storedCatalogCartItems(next);
     resolvedKeyRef.current = JSON.stringify(stored);
     setLines(next);
-    if (cart.v !== 2 || !catalogCartItemsEqual(cart.items, stored)) {
+    if (!catalogCartItemsEqual(cart.items, stored)) {
       writeCatalogCart({ v: 2, items: stored });
     }
     return next;
@@ -323,7 +321,7 @@ export function ShopCheckout({
         const stored = storedCatalogCartItems(fresh);
         resolvedKeyRef.current = JSON.stringify(stored);
         setLines(fresh);
-        if (cart.v !== 2 || !catalogCartItemsEqual(cart.items, stored)) {
+        if (!catalogCartItemsEqual(cart.items, stored)) {
           writeCatalogCart({ v: 2, items: stored });
         }
         setNotice("cart_changed");

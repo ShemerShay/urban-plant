@@ -1,6 +1,6 @@
 /**
- * Phase 1.3: plant_variants schema + nullable offers.variant_id.
- * Does not change checkout, payment, orders, or catalog UI.
+ * Plant sizes, and the Slice 7 removal of offers.variant_id,
+ * plant_variants.catalog_price, and plants.average_size.
  *
  * Run: npx tsx scripts/verify-plant-variants-schema.ts
  */
@@ -69,7 +69,6 @@ async function main(): Promise<void> {
     "plant_id",
     "size_label",
     "nursery_pot_diameter_cm",
-    "catalog_price",
   ]);
   const variantByName = Object.fromEntries(
     (
@@ -83,17 +82,27 @@ async function main(): Promise<void> {
   assert.equal(variantByName.plant_id.is_nullable, "NO");
   assert.equal(variantByName.size_label.is_nullable, "YES");
   assert.equal(variantByName.nursery_pot_diameter_cm.is_nullable, "YES");
-  assert.equal(variantByName.catalog_price.is_nullable, "YES");
+  assert.equal(variantByName.catalog_price, undefined);
 
   const offerVariantCol = await sql`
-    SELECT is_nullable, data_type
+    SELECT column_name
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND table_name = 'offers'
       AND column_name = 'variant_id'
   `;
-  assert.equal((offerVariantCol as unknown[]).length, 1);
-  assert.equal((offerVariantCol as { is_nullable: string }[])[0].is_nullable, "YES");
+  assert.equal((offerVariantCol as unknown[]).length, 0);
+
+  const droppedChecks = await sql`
+    SELECT conname
+    FROM pg_constraint
+    WHERE conname IN (
+      'plant_variants_catalog_price_positive',
+      'plants_average_size_check',
+      'offers_variant_product_fkey'
+    )
+  `;
+  assert.equal((droppedChecks as unknown[]).length, 0);
 
   const plantPriceCols = await sql`
     SELECT column_name
@@ -102,25 +111,39 @@ async function main(): Promise<void> {
       AND table_name = 'plants'
       AND column_name IN ('average_size', 'supplier_price')
   `;
-  assert.equal((plantPriceCols as unknown[]).length, 2);
+  assert.deepEqual(
+    (plantPriceCols as { column_name: string }[]).map((row) => row.column_name),
+    ["supplier_price"],
+  );
 
   const fks = await sql`
     SELECT conname, pg_get_constraintdef(oid) AS def
     FROM pg_constraint
     WHERE conrelid = 'plant_variants'::regclass
-       OR (conrelid = 'offers'::regclass AND conname = 'offers_variant_product_fkey')
   `;
   const fkDefs = (fks as { conname: string; def: string }[]).map((row) => row.def);
   assert.ok(
     fkDefs.some((def) => def.includes("plant_id") && def.includes("plants")),
     "plant_variants.plant_id -> plants.id",
   );
-  const composite = (fks as { conname: string; def: string }[]).find(
-    (row) => row.conname === "offers_variant_product_fkey",
-  );
-  assert.ok(composite, "offers_variant_product_fkey exists");
-  assert.match(composite.def, /FOREIGN KEY \(variant_id, product_id\)/);
-  assert.match(composite.def, /REFERENCES plant_variants\(id, plant_id\)/);
+
+  const droppedIndexes = await sql`
+    SELECT indexname
+    FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND indexname IN ('offers_variant_id_idx', 'plant_variants_id_plant_id_key')
+  `;
+  assert.equal((droppedIndexes as unknown[]).length, 0);
+
+  const applyDef = await sql`
+    SELECT pg_get_functiondef(p.oid) AS def
+    FROM pg_proc p
+    INNER JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'apply_plant_offer'
+  `;
+  const applySource = (applyDef as { def: string }[])[0]?.def ?? "";
+  assert.match(applySource, /INSERT INTO offers/);
+  assert.doesNotMatch(applySource, /\bvariant_id\b/);
 
   const uniqueIndexes = await sql`
     SELECT tablename, indexname, indexdef
@@ -134,9 +157,10 @@ async function main(): Promise<void> {
     indexname: string;
     indexdef: string;
   }[];
-  assert.ok(
+  assert.equal(
     uniqueDefs.some((row) => row.indexname === "plant_variants_id_plant_id_key"),
-    "supporting unique (id, plant_id)",
+    false,
+    "composite offer index is gone",
   );
   assert.equal(
     uniqueDefs.some(
@@ -159,21 +183,10 @@ async function main(): Promise<void> {
     "pos_spots.current_offer_id must not be unique",
   );
 
-  const existingNull = await sql`
-    SELECT COUNT(*)::int AS total,
-           COUNT(variant_id)::int AS with_variant
-    FROM offers
-  `;
-  const existing = (existingNull as { total: number; with_variant: number }[])[0];
-  assert.ok(existing.total > 0, "offers exist");
-  assert.equal(existing.with_variant, 0, "existing offers stay NULL variant_id (no backfill)");
-
-  const manual = await sql`
-    SELECT variant_id FROM offers WHERE id = ${MANUAL_OFFER_ID} LIMIT 1
-  `;
-  if ((manual as { variant_id: string | null }[]).length > 0) {
-    assert.equal((manual as { variant_id: string | null }[])[0].variant_id, null);
-  }
+  const existingOffers = await sql`SELECT COUNT(*)::int AS total FROM offers`;
+  assert.ok((existingOffers as { total: number }[])[0].total > 0, "offers exist");
+  const manual = await getOfferById(MANUAL_OFFER_ID);
+  if (manual) assert.equal("variantId" in manual, false);
 
   const orderCountBefore = await sql`SELECT COUNT(*)::int AS n FROM orders`;
   const orderNBefore = (orderCountBefore as { n: number }[])[0].n;
@@ -223,15 +236,17 @@ async function main(): Promise<void> {
     );
 
     await sql`
-      INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
+      INSERT INTO offers (id, product_id, consumer_price, status, created_at)
       VALUES
-        (${offerOne}, ${plantA.id}, ${variantSmall}::uuid, 10, 'active', now()),
-        (${offerTwo}, ${plantA.id}, ${variantSmall}::uuid, 20, 'active', now())
+        (${offerOne}, ${plantA.id}, 10, 'active', now()),
+        (${offerTwo}, ${plantA.id}, 20, 'active', now())
     `;
-    const perVariant = await sql`
-      SELECT COUNT(*)::int AS n FROM offers WHERE variant_id = ${variantSmall}::uuid
+    const perProduct = await sql`
+      SELECT COUNT(*)::int AS n
+      FROM offers
+      WHERE id IN (${offerOne}, ${offerTwo})
     `;
-    assert.equal((perVariant as { n: number }[])[0].n, 2, "one variant can have many offers");
+    assert.equal((perProduct as { n: number }[])[0].n, 2, "one plant can have many offers");
 
     const mapped = await getOfferById(offerOne);
     assert.equal(mapped?.productId, plantA.id);
@@ -246,38 +261,26 @@ async function main(): Promise<void> {
     const nullOffer = await getOfferById(offerNull);
     assert.equal("variantId" in (nullOffer ?? {}), false);
     assert.equal(nullOffer?.sellableVariantId ?? null, null);
-    assert.equal(nullOffer?.sellableVariantId ?? null, null);
 
-    let mismatchRejected = false;
+    let legacyColumnRejected = false;
     try {
       await sql`
         INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
         VALUES (${offerMismatch}, ${plantB.id}, ${variantSmall}::uuid, 99, 'active', now())
       `;
     } catch (error) {
-      mismatchRejected = true;
+      legacyColumnRejected = true;
       const message = error instanceof Error ? error.message : String(error);
-      assert.match(message, /offers_variant_product_fkey|foreign key/i);
+      assert.match(message, /variant_id/i);
     }
-    assert.equal(mismatchRejected, true, "mismatched product_id / variant plant_id is rejected");
+    assert.equal(legacyColumnRejected, true, "offers.variant_id cannot be written");
 
-    const flowerOffers = await sql`
-      SELECT o.id, o.variant_id
-      FROM offers o
-      INNER JOIN plants pl ON pl.id = o.product_id
-      WHERE pl.inventory_type = 'flowers'
-        AND o.id NOT LIKE 'variant-verify-%'
-    `;
-    for (const row of flowerOffers as { variant_id: string | null }[]) {
-      assert.equal(row.variant_id, null, "flower offers stay NULL variant_id");
-    }
-
-    const stillNullExisting = await sql`
-      SELECT COUNT(variant_id)::int AS n
-      FROM offers
-      WHERE id NOT LIKE 'variant-verify-%'
-    `;
-    assert.equal((stillNullExisting as { n: number }[])[0].n, 0);
+    const flowerOffers = await readOffers();
+    assert.ok(
+      flowerOffers
+        .filter((offer) => offer.productId === flower.id)
+        .every((offer) => !("variantId" in offer) && offer.sellableVariantId == null),
+    );
 
     console.log("verify-plant-variants-schema: cardinalities and consistency ok");
   } finally {

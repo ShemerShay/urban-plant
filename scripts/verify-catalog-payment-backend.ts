@@ -208,10 +208,10 @@ async function main(): Promise<void> {
       )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label, catalog_price)
+      INSERT INTO plant_variants (id, plant_id, size_label)
       VALUES
-        (${variantA}::uuid, ${plantId}, 'M', 40),
-        (${variantB}::uuid, ${plantId}, 'M', 55)
+        (${variantA}::uuid, ${plantId}, 'M'),
+        (${variantB}::uuid, ${plantId}, 'M')
     `;
     await sql`
       INSERT INTO pots (id, name, name_he, image)
@@ -460,9 +460,6 @@ async function main(): Promise<void> {
 
     await sql`
       UPDATE plants SET supplier_price = 99 WHERE id = ${plantId}
-    `;
-    await sql`
-      UPDATE plant_variants SET catalog_price = 70 WHERE id = ${variantA}::uuid
     `;
 
     let documentCalls = 0;

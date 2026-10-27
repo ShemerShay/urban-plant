@@ -126,7 +126,7 @@ export function ShopCart({
         resolvedKeyRef.current = JSON.stringify(stored);
         setLines(nextLines);
         setLoading(false);
-        if (!catalogCartItemsEqual(cart.v === 2 ? cart.items : [], stored) || cart.v !== 2) {
+        if (!catalogCartItemsEqual(cart.items, stored)) {
           writeCatalogCart({ v: 2, items: stored });
         }
       } catch {
