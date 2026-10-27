@@ -1,6 +1,6 @@
 /**
- * Operator intent for whether a physical plant unit leaves Back Office stock.
- * Request-only. Not stored. Ignored unless the occupancy action is Place or Replace.
+ * Operator intent for whether a physical unit leaves Back Office stock.
+ * Request-only. Not stored.
  */
 
 export const INVENTORY_SOURCES = ["central", "already_at_partner"] as const;
@@ -12,13 +12,16 @@ export function parseInventorySource(value: unknown): InventorySource | null {
   return null;
 }
 
-export function occupancyActionNeedsInventorySource(action: string): boolean {
-  return action === "place" || action === "replace";
+export function occupancyActionNeedsInventorySource(
+  action: string,
+  introducesNewPotColor = false,
+): boolean {
+  return action === "place" || action === "replace" || (action === "update" && introducesNewPotColor);
 }
 
 /**
- * Client-side: show the source choice only when this save is a plant Place or physical Replace.
- * Legacy assign-variant (plant offer, no occupancy) is not Place.
+ * Client-side: show the source choice for Place, physical Replace, or an Update
+ * that introduces a new physical Pot Color.
  */
 export function adminSaveNeedsInventorySource(input: {
   selectedIsPlant: boolean;
@@ -26,18 +29,32 @@ export function adminSaveNeedsInventorySource(input: {
   occupiedVariantId: string;
   selectedVariantId: string;
   sameVariantReplace: boolean;
-  existingOfferId: string;
   existingOfferIsFlower: boolean;
+  introducesNewPotColor: boolean;
 }): boolean {
   if (!input.selectedIsPlant) return false;
+  if (input.existingOfferIsFlower && !input.creating) return false;
   if (input.creating) return true;
   const occupied = input.occupiedVariantId.trim();
   const selected = input.selectedVariantId.trim();
-  if (occupied && selected && selected !== occupied) return true;
-  if (occupied && input.sameVariantReplace) return true;
-  if (!occupied) {
-    if (input.existingOfferId.trim() && !input.existingOfferIsFlower) return false;
-    return true;
-  }
+  if (!occupied) return true;
+  if (selected && selected !== occupied) return true;
+  if (input.sameVariantReplace) return true;
+  if (input.introducesNewPotColor) return true;
   return false;
+}
+
+/**
+ * Occupying Color stays selectable on Update even at 0 central stock.
+ * Central stock > 0 is required only for a newly introduced Color.
+ */
+export function selectablePosPotColors<T extends { id: string; quantity: number }>(
+  colors: T[],
+  input: { inventorySource: InventorySource | ""; occupiedColorId: string },
+): T[] {
+  const occupied = input.occupiedColorId.trim();
+  if (input.inventorySource === "central") {
+    return colors.filter((color) => color.quantity > 0 || color.id === occupied);
+  }
+  return colors;
 }

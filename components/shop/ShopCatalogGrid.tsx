@@ -70,8 +70,8 @@ export function ShopCatalogGrid({
       ) : (
         <ul className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3">
           {visible.map((plant) => (
-            <li key={plant.id}>
-              <ShopPlantCard plant={plant} locale={locale} />
+            <li key={`${plant.id}:${filter}`}>
+              <ShopPlantCard plant={plant} locale={locale} sizeFilter={filter} />
             </li>
           ))}
         </ul>

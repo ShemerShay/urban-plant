@@ -44,6 +44,8 @@ function assertCartWiring(): void {
   const bar = read("components/shop/ShopCatalogBar.tsx");
   assert.match(bar, /catalogCartTotalQuantity/);
   assert.match(bar, /ShopCart/);
+  assert.match(bar, /shop\.back/);
+  assert.match(bar, /rtl:rotate-180/);
   assert.match(bar, /aria-haspopup=\"dialog\"/);
   assert.doesNotMatch(bar, /href=\"\/cart\"/);
   assert.doesNotMatch(bar, /routes\.shop\.cart/);

@@ -1,14 +1,21 @@
 /**
  * Plant occupancy on a durable POS / QR slot.
- * Offer is commercial config. Variant is physical SKU identity.
+ * Offer is commercial config. Plant Size is derived from the Offer’s Sellable Variant.
  * Does not write central inventory. Does not create Placement Cycle/Segment rows.
  */
 
+import { sql } from "@/lib/db";
 import { inventoryTypeOrDefault, type InventoryType } from "@/lib/inventoryType";
 import { getOfferById } from "@/lib/offerStorage";
-import { MANUAL_OFFER_ID, MANUAL_PRODUCT_ID, isPosAssignableOffer, type Offer } from "@/lib/offerTypes";
+import {
+  MANUAL_OFFER_ID,
+  MANUAL_PRODUCT_ID,
+  isPlantPosEligibleOffer,
+  isPosAssignableOffer,
+  type Offer,
+} from "@/lib/offerTypes";
 import { getPlantById } from "@/lib/plantCatalog";
-import { getPlantVariantById, type PlantVariant } from "@/lib/plantVariantStorage";
+import { isDatabaseUuid } from "@/lib/potStorage";
 import { isPosSpotPurchasable } from "@/lib/posSpotHold";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
 
@@ -17,7 +24,6 @@ export const OCCUPANCY_INTENTS = [
   "update",
   "replace",
   "remove",
-  "assign_variant",
   "deactivate",
 ] as const;
 
@@ -34,6 +40,7 @@ export function parseOccupancyIntent(value: unknown): OccupancyIntent | null {
 export function occupancyToSpotFields(patch: OccupancyFieldPatch): {
   plantVariantId?: string | null;
   currentOfferId?: string | null;
+  potColorId?: string | null;
   updateOfferPlacedAt?: true;
   offerPlacedAt?: string | null;
   updateStatus?: true;
@@ -42,6 +49,7 @@ export function occupancyToSpotFields(patch: OccupancyFieldPatch): {
   return {
     ...(patch.updatePlantVariantId ? { plantVariantId: patch.plantVariantId } : {}),
     ...(patch.updateCurrentOfferId ? { currentOfferId: patch.currentOfferId } : {}),
+    ...(patch.updatePotColorId ? { potColorId: patch.potColorId } : {}),
     ...(patch.updateOfferPlacedAt
       ? { updateOfferPlacedAt: true as const, offerPlacedAt: patch.offerPlacedAt }
       : {}),
@@ -85,22 +93,8 @@ export function isLegacyPlantAssignment(
   return spot.status !== "sold";
 }
 
-export function canPlacePlantOnPos(
-  spot: Pick<PosSpot, "plantVariantId" | "currentOfferId" | "status">,
-  currentOfferInventoryType: InventoryType | null,
-): boolean {
-  if (hasPlantOccupancy(spot)) return false;
-  if (isLegacyPlantAssignment(spot, currentOfferInventoryType)) return false;
-  return true;
-}
-
-export function offerCompatibleWithVariant(
-  offer: Pick<Offer, "productId" | "variantId">,
-  variant: Pick<PlantVariant, "id" | "plantId">,
-): boolean {
-  if (offer.productId !== variant.plantId) return false;
-  if (offer.variantId && offer.variantId !== variant.id) return false;
-  return true;
+export function canPlacePlantOnPos(spot: Pick<PosSpot, "plantVariantId">): boolean {
+  return !hasPlantOccupancy(spot);
 }
 
 /**
@@ -121,9 +115,12 @@ export type OccupancyFieldPatch = {
   plantVariantId: string | null;
   updateCurrentOfferId: boolean;
   currentOfferId: string | null;
+  updatePotColorId: boolean;
+  potColorId: string | null;
   updateOfferPlacedAt: boolean;
   offerPlacedAt: string | null;
   forceAvailable: boolean;
+  introducesNewPotColor: boolean;
 };
 
 function occupancyTimestamp(): string {
@@ -137,22 +134,51 @@ function unchangedOccupancy(action: OccupancyIntent): OccupancyFieldPatch {
     plantVariantId: null,
     updateCurrentOfferId: false,
     currentOfferId: null,
+    updatePotColorId: false,
+    potColorId: null,
     updateOfferPlacedAt: false,
     offerPlacedAt: null,
     forceAvailable: false,
+    introducesNewPotColor: false,
   };
 }
 
-function assertOfferUsableOnPos(offer: Offer, previousOfferId: string | undefined): void {
+function flowerPatch(input: {
+  occupyingVariantId: string;
+  offerId: string;
+  offerChanged: boolean;
+}): OccupancyFieldPatch {
+  return {
+    action: "update",
+    updatePlantVariantId: Boolean(input.occupyingVariantId),
+    plantVariantId: null,
+    updateCurrentOfferId: input.offerChanged,
+    currentOfferId: input.offerId,
+    updatePotColorId: Boolean(input.occupyingVariantId),
+    potColorId: null,
+    updateOfferPlacedAt: false,
+    offerPlacedAt: null,
+    forceAvailable: false,
+    introducesNewPotColor: false,
+  };
+}
+
+function assertNotManual(offer: Offer): void {
   if (offer.id === MANUAL_OFFER_ID || offer.productId === MANUAL_PRODUCT_ID) {
     throw new PosOccupancyError("Manual offers cannot be used on POS spots");
   }
-  if (offer.status !== "active" && offer.id !== (previousOfferId ?? "")) {
-    throw new PosOccupancyError("When changing the offer, choose an active offer.");
-  }
-  if (!isPosAssignableOffer(offer) && offer.id !== (previousOfferId ?? "")) {
+}
+
+function assertPlantOfferEligibleForWrite(
+  offer: Offer,
+  partnerLocationId: string,
+  previousOfferId: string | undefined,
+): void {
+  assertNotManual(offer);
+  if (offer.id === (previousOfferId ?? "")) return;
+  if (!isPlantPosEligibleOffer(offer, partnerLocationId)) {
     throw new PosOccupancyError(
-      "Active catalog offer required (manual offers cannot be used on POS spots)",
+      "Choose an active Offer that is available at this Partner Location",
     );
   }
 }
@@ -172,127 +198,136 @@ async function loadOfferContext(offerId: string): Promise<{
   return { offer, inventoryType: inventoryTypeOrDefault(plant.inventoryType) };
 }
 
-async function loadVariantOrThrow(variantId: string): Promise<PlantVariant> {
-  const variant = await getPlantVariantById(variantId);
-  if (!variant) {
-    throw new PosOccupancyError("Variant not found");
-  }
-  return variant;
+async function colorBelongsToPotSize(colorId: string, potSizeId: string): Promise<boolean> {
+  if (!isDatabaseUuid(colorId) || !isDatabaseUuid(potSizeId)) return false;
+  const rows = await sql`
+    SELECT id
+    FROM pot_colors
+    WHERE id = ${colorId}::uuid
+      AND pot_size_id = ${potSizeId}::uuid
+    LIMIT 1
+  `;
+  return (rows as { id: string }[]).length > 0;
 }
 
-export type ResolveOccupancyInput = {
-  existing: PosSpot;
-  occupancyIntent?: OccupancyIntent | null;
-  /** Undefined = not sent. Null/empty = clear (Remove). */
-  requestedOfferId?: string | null;
-  requestedVariantId?: string | null;
-  sameVariantReplace?: boolean;
-  requestedStatus?: PosSpotStatus | null;
-};
+async function resolvePlantOccupancyIds(input: {
+  offer: Offer;
+  partnerLocationId: string;
+  previousOfferId?: string;
+  requestedPotColorId: string | null | undefined;
+  existingPotColorId: string | null;
+  requireColorIfOmitted: boolean;
+}): Promise<{ plantVariantId: string; potColorId: string | null }> {
+  assertPlantOfferEligibleForWrite(input.offer, input.partnerLocationId, input.previousOfferId);
+  const sellable = input.offer.sellableVariant;
+  if (!input.offer.sellableVariantId || !sellable?.plantSizeId) {
+    throw new PosOccupancyError("Place requires a variant-backed Offer");
+  }
+  const plantVariantId = sellable.plantSizeId;
+  const potSizeId = sellable.potSizeId?.trim() || "";
+  if (!potSizeId) {
+    return { plantVariantId, potColorId: null };
+  }
 
-async function existingOfferInventoryType(existing: PosSpot): Promise<InventoryType | null> {
-  if (!existing.currentOfferId) return null;
-  const offer = await getOfferById(existing.currentOfferId);
-  if (!offer) return null;
-  const plant = await getPlantById(offer.productId);
-  return plant ? inventoryTypeOrDefault(plant.inventoryType) : null;
+  const requested =
+    input.requestedPotColorId === undefined
+      ? undefined
+      : input.requestedPotColorId?.trim() || null;
+  let potColorId: string | null;
+  if (requested === undefined) {
+    const existing = input.existingPotColorId?.trim() || "";
+    if (existing && (await colorBelongsToPotSize(existing, potSizeId))) {
+      potColorId = existing;
+    } else if (input.requireColorIfOmitted) {
+      throw new PosOccupancyError("A pot-bearing Offer requires a Pot Color");
+    } else {
+      throw new PosOccupancyError("A pot-bearing Offer requires a Pot Color");
+    }
+  } else if (!requested) {
+    throw new PosOccupancyError("A pot-bearing Offer requires a Pot Color");
+  } else {
+    potColorId = requested;
+  }
+
+  if (!potColorId || !(await colorBelongsToPotSize(potColorId, potSizeId))) {
+    throw new PosOccupancyError("Pot Color must belong to this Offer’s Pot Size");
+  }
+  return { plantVariantId, potColorId };
 }
 
-function requirePlantVariantAndOffer(args: {
-  variantId: string | null | undefined;
-  offerId: string | null | undefined;
-  action: "Place" | "Replace";
-}): { variantId: string; offerId: string } {
-  const variantId = args.variantId?.trim() || "";
-  const offerId = args.offerId?.trim() || "";
-  if (!variantId) {
-    throw new PosOccupancyError(`${args.action} requires a known plant variant`);
-  }
-  if (!offerId) {
-    throw new PosOccupancyError(`${args.action} requires a compatible offer`);
-  }
-  return { variantId, offerId };
+function introducingNewColor(
+  existingColorId: string | null | undefined,
+  nextColorId: string | null,
+): boolean {
+  const existing = existingColorId?.trim() || "";
+  const next = nextColorId?.trim() || "";
+  return Boolean(next) && next !== existing;
 }
 
 async function placePatch(
   existing: PosSpot,
-  currentType: InventoryType | null,
-  variantId: string,
   offerId: string,
+  partnerLocationId: string,
+  requestedPotColorId: string | null | undefined,
 ): Promise<OccupancyFieldPatch> {
-  if (!canPlacePlantOnPos(existing, currentType)) {
+  if (!canPlacePlantOnPos(existing)) {
     throw new PosOccupancyError("Place is not allowed on an occupied POS");
   }
-  const variant = await loadVariantOrThrow(variantId);
   const { offer, inventoryType } = await loadOfferContext(offerId);
   if (inventoryType === "flowers") {
     throw new PosOccupancyError("Flowers are outside plant occupancy");
   }
-  assertOfferUsableOnPos(offer, undefined);
-  if (!offerCompatibleWithVariant(offer, variant)) {
-    throw new PosOccupancyError("Offer is not compatible with the selected variant");
-  }
+  const ids = await resolvePlantOccupancyIds({
+    offer,
+    partnerLocationId,
+    requestedPotColorId,
+    existingPotColorId: existing.potColorId ?? null,
+    requireColorIfOmitted: true,
+  });
   return {
     action: "place",
     updatePlantVariantId: true,
-    plantVariantId: variant.id,
+    plantVariantId: ids.plantVariantId,
     updateCurrentOfferId: true,
     currentOfferId: offer.id,
+    updatePotColorId: true,
+    potColorId: ids.potColorId,
     updateOfferPlacedAt: true,
     offerPlacedAt: occupancyTimestamp(),
     forceAvailable: true,
+    introducesNewPotColor: introducingNewColor(null, ids.potColorId),
   };
 }
 
-async function replacePatch(variantId: string, offerId: string): Promise<OccupancyFieldPatch> {
-  const variant = await loadVariantOrThrow(variantId);
+async function replacePatch(
+  offerId: string,
+  partnerLocationId: string,
+  requestedPotColorId: string | null | undefined,
+  existing: PosSpot,
+): Promise<OccupancyFieldPatch> {
   const { offer, inventoryType } = await loadOfferContext(offerId);
   if (inventoryType === "flowers") {
     throw new PosOccupancyError("Flowers are outside plant occupancy");
   }
-  assertOfferUsableOnPos(offer, undefined);
-  if (!offerCompatibleWithVariant(offer, variant)) {
-    throw new PosOccupancyError("Offer is not compatible with the selected variant");
-  }
+  const ids = await resolvePlantOccupancyIds({
+    offer,
+    partnerLocationId,
+    requestedPotColorId,
+    existingPotColorId: existing.potColorId ?? null,
+    requireColorIfOmitted: true,
+  });
   return {
     action: "replace",
     updatePlantVariantId: true,
-    plantVariantId: variant.id,
+    plantVariantId: ids.plantVariantId,
     updateCurrentOfferId: true,
     currentOfferId: offer.id,
+    updatePotColorId: true,
+    potColorId: ids.potColorId,
     updateOfferPlacedAt: true,
     offerPlacedAt: occupancyTimestamp(),
     forceAvailable: false,
-  };
-}
-
-async function assignVariantPatch(
-  existing: PosSpot,
-  variantId: string,
-  offerId: string,
-): Promise<OccupancyFieldPatch> {
-  if (hasPlantOccupancy(existing)) {
-    throw new PosOccupancyError("Variant is already assigned; use Replace to change the unit");
-  }
-  const variant = await loadVariantOrThrow(variantId);
-  const { offer, inventoryType } = await loadOfferContext(offerId);
-  if (inventoryType === "flowers") {
-    throw new PosOccupancyError("Flowers are outside plant occupancy");
-  }
-  assertOfferUsableOnPos(offer, existing.currentOfferId);
-  if (!offerCompatibleWithVariant(offer, variant)) {
-    throw new PosOccupancyError("Offer is not compatible with the selected variant");
-  }
-  const offerChanged = offer.id !== (existing.currentOfferId ?? "");
-  return {
-    action: "assign_variant",
-    updatePlantVariantId: true,
-    plantVariantId: variant.id,
-    updateCurrentOfferId: offerChanged,
-    currentOfferId: offer.id,
-    updateOfferPlacedAt: false,
-    offerPlacedAt: null,
-    forceAvailable: false,
+    introducesNewPotColor: introducingNewColor(existing.potColorId, ids.potColorId),
   };
 }
 
@@ -303,50 +338,90 @@ function removePatch(): OccupancyFieldPatch {
     plantVariantId: null,
     updateCurrentOfferId: true,
     currentOfferId: null,
+    updatePotColorId: true,
+    potColorId: null,
     updateOfferPlacedAt: true,
     offerPlacedAt: null,
     forceAvailable: false,
+    introducesNewPotColor: false,
   };
 }
 
 async function updateSameUnitPatch(
   existing: PosSpot,
   nextOfferId: string,
+  partnerLocationId: string,
+  requestedPotColorId: string | null | undefined,
 ): Promise<OccupancyFieldPatch> {
   const { offer, inventoryType } = await loadOfferContext(nextOfferId);
-  assertOfferUsableOnPos(offer, existing.currentOfferId);
   const occupyingVariantId = existing.plantVariantId?.trim() || "";
 
   if (inventoryType === "flowers") {
+    assertNotManual(offer);
+    if (offer.status !== "active" && offer.id !== (existing.currentOfferId ?? "")) {
+      throw new PosOccupancyError("When changing the offer, choose an active offer.");
+    }
+    if (!isPosAssignableOffer(offer) && offer.id !== (existing.currentOfferId ?? "")) {
+      throw new PosOccupancyError(
+        "Active catalog offer required (manual offers cannot be used on POS spots)",
+      );
+    }
+    return flowerPatch({
+      occupyingVariantId,
+      offerId: offer.id,
+      offerChanged: offer.id !== (existing.currentOfferId ?? ""),
+    });
+  }
+
+  if (!occupyingVariantId) {
+    throw new PosOccupancyError("Update requires an occupying plant");
+  }
+
+  if (!offer.sellableVariantId || !offer.sellableVariant?.plantSizeId) {
+    if (offer.id !== (existing.currentOfferId ?? "")) {
+      throw new PosOccupancyError("Place requires a variant-backed Offer");
+    }
     return {
       action: "update",
-      updatePlantVariantId: occupyingVariantId ? true : false,
-      plantVariantId: null,
-      updateCurrentOfferId: true,
+      updatePlantVariantId: false,
+      plantVariantId: occupyingVariantId,
+      updateCurrentOfferId: false,
       currentOfferId: offer.id,
+      updatePotColorId: false,
+      potColorId: existing.potColorId ?? null,
       updateOfferPlacedAt: false,
       offerPlacedAt: null,
       forceAvailable: false,
+      introducesNewPotColor: false,
     };
   }
 
-  if (occupyingVariantId) {
-    const variant = await loadVariantOrThrow(occupyingVariantId);
-    if (!offerCompatibleWithVariant(offer, variant)) {
-      throw new PosOccupancyError("Variant change uses Replace");
-    }
+  const ids = await resolvePlantOccupancyIds({
+    offer,
+    partnerLocationId,
+    previousOfferId: existing.currentOfferId,
+    requestedPotColorId,
+    existingPotColorId: existing.potColorId ?? null,
+    requireColorIfOmitted: true,
+  });
+  if (ids.plantVariantId !== occupyingVariantId) {
+    throw new PosOccupancyError("Variant change uses Replace");
   }
 
   const offerChanged = offer.id !== (existing.currentOfferId ?? "");
+  const colorChanged = (ids.potColorId ?? "") !== (existing.potColorId?.trim() ?? "");
   return {
     action: "update",
     updatePlantVariantId: false,
-    plantVariantId: occupyingVariantId || null,
+    plantVariantId: occupyingVariantId,
     updateCurrentOfferId: offerChanged,
     currentOfferId: offer.id,
+    updatePotColorId: colorChanged || offerChanged,
+    potColorId: ids.potColorId,
     updateOfferPlacedAt: false,
     offerPlacedAt: null,
     forceAvailable: false,
+    introducesNewPotColor: introducingNewColor(existing.potColorId, ids.potColorId),
   };
 }
 
@@ -359,28 +434,26 @@ function nextOfferId(
   return trimmed || null;
 }
 
-function nextVariantId(
-  existing: PosSpot,
-  requestedVariantId: string | null | undefined,
-  offer: Offer | null,
-): string | null {
-  if (requestedVariantId !== undefined) {
-    const trimmed = requestedVariantId?.trim() || "";
-    return trimmed || null;
-  }
-  if (offer?.variantId?.trim()) return offer.variantId.trim();
-  return existing.plantVariantId?.trim() || null;
-}
+export type ResolveOccupancyInput = {
+  existing: PosSpot;
+  partnerLocationId?: string;
+  occupancyIntent?: OccupancyIntent | null;
+  /** Undefined = not sent. Null/empty = clear (Remove). */
+  requestedOfferId?: string | null;
+  requestedPotColorId?: string | null;
+  sameVariantReplace?: boolean;
+  requestedStatus?: PosSpotStatus | null;
+};
 
 /**
- * Map an admin PATCH onto Place / Update / Replace / Remove / assign_variant / deactivate.
- * Ask for explicit Replace only when the same variant is a new physical unit.
+ * Map an admin PATCH onto Place / Update / Replace / Remove / deactivate.
+ * Ask for explicit Replace only when the same Plant Size is a new physical unit.
  */
 export async function resolveOccupancyForPosPatch(
   input: ResolveOccupancyInput,
 ): Promise<OccupancyFieldPatch> {
   const existing = input.existing;
-  const currentType = await existingOfferInventoryType(existing);
+  const partnerLocationId = input.partnerLocationId?.trim() || existing.partnerLocationId;
   const intent = input.occupancyIntent ?? null;
   const offerId = nextOfferId(existing, input.requestedOfferId);
 
@@ -388,51 +461,35 @@ export async function resolveOccupancyForPosPatch(
     return removePatch();
   }
 
-  if (intent === "assign_variant") {
-    const variantId = input.requestedVariantId?.trim() || "";
-    if (!variantId || !offerId) {
-      throw new PosOccupancyError("Assigning a variant requires a known variant and offer");
-    }
-    return assignVariantPatch(existing, variantId, offerId);
-  }
-
   if (intent === "place") {
-    const ids = requirePlantVariantAndOffer({
-      variantId: input.requestedVariantId ?? (await offerVariantHint(offerId)),
-      offerId,
-      action: "Place",
-    });
-    return placePatch(existing, currentType, ids.variantId, ids.offerId);
+    if (!offerId) {
+      throw new PosOccupancyError("Place requires a compatible offer");
+    }
+    return placePatch(existing, offerId, partnerLocationId, input.requestedPotColorId);
   }
 
   if (intent === "replace" || input.sameVariantReplace) {
-    const ids = requirePlantVariantAndOffer({
-      variantId:
-        input.requestedVariantId ??
-        existing.plantVariantId ??
-        (await offerVariantHint(offerId)),
-      offerId,
-      action: "Replace",
-    });
-    return replacePatch(ids.variantId, ids.offerId);
+    if (!offerId) {
+      throw new PosOccupancyError("Replace requires a compatible offer");
+    }
+    return replacePatch(offerId, partnerLocationId, input.requestedPotColorId, existing);
   }
 
   if (intent === "update") {
     if (!offerId) {
       throw new PosOccupancyError("Update requires an offer");
     }
-    return updateSameUnitPatch(existing, offerId);
+    return updateSameUnitPatch(
+      existing,
+      offerId,
+      partnerLocationId,
+      input.requestedPotColorId,
+    );
   }
 
   if (intent === "deactivate") {
     return unchangedOccupancy("deactivate");
   }
-
-  // Auto-map when the operator did not send an occupancy intent.
-  const requestedVariantExplicit = input.requestedVariantId !== undefined;
-  const loadedOffer = offerId ? await getOfferById(offerId) : undefined;
-  const inferredVariantId = nextVariantId(existing, input.requestedVariantId, loadedOffer ?? null);
-  const existingVariantId = existing.plantVariantId?.trim() || "";
 
   if (!offerId) {
     if (posHasCommerceOffer(existing) || hasPlantOccupancy(existing)) {
@@ -442,65 +499,52 @@ export async function resolveOccupancyForPosPatch(
   }
 
   const { offer, inventoryType } = await loadOfferContext(offerId);
+  const existingVariantId = existing.plantVariantId?.trim() || "";
 
   if (inventoryType === "flowers") {
     if (hasPlantOccupancy(existing) || offer.id !== (existing.currentOfferId ?? "")) {
-      return {
-        action: "update",
-        updatePlantVariantId: hasPlantOccupancy(existing),
-        plantVariantId: null,
-        updateCurrentOfferId: offer.id !== (existing.currentOfferId ?? ""),
-        currentOfferId: offer.id,
-        updateOfferPlacedAt: false,
-        offerPlacedAt: null,
-        forceAvailable: false,
-      };
+      return flowerPatch({
+        occupyingVariantId: existingVariantId,
+        offerId: offer.id,
+        offerChanged: offer.id !== (existing.currentOfferId ?? ""),
+      });
     }
     return unchangedOccupancy("update");
   }
 
-  if (!existingVariantId && inferredVariantId && isLegacyPlantAssignment(existing, currentType)) {
-    return assignVariantPatch(existing, inferredVariantId, offer.id);
+  if (canPlacePlantOnPos(existing)) {
+    return placePatch(existing, offer.id, partnerLocationId, input.requestedPotColorId);
   }
 
-  if (canPlacePlantOnPos(existing, currentType)) {
-    if (!inferredVariantId) {
-      throw new PosOccupancyError("Place requires a known plant variant");
-    }
-    return placePatch(existing, currentType, inferredVariantId, offer.id);
+  const nextPlantSizeId = offer.sellableVariant?.plantSizeId?.trim() || "";
+  if (existingVariantId && nextPlantSizeId && nextPlantSizeId !== existingVariantId) {
+    return replacePatch(offer.id, partnerLocationId, input.requestedPotColorId, existing);
   }
 
-  if (existingVariantId && inferredVariantId && inferredVariantId !== existingVariantId) {
-    return replacePatch(inferredVariantId, offer.id);
+  if (existingVariantId && nextPlantSizeId === existingVariantId && input.sameVariantReplace) {
+    return replacePatch(offer.id, partnerLocationId, input.requestedPotColorId, existing);
   }
 
-  if (
-    existingVariantId &&
-    inferredVariantId === existingVariantId &&
-    requestedVariantExplicit &&
-    input.sameVariantReplace
-  ) {
-    return replacePatch(inferredVariantId, offer.id);
-  }
-
-  return updateSameUnitPatch(existing, offer.id);
-}
-
-async function offerVariantHint(offerId: string | null): Promise<string | undefined> {
-  if (!offerId) return undefined;
-  const offer = await getOfferById(offerId);
-  return offer?.variantId?.trim() || undefined;
+  return updateSameUnitPatch(
+    existing,
+    offer.id,
+    partnerLocationId,
+    input.requestedPotColorId,
+  );
 }
 
 export async function resolveOccupancyForPosCreate(input: {
   offerId: string;
-  plantVariantId?: string | null;
+  partnerLocationId: string;
+  potColorId?: string | null;
 }): Promise<OccupancyFieldPatch> {
   const { offer, inventoryType } = await loadOfferContext(input.offerId);
-  assertOfferUsableOnPos(offer, undefined);
   if (inventoryType === "flowers") {
-    if (input.plantVariantId?.trim()) {
-      throw new PosOccupancyError("Flowers are outside plant occupancy");
+    assertNotManual(offer);
+    if (!isPosAssignableOffer(offer)) {
+      throw new PosOccupancyError(
+        "Active catalog offer required (manual offers cannot be used on POS spots)",
+      );
     }
     return {
       action: "update",
@@ -508,28 +552,25 @@ export async function resolveOccupancyForPosCreate(input: {
       plantVariantId: null,
       updateCurrentOfferId: true,
       currentOfferId: offer.id,
+      updatePotColorId: true,
+      potColorId: null,
       updateOfferPlacedAt: true,
       offerPlacedAt: occupancyTimestamp(),
       forceAvailable: false,
+      introducesNewPotColor: false,
     };
   }
 
-  const variantId = input.plantVariantId?.trim() || offer.variantId?.trim() || "";
-  if (!variantId) {
-    throw new PosOccupancyError("Place requires a known plant variant");
-  }
-  const variant = await loadVariantOrThrow(variantId);
-  if (!offerCompatibleWithVariant(offer, variant)) {
-    throw new PosOccupancyError("Offer is not compatible with the selected variant");
-  }
-  return {
-    action: "place",
-    updatePlantVariantId: true,
-    plantVariantId: variant.id,
-    updateCurrentOfferId: true,
-    currentOfferId: offer.id,
-    updateOfferPlacedAt: true,
-    offerPlacedAt: occupancyTimestamp(),
-    forceAvailable: true,
-  };
+  return placePatch(
+    {
+      plantVariantId: undefined,
+      currentOfferId: undefined,
+      potColorId: undefined,
+      partnerLocationId: input.partnerLocationId,
+      status: "available",
+    } as PosSpot,
+    input.offerId,
+    input.partnerLocationId,
+    input.potColorId,
+  );
 }

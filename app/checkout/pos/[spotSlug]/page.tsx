@@ -47,7 +47,7 @@ export default async function PosCheckoutPage({
   if (!resolved) notFound();
   const { posSpot } = resolved;
 
-  const { offer, plant, partner, pocket } = await getPosLandingDetails(posSpot);
+  const { offer, plant, partner, pocket, placement } = await getPosLandingDetails(posSpot);
   if (isEmptyPosOccupancy(posSpot)) {
     const partnerName = partner?.name?.trim() || undefined;
     return (
@@ -251,8 +251,33 @@ export default async function PosCheckoutPage({
                     id="checkout-order-heading"
                     className="text-heading-sm font-semibold text-foreground sm:text-heading"
                   >
-                    {t(locale, "checkout.plant.withPot", { name: displayName })}
+                    {placement.potColor
+                      ? t(locale, "checkout.plant.withPot", { name: displayName })
+                      : displayName}
                   </h1>
+                  {placement.plantSizeLabel ? (
+                    <p className="text-body mt-1 text-slate-600">
+                      {t(locale, "checkout.plant.size", { size: placement.plantSizeLabel })}
+                    </p>
+                  ) : null}
+                  {placement.potColor && (placement.potName || placement.potSizeLabel) ? (
+                    <p className="text-body mt-1 text-slate-600">
+                      {t(locale, "checkout.plant.pot", {
+                        pot: placement.potName ?? "",
+                        size: placement.potSizeLabel ?? "",
+                      }).trim()}
+                    </p>
+                  ) : null}
+                  {placement.potColor ? (
+                    <p className="text-body mt-1 text-slate-600">
+                      {t(locale, "checkout.plant.color", {
+                        color:
+                          locale === "he" && placement.potColorHe
+                            ? placement.potColorHe
+                            : placement.potColor,
+                      })}
+                    </p>
+                  ) : null}
                   <p className="text-heading-sm mt-1 font-semibold text-foreground">{priceDisplay}</p>
                 </div>
               </div>
