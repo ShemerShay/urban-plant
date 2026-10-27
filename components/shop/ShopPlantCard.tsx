@@ -14,9 +14,6 @@ import {
   addCatalogCartItem,
   catalogCartItemKey,
   catalogCartLineAmount,
-  storedCatalogCartItems,
-  type CatalogCart,
-  type CatalogCartResolvedLine,
 } from "@/lib/catalogCart";
 import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
 import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
@@ -81,7 +78,7 @@ export function ShopPlantCard({
       : 0;
   const price = resolved ? formatCatalogPrice(resolved.unitPrice, plant.currency, locale) : null;
   const cartQty =
-    resolved == null || cart.v !== 2
+    resolved == null
       ? 0
       : (cart.items.find(
           (item) =>
@@ -107,24 +104,10 @@ export function ShopPlantCard({
     setColorMemory(null);
   }
 
-  async function currentCart(): Promise<Extract<CatalogCart, { v: 2 }>> {
-    if (cart.v === 2) return cart;
-    const response = await fetch(routes.api.shopCartResolve(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cart),
-    });
-    if (!response.ok) return { v: 2, items: [] };
-    const payload = (await response.json()) as { items?: CatalogCartResolvedLine[] };
-    const stored = storedCatalogCartItems(Array.isArray(payload.items) ? payload.items : []);
-    return { v: 2, items: stored };
-  }
-
   async function addToCart() {
     if (!resolved || !canAdd) return;
-    const base = await currentCart();
     const result = addCatalogCartItem(
-      base,
+      cart,
       {
         plantId: plant.id,
         plantSizeId: resolved.plantSizeId,
@@ -134,7 +117,7 @@ export function ShopPlantCard({
       },
       resolved.availableQuantity,
     );
-    if (!result.added || result.cart.v !== 2) return;
+    if (!result.added) return;
     writeCatalogCart(result.cart);
     captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.addToCart, {
       plant_id: plant.id,
@@ -169,8 +152,8 @@ export function ShopPlantCard({
               />
             ) : null}
           </div>
+          <h2 className="text-caption mt-1.5 font-medium leading-snug text-foreground">{name}</h2>
         </div>
-        <h2 className="text-body mt-2 font-medium leading-snug text-foreground">{name}</h2>
       </Link>
       {sizeOptions.length > 0 ? (
         <div className="mt-2">
@@ -214,7 +197,7 @@ export function ShopPlantCard({
         onClick={() => {
           void addToCart();
         }}
-        className={`text-caption mt-2 flex min-h-8 w-full items-center justify-center rounded-full px-2 py-1.5 text-center font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
+        className={`text-caption mt-2 flex min-h-7 mx-auto w-4/5 items-center justify-center rounded-full px-2 py-1 text-center font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2 ${
           canAdd
             ? "bg-brand text-white transition hover:bg-brand-soft"
             : "cursor-not-allowed bg-neutral-200 text-neutral-500"

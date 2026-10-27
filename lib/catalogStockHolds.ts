@@ -397,26 +397,6 @@ export async function getCatalogAvailableQuantity(plantVariantId: string): Promi
   return parseNumeric((rows as { available: string | number }[])[0]?.available);
 }
 
-/** Pot color quantity minus active holds. A missing inventory row is 0. */
-export async function getCatalogPotColorAvailableQuantity(potColorId: string): Promise<number> {
-  const id = potColorId.trim();
-  if (!id) return 0;
-  const rows = await sql`
-    SELECT GREATEST(
-      COALESCE((SELECT quantity FROM pot_inventory WHERE pot_color_id = ${id}::uuid), 0)
-      - COALESCE((
-        SELECT SUM(quantity)::int
-        FROM catalog_stock_holds
-        WHERE pot_color_id = ${id}::uuid
-          AND status = 'active'
-          AND expires_at > now()
-      ), 0),
-      0
-    )::int AS available
-  `;
-  return parseNumeric((rows as { available: string | number }[])[0]?.available);
-}
-
 /** Cancel active holds for an attempt. Does not change inventory. */
 export async function releaseCatalogStockHolds(attemptId: string): Promise<number> {
   const id = attemptId.trim();

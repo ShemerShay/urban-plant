@@ -2,6 +2,10 @@
  * Placement Cycle: one physical plant unit lifetime on one POS.
  *
  * Run: npx tsx scripts/verify-placement-cycles.ts
+ *
+ * Asserts the global placement_cycles count stays unchanged across a legacy
+ * insert. Other database verification scripts insert cycles, so this script
+ * must run serially with them.
  */
 
 import assert from "node:assert/strict";

@@ -292,10 +292,10 @@ async function main(): Promise<void> {
         )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label, catalog_price)
+      INSERT INTO plant_variants (id, plant_id, size_label)
       VALUES
-        (${variantA}::uuid, ${pricedPlantId}, ${`A-${tag}`}, 40),
-        (${variantB}::uuid, ${pricedPlantId}, ${`B-${tag}`}, 55)
+        (${variantA}::uuid, ${pricedPlantId}, ${`A-${tag}`}),
+        (${variantB}::uuid, ${pricedPlantId}, ${`B-${tag}`})
     `;
     await sql`
       INSERT INTO pots (id, name, name_he)

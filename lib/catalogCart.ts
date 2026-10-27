@@ -12,17 +12,7 @@ export type CatalogCartItem = {
   quantity: number;
 };
 
-/** Browser cart before the one-time v2 translation. Not a lasting selling model. */
-export type CatalogCartLegacyItem = {
-  plantId: string;
-  plantVariantId: string;
-  potVariantId: string | null;
-  quantity: number;
-};
-
-export type CatalogCart =
-  | { v: 2; items: CatalogCartItem[] }
-  | { v: 1; items: CatalogCartLegacyItem[] };
+export type CatalogCart = { v: 2; items: CatalogCartItem[] };
 
 export type CatalogCartResolvedLine = CatalogCartItem & {
   availableQuantity: number;
@@ -88,17 +78,6 @@ export function parseCatalogCartItem(raw: unknown): CatalogCartItem | null {
   return { plantId, plantSizeId, sellableVariantId, offerId, potColorId, quantity };
 }
 
-export function parseCatalogCartLegacyItem(raw: unknown): CatalogCartLegacyItem | null {
-  if (!raw || typeof raw !== "object") return null;
-  const row = raw as Record<string, unknown>;
-  const plantId = typeof row.plantId === "string" ? row.plantId.trim() : "";
-  const plantVariantId = typeof row.plantVariantId === "string" ? row.plantVariantId.trim() : "";
-  const potVariantId = parseOptionalId(row.potVariantId);
-  const quantity = parseQuantity(row.quantity);
-  if (!plantId || !plantVariantId || potVariantId === undefined || quantity == null) return null;
-  return { plantId, plantVariantId, potVariantId, quantity };
-}
-
 function mergeCatalogCartItems(items: CatalogCartItem[]): CatalogCartItem[] {
   const merged = new Map<string, CatalogCartItem>();
   for (const item of items) {
@@ -132,40 +111,20 @@ export function parseCatalogCart(raw: string | null | undefined): CatalogCart {
       return merged.length === 0 ? EMPTY_CATALOG_CART : { v: 2, items: merged };
     }
 
-    if (record.v === 1) {
-      const items: CatalogCartLegacyItem[] = [];
-      for (const row of record.items) {
-        const item = parseCatalogCartLegacyItem(row);
-        if (!item) return EMPTY_CATALOG_CART;
-        items.push(item);
-      }
-      return items.length === 0 ? EMPTY_CATALOG_CART : { v: 1, items };
-    }
-
     return EMPTY_CATALOG_CART;
   } catch {
     return EMPTY_CATALOG_CART;
   }
 }
 
-export type CatalogCartRequest =
-  | { v: 2; items: CatalogCartItem[] }
-  | { v: 1; items: CatalogCartLegacyItem[] };
+export type CatalogCartRequest = { v: 2; items: CatalogCartItem[] };
 
 export function parseCatalogCartRequest(body: unknown): CatalogCartRequest | null {
   if (!body || typeof body !== "object") return null;
   const record = body as Record<string, unknown>;
   const items = record.items;
   if (!Array.isArray(items) || items.length > CATALOG_CART_MAX_ITEMS) return null;
-  if (record.v === 1) {
-    const parsed: CatalogCartLegacyItem[] = [];
-    for (const row of items) {
-      const item = parseCatalogCartLegacyItem(row);
-      if (!item) return null;
-      parsed.push(item);
-    }
-    return { v: 1, items: parsed };
-  }
+  if (record.v !== 2) return null;
   const parsed: CatalogCartItem[] = [];
   for (const row of items) {
     const item = parseCatalogCartItem(row);
@@ -217,7 +176,6 @@ export function addCatalogCartItem(
   >,
   stock: number,
 ): { cart: CatalogCart; added: boolean } {
-  if (cart.v !== 2) return { cart, added: false };
   if (!Number.isInteger(stock) || stock <= 0) return { cart, added: false };
   const key = catalogCartItemKey(input);
   const items = cart.items.map((item) => ({ ...item }));
@@ -241,7 +199,6 @@ export function updateCatalogCartQuantity(
   quantity: number,
   stock: number,
 ): CatalogCart {
-  if (cart.v !== 2) return cart;
   const key = catalogCartItemKey(input);
   if (!Number.isInteger(stock) || stock <= 0) return removeCatalogCartItem(cart, input);
   if (!Number.isInteger(quantity)) return cart;
@@ -259,7 +216,6 @@ export function subtractPurchasedCatalogItems(
   cart: CatalogCart,
   purchased: CatalogCartItem[],
 ): CatalogCart {
-  if (cart.v !== 2) return cart;
   const items = cart.items.map((item) => ({ ...item }));
   for (const bought of purchased) {
     if (!Number.isInteger(bought.quantity) || bought.quantity < 1) continue;
@@ -281,7 +237,6 @@ export function removeCatalogCartItem(
     "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId"
   >,
 ): CatalogCart {
-  if (cart.v !== 2) return cart;
   const key = catalogCartItemKey(input);
   const items = cart.items.filter((item) => catalogCartItemKey(item) !== key);
   return items.length === 0 ? EMPTY_CATALOG_CART : { v: 2, items };

@@ -83,16 +83,6 @@ export function isEmptyPosOccupancy(
   return !hasPlantOccupancy(spot) && !posHasCommerceOffer(spot);
 }
 
-export function isLegacyPlantAssignment(
-  spot: Pick<PosSpot, "plantVariantId" | "currentOfferId" | "status">,
-  inventoryType: InventoryType | null,
-): boolean {
-  if (hasPlantOccupancy(spot)) return false;
-  if (!posHasCommerceOffer(spot)) return false;
-  if (inventoryType !== "plants") return false;
-  return spot.status !== "sold";
-}
-
 export function canPlacePlantOnPos(spot: Pick<PosSpot, "plantVariantId">): boolean {
   return !hasPlantOccupancy(spot);
 }

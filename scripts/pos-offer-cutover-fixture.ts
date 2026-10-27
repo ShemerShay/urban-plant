@@ -67,8 +67,8 @@ export async function createPosCutoverFixture(input: {
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
 
   const plant = await createPlant(parsed.plant);
-  const sizeS = await createPlantVariant({ plantId: plant.id, sizeLabel: "S", catalogPrice: 40 });
-  const sizeL = await createPlantVariant({ plantId: plant.id, sizeLabel: "L", catalogPrice: 70 });
+  const sizeS = await createPlantVariant({ plantId: plant.id, sizeLabel: "S" });
+  const sizeL = await createPlantVariant({ plantId: plant.id, sizeLabel: "L" });
   const pot = await createPot({ name: `${tag} pot` });
   const potSize = await createPotSize({ potId: pot.id, sizeLabel: "M", supplierPrice: 12 });
   const colorA = await createPotColor({
@@ -150,10 +150,10 @@ export async function createPosCutoverFixture(input: {
   const offerLegacy = `occ-legacy-${tag}`;
   const offerFlower = `occ-flower-${tag}`;
   await sql`
-    INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
+    INSERT INTO offers (id, product_id, consumer_price, status, created_at)
     VALUES
-      (${offerLegacy}, ${plant.id}, NULL, 33, 'active', now()),
-      (${offerFlower}, ${flowerPlantId}, NULL, 25, 'active', now())
+      (${offerLegacy}, ${plant.id}, 33, 'active', now()),
+      (${offerFlower}, ${flowerPlantId}, 25, 'active', now())
   `;
 
   const fixture: PosCutoverFixture = {

@@ -74,10 +74,6 @@ function normalizePlant(raw) {
     labels,
     light,
     water: typeof raw.water === "string" ? raw.water.trim() : "",
-    averageSize:
-      typeof raw.averageSize === "string" && raw.averageSize.trim()
-        ? raw.averageSize.trim()
-        : null,
     supplierName:
       typeof raw.supplierName === "string" && raw.supplierName.trim()
         ? raw.supplierName.trim()
@@ -126,7 +122,7 @@ for (const item of parsed) {
   await sql`
     INSERT INTO plants (
       id, name, family, subtitle, description, supplier_price, currency,
-      images, labels, light, water, average_size,
+      images, labels, light, water,
       supplier_name, location, pet_friendly,
       care_instructions, created_at
     )
@@ -142,7 +138,6 @@ for (const item of parsed) {
       ${labelsJson}::jsonb,
       ${plant.light},
       ${plant.water},
-      ${plant.averageSize},
       ${plant.supplierName},
       ${plant.location},
       ${plant.petFriendly},
@@ -160,7 +155,6 @@ for (const item of parsed) {
       labels = EXCLUDED.labels,
       light = EXCLUDED.light,
       water = EXCLUDED.water,
-      average_size = EXCLUDED.average_size,
       supplier_name = EXCLUDED.supplier_name,
       location = EXCLUDED.location,
       pet_friendly = EXCLUDED.pet_friendly,

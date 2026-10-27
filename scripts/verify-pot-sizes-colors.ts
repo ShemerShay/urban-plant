@@ -1,12 +1,11 @@
 /**
  * Pot Size, Pot Color, and central pot inventory.
- * Pot admin and inventory. Customer Catalog reads Pot Colors, not pot_variants.
+ * Pot admin and inventory. Customer Catalog reads Pot Colors.
  *
  * Run: npx tsx scripts/verify-pot-sizes-colors.ts
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -14,14 +13,6 @@ const root = process.cwd();
 
 function read(rel: string): string {
   return readFileSync(join(root, rel), "utf8");
-}
-
-function splitSql(sql: string): string[] {
-  return sql
-    .replace(/--[^\n]*/g, "")
-    .split(";")
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0 && !/^(BEGIN|COMMIT)$/i.test(statement));
 }
 
 function assertWiring(): void {
@@ -47,8 +38,8 @@ function assertWiring(): void {
   assert.doesNotMatch(shop, /pot_variants/);
   assert.match(shop, /FROM pot_colors/);
   assert.match(shop, /pot_inventory/);
-  const legacyCart = read("lib/catalogLegacyCart.ts");
-  assert.match(legacyCart, /FROM pot_variants/);
+  assert.throws(() => read("lib/catalogLegacyCart.ts"));
+  assert.doesNotMatch(read("lib/catalogCart.ts"), /potVariantId/);
   const holds = read("lib/catalogStockHolds.ts");
   assert.match(holds, /pot_colors/);
   assert.match(holds, /pot_inventory/);
@@ -101,7 +92,7 @@ function assertWiring(): void {
     assert.match(read(rel), /isAdminRequest/, rel);
   }
 
-  console.log("verify-pot-sizes-colors: wiring keeps pot_variants off the selling path");
+  console.log("verify-pot-sizes-colors: wiring keeps selling on pot sizes and colors");
 }
 
 async function main(): Promise<void> {
@@ -137,7 +128,7 @@ async function main(): Promise<void> {
     SELECT table_name, column_name, is_nullable
     FROM information_schema.columns
     WHERE table_schema = 'public'
-      AND table_name IN ('pot_sizes', 'pot_colors', 'pot_inventory', 'pot_inventory_history', 'pot_variants')
+      AND table_name IN ('pot_sizes', 'pot_colors', 'pot_inventory', 'pot_inventory_history')
     ORDER BY table_name, column_name
   `;
   const present = new Set(
@@ -161,8 +152,6 @@ async function main(): Promise<void> {
     "pot_inventory.quantity",
     "pot_inventory_history.delta",
     "pot_inventory_history.note",
-    "pot_variants.catalog_price",
-    "pot_variants.id",
   ]) {
     assert.equal(present.has(column), true, column);
   }
@@ -173,16 +162,15 @@ async function main(): Promise<void> {
     (row) => row.table_name === "pot_sizes" && row.column_name === "supplier_price",
   );
   assert.equal(supplierNullable?.is_nullable, "YES");
+  const legacyTable = await sql`SELECT to_regclass('public.pot_variants') AS name`;
+  assert.equal((legacyTable as { name: string | null }[])[0]?.name, null);
 
   const tag = `pot-size-${Date.now()}`;
-  const legacyPotId = randomUUID();
-  const brownM = randomUUID();
-  const blackM = randomUUID();
-  const brownL = randomUUID();
   let behaviorPotId = "";
 
   async function cleanup(): Promise<void> {
-    const ids = [legacyPotId, behaviorPotId].filter(Boolean);
+    if (!behaviorPotId) return;
+    const ids = [behaviorPotId];
     if (ids.length === 0) return;
     await sql`
       DELETE FROM pot_inventory_history
@@ -206,84 +194,6 @@ async function main(): Promise<void> {
   }
 
   try {
-    await sql`
-      INSERT INTO pots (id, name, name_he)
-      VALUES (${legacyPotId}::uuid, ${`${tag} legacy`}, 'מורשת')
-    `;
-    await sql`
-      INSERT INTO pot_variants (id, pot_id, size_label, color, color_he, catalog_price)
-      VALUES
-        (${brownM}::uuid, ${legacyPotId}::uuid, 'M', 'Brown', 'חום', 55),
-        (${blackM}::uuid, ${legacyPotId}::uuid, 'M', 'Black', NULL, 60),
-        (${brownL}::uuid, ${legacyPotId}::uuid, 'L', 'Brown', 'חום', 70)
-    `;
-    const inserts = splitSql(read("db/migrations/046_pot_sizes_colors.sql")).filter((statement) =>
-      /^INSERT INTO pot_(sizes|colors)/i.test(statement),
-    );
-    assert.equal(inserts.length, 2);
-    for (const statement of inserts) {
-      await sql.query(statement, []);
-    }
-
-    const sizes = await sql`
-      SELECT id, size_label, supplier_price
-      FROM pot_sizes
-      WHERE pot_id = ${legacyPotId}::uuid
-      ORDER BY size_label
-    `;
-    assert.deepEqual(
-      (sizes as { size_label: string; supplier_price: string | null }[]).map((row) => ({
-        size: row.size_label,
-        cost: row.supplier_price,
-      })),
-      [
-        { size: "L", cost: null },
-        { size: "M", cost: null },
-      ],
-    );
-    const colors = await sql`
-      SELECT c.id, s.size_label, c.color
-      FROM pot_colors c
-      INNER JOIN pot_sizes s ON s.id = c.pot_size_id
-      WHERE s.pot_id = ${legacyPotId}::uuid
-      ORDER BY s.size_label, c.color
-    `;
-    assert.deepEqual(colors, [
-      { id: brownL, size_label: "L", color: "Brown" },
-      { id: blackM, size_label: "M", color: "Black" },
-      { id: brownM, size_label: "M", color: "Brown" },
-    ]);
-    assert.notEqual(brownM, brownL);
-    const legacyPrices = await sql`
-      SELECT id, catalog_price::float AS catalog_price
-      FROM pot_variants
-      WHERE pot_id = ${legacyPotId}::uuid
-      ORDER BY catalog_price
-    `;
-    assert.deepEqual(
-      (legacyPrices as { catalog_price: number }[]).map((row) => row.catalog_price),
-      [55, 60, 70],
-    );
-    const seededInventory = await sql`
-      SELECT count(*)::int AS count
-      FROM pot_inventory i
-      INNER JOIN pot_colors c ON c.id = i.pot_color_id
-      INNER JOIN pot_sizes s ON s.id = c.pot_size_id
-      WHERE s.pot_id = ${legacyPotId}::uuid
-    `;
-    assert.equal((seededInventory as { count: number }[])[0]?.count, 0);
-    assert.equal(await getPotInventoryQuantity(brownM), 0);
-    for (const statement of inserts) {
-      await sql.query(statement, []);
-    }
-    const replayed = await sql`
-      SELECT count(*)::int AS count
-      FROM pot_colors c
-      INNER JOIN pot_sizes s ON s.id = c.pot_size_id
-      WHERE s.pot_id = ${legacyPotId}::uuid
-    `;
-    assert.equal((replayed as { count: number }[])[0]?.count, 3);
-
     const behavior = await createPot({ name: `${tag} behavior`, nameHe: "התנהגות" });
     behaviorPotId = behavior.id;
     assert.equal(behavior.image, undefined);
@@ -380,13 +290,6 @@ async function main(): Promise<void> {
       colorHe: "לבן",
     });
     assert.notEqual(white.id, mediumWhite.id);
-
-    const variantRows = await sql`
-      SELECT count(*)::int AS count
-      FROM pot_variants
-      WHERE pot_id = ${behavior.id}::uuid
-    `;
-    assert.equal((variantRows as { count: number }[])[0]?.count, 0);
 
     let foldedDuplicate = false;
     try {
@@ -596,13 +499,6 @@ async function main(): Promise<void> {
     assert.equal(blockedPot, true);
     const potRemains = await sql`SELECT id FROM pots WHERE id = ${behavior.id}::uuid`;
     assert.equal((potRemains as { id: string }[]).length, 1);
-
-    const legacyStill = await sql`
-      SELECT catalog_price::float AS catalog_price
-      FROM pot_variants
-      WHERE id = ${brownM}::uuid
-    `;
-    assert.equal((legacyStill as { catalog_price: number }[])[0]?.catalog_price, 55);
   } finally {
     await cleanup();
   }

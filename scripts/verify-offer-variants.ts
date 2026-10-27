@@ -24,20 +24,21 @@ async function assertScanner(): Promise<void> {
     .sort();
   assert.ok(files.includes("001_initial_schema.sql"));
   assert.ok(files.includes("048_offers_on_sellable_variants.sql"));
+  assert.ok(files.includes("052_legacy_catalog_cleanup.sql"));
 
-  const dollarQuoted = new Set([
-    "048_offers_on_sellable_variants.sql",
-    "049_catalog_offer_cutover.sql",
-    "050_pos_offer_cutover.sql",
-  ]);
   for (const name of files) {
-    if (dollarQuoted.has(name)) continue;
     const sql = readFileSync(join(migrationDir, name), "utf8");
-    assert.deepEqual(
-      splitSqlStatements(sql),
-      splitSqlStatementsLegacy(sql),
-      `${name} parser regression`,
-    );
+    const parsed = splitSqlStatements(sql);
+    const legacy = splitSqlStatementsLegacy(sql);
+    const keepsQuotedSemicolon = parsed.some((statement: string) => statement.includes(";"));
+    if (keepsQuotedSemicolon) {
+      assert.ok(
+        parsed.length < legacy.length,
+        `${name} must keep a semicolon inside quotes in the same statement`,
+      );
+    } else {
+      assert.deepEqual(parsed, legacy, `${name} parser regression`);
+    }
   }
 
   const initial = read("db/migrations/001_initial_schema.sql");
@@ -92,6 +93,30 @@ COMMIT;
   );
   assert.ok(occupancyFn && occupancyFn.includes("RETURNS trigger"));
   assert.ok(splitSqlStatementsLegacy(cutover).length > cutoverStatements.length);
+
+  const cleanup = read("db/migrations/052_legacy_catalog_cleanup.sql");
+  const cleanupStatements = splitSqlStatements(cleanup);
+  assert.equal(cleanupStatements.length, 11);
+  assert.ok(cleanupStatements.length < splitSqlStatementsLegacy(cleanup).length);
+  const notice = cleanupStatements.find((statement: string) => statement.includes("$notice$"));
+  assert.ok(notice && notice.includes("RAISE NOTICE") && notice.includes("EXECUTE"));
+  assert.equal(notice.match(/\$notice\$/g)?.length, 2);
+  const cleanupApply = cleanupStatements.find((statement: string) =>
+    statement.includes("FUNCTION apply_plant_offer"),
+  );
+  assert.ok(cleanupApply);
+  assert.match(cleanupApply, /INSERT INTO offers \(/);
+  assert.match(cleanupApply, /RETURN NEXT/);
+  assert.doesNotMatch(cleanupApply, /\bvariant_id\b/);
+  assert.equal(cleanupApply.match(/\$apply_plant_offer\$/g)?.length, 2);
+  assert.equal(
+    cleanupStatements.filter((statement: string) => /^(ALTER TABLE|DROP )/i.test(statement)).length,
+    9,
+  );
+  assert.equal(
+    cleanupStatements.some((statement: string) => /^\s*(END IF|EXECUTE|INSERT INTO|UPDATE)\b/i.test(statement)),
+    false,
+  );
   console.log("verify-offer-variants: migration parser matches existing files");
 }
 
@@ -122,6 +147,7 @@ function assertCustomerPathsUntouched(): void {
   assert.doesNotMatch(storage, /supplier_price/);
   assert.doesNotMatch(storage, /supplierPrice/);
   assert.doesNotMatch(storage, /appendOffer\(/);
+  assert.doesNotMatch(storage, /\bvariant_id\b/);
   console.log("verify-offer-variants: shop, cart, checkout, holds, and POS stay on the current path");
 }
 
@@ -262,7 +288,7 @@ async function main(): Promise<void> {
     otherPlantId = other.id;
     const flower = await createPlant(flowerParsed.plant);
     flowerId = flower.id;
-    const size = await createPlantVariant({ plantId, sizeLabel: "M", catalogPrice: 55 });
+    const size = await createPlantVariant({ plantId, sizeLabel: "M" });
     const pot = await createPot({ name: `${tag} pot` });
     potId = pot.id;
     const potSize = await createPotSize({ potId, sizeLabel: "M", supplierPrice: 12.5 });
@@ -422,11 +448,10 @@ async function main(): Promise<void> {
     try {
       await sql`
         INSERT INTO offers (
-          id, product_id, variant_id, sellable_variant_id, consumer_price, status, created_at
+          id, product_id, sellable_variant_id, consumer_price, status, created_at
         ) VALUES (
           ${mismatchId},
           ${otherPlantId},
-          NULL,
           ${noPot.sellableVariantId}::uuid,
           15,
           'active',
@@ -445,11 +470,10 @@ async function main(): Promise<void> {
     try {
       await sql`
         INSERT INTO offers (
-          id, product_id, variant_id, sellable_variant_id, consumer_price, status, created_at
+          id, product_id, sellable_variant_id, consumer_price, status, created_at
         ) VALUES (
           ${flowerVariantId},
           ${flowerId},
-          NULL,
           ${noPot.sellableVariantId}::uuid,
           16,
           'active',
@@ -484,8 +508,8 @@ async function main(): Promise<void> {
 
     const legacyId = `offer-sv-legacy-${randomUUID()}`;
     await sql`
-      INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
-      VALUES (${legacyId}, ${plantId}, NULL, 21, 'active', now())
+      INSERT INTO offers (id, product_id, consumer_price, status, created_at)
+      VALUES (${legacyId}, ${plantId}, 21, 'active', now())
     `;
     const legacyUpdated = await updateOffer(legacyId, { consumerPrice: 22, status: "inactive" });
     assert.equal(legacyUpdated?.consumerPrice, 22);

@@ -16,9 +16,6 @@ import {
   addCatalogCartItem,
   catalogCartItemKey,
   catalogCartLineAmount,
-  storedCatalogCartItems,
-  type CatalogCart,
-  type CatalogCartResolvedLine,
 } from "@/lib/catalogCart";
 import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
 import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
@@ -32,7 +29,6 @@ import {
 } from "@/lib/catalogShopSelection";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
-import { routes } from "@/lib/routes";
 import type { Locale } from "@/lib/locale";
 
 const ctaFocusClass =
@@ -71,7 +67,7 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
       ? resolveExplicitConfiguration(selectedSize, selectedVariant.id, selectedColorId)
       : null;
   const cartQty =
-    resolved == null || cart.v !== 2
+    resolved == null
       ? 0
       : (cart.items.find(
           (item) =>
@@ -106,26 +102,10 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
     setSelectedColorId(nextVariant ? defaultPotColorId(nextVariant) : null);
   }
 
-  async function currentCart(): Promise<Extract<CatalogCart, { v: 2 }>> {
-    if (cart.v === 2) return cart;
-    const response = await fetch(routes.api.shopCartResolve(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cart),
-    });
-    if (!response.ok) return { v: 2, items: [] };
-    const payload = (await response.json()) as { items?: CatalogCartResolvedLine[] };
-    return {
-      v: 2,
-      items: storedCatalogCartItems(Array.isArray(payload.items) ? payload.items : []),
-    };
-  }
-
   async function addToCart() {
     if (!resolved || !canAdd) return;
-    const base = await currentCart();
     const result = addCatalogCartItem(
-      base,
+      cart,
       {
         plantId: plant.id,
         plantSizeId: resolved.plantSizeId,
@@ -135,7 +115,7 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
       },
       resolved.availableQuantity,
     );
-    if (!result.added || result.cart.v !== 2) return;
+    if (!result.added) return;
     writeCatalogCart(result.cart);
     captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.addToCart, {
       plant_id: plant.id,

@@ -5,11 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { useLocale } from "@/components/locale/LocaleProvider";
 import { displayApiError } from "@/lib/displayLabels";
-import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { isPlantSizeLabel, PLANT_SIZE_LABELS } from "@/lib/plantSizes";
 import { routes } from "@/lib/routes";
-import type { Locale } from "@/lib/locale";
 import type { PlantProduct } from "@/lib/types";
 
 type VariantRow = {
@@ -17,7 +15,6 @@ type VariantRow = {
   plantId: string;
   sizeLabel?: string;
   nurseryPotDiameterCm?: number;
-  catalogPrice?: number | null;
   quantity: number;
 };
 
@@ -68,16 +65,6 @@ type VariantsApiResponse = {
   ok?: boolean;
 };
 
-function catalogPriceText(
-  variant: VariantRow,
-  plant: PlantProduct,
-  locale: Locale,
-): string {
-  return typeof variant.catalogPrice === "number"
-    ? formatPrice(variant.catalogPrice, plant.currency, locale)
-    : "—";
-}
-
 export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
   const locale = useLocale();
   const [variants, setVariants] = useState<VariantRow[]>([]);
@@ -86,14 +73,12 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
 
   const [sizeLabel, setSizeLabel] = useState("");
   const [diameter, setDiameter] = useState("");
-  const [catalogPrice, setCatalogPrice] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editSize, setEditSize] = useState("");
   const [editDiameter, setEditDiameter] = useState("");
-  const [editPrice, setEditPrice] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -147,7 +132,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
     setEditDiameter(
       variant.nurseryPotDiameterCm != null ? String(variant.nurseryPotDiameterCm) : "",
     );
-    setEditPrice(typeof variant.catalogPrice === "number" ? String(variant.catalogPrice) : "");
     setEditError(null);
     setAdjustId(null);
   }
@@ -162,7 +146,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         body: JSON.stringify({
           ...(sizeLabel.trim() ? { sizeLabel: sizeLabel.trim() } : {}),
           ...(diameter.trim() ? { nurseryPotDiameterCm: Number(diameter) } : {}),
-          ...(catalogPrice.trim() ? { catalogPrice: Number(catalogPrice) } : { catalogPrice: null }),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
@@ -172,7 +155,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
       }
       setSizeLabel("");
       setDiameter("");
-      setCatalogPrice("");
       await loadVariants();
     } catch {
       setCreateError(t(locale, "common.networkError"));
@@ -191,7 +173,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         body: JSON.stringify({
           ...(isPlantSizeLabel(editSize) ? { sizeLabel: editSize } : {}),
           nurseryPotDiameterCm: editDiameter.trim() ? Number(editDiameter) : null,
-          catalogPrice: editPrice.trim() ? Number(editPrice) : null,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
@@ -276,7 +257,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
           {variants.map((variant) => (
             <li key={variant.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
               {editingId === variant.id ? (
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-2">
                   {isPlantSizeLabel(variant.sizeLabel) ? (
                     <PlantSizeSelect
                       value={editSize}
@@ -307,17 +288,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                       onChange={(e) => setEditDiameter(e.target.value)}
                     />
                   </label>
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.plants.variants.catalogPrice")}</span>
-                    <input
-                      className={inputClassName}
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={editPrice}
-                      onChange={(e) => setEditPrice(e.target.value)}
-                    />
-                  </label>
                 </div>
               ) : (
                 <div className="text-sm text-slate-800">
@@ -325,9 +295,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                     {variantLabel(variant, t(locale, "admin.plants.variants.sizeLabel"))}
                   </p>
                   <p className="mt-1 text-xs text-slate-600">
-                    {t(locale, "admin.plants.variants.catalogPrice")}:{" "}
-                    {catalogPriceText(variant, plant, locale)}
-                    {" · "}
                     {t(locale, "admin.plants.variants.quantity")}: {variant.quantity}
                   </p>
                 </div>
@@ -449,7 +416,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         <h4 className="text-sm font-medium text-emerald-950">
           {t(locale, "admin.plants.variants.new")}
         </h4>
-        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <PlantSizeSelect
             value={sizeLabel}
             onChange={setSizeLabel}
@@ -467,17 +434,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
               step={0.1}
               value={diameter}
               onChange={(e) => setDiameter(e.target.value)}
-            />
-          </label>
-          <label>
-            <span className={labelClassName}>{t(locale, "admin.plants.variants.catalogPrice")}</span>
-            <input
-              className={inputClassName}
-              type="number"
-              min={0}
-              step={0.01}
-              value={catalogPrice}
-              onChange={(e) => setCatalogPrice(e.target.value)}
             />
           </label>
         </div>

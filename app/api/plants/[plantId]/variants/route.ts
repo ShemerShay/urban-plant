@@ -59,7 +59,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       plantId,
       sizeLabel: record.sizeLabel ?? record.size_label,
       nurseryPotDiameterCm: record.nurseryPotDiameterCm ?? record.nursery_pot_diameter_cm,
-      catalogPrice: record.catalogPrice ?? record.catalog_price,
     });
     return NextResponse.json({ variant, quantity: 0 }, { status: 201 });
   } catch (error) {

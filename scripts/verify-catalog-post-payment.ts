@@ -440,10 +440,10 @@ async function main(): Promise<void> {
       )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label, catalog_price)
+      INSERT INTO plant_variants (id, plant_id, size_label)
       VALUES
-        (${variantA}::uuid, ${plantId}, 'M', 40),
-        (${variantB}::uuid, ${plantId}, 'S', 55)
+        (${variantA}::uuid, ${plantId}, 'M'),
+        (${variantB}::uuid, ${plantId}, 'S')
     `;
     await sql`
       INSERT INTO pots (id, name, name_he, image)
@@ -464,8 +464,8 @@ async function main(): Promise<void> {
       )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label, catalog_price)
-      VALUES (${variantC}::uuid, ${plantId2}, 'S', 55)
+      INSERT INTO plant_variants (id, plant_id, size_label)
+      VALUES (${variantC}::uuid, ${plantId2}, 'S')
     `;
     await sql`
       INSERT INTO inventory (variant_id, quantity, updated_at)
@@ -552,9 +552,6 @@ async function main(): Promise<void> {
         UPDATE plants
         SET name = 'LIVE RENAME', supplier_price = 99
         WHERE id = ${plantId}
-      `;
-      await sql`
-        UPDATE plant_variants SET catalog_price = 999 WHERE id = ${variantA}::uuid
       `;
       const created: CreateCardcomDocumentInput[] = [];
       let pdfCalls = 0;
@@ -653,7 +650,6 @@ async function main(): Promise<void> {
       assert.equal(await inventoryQty(variantA), 19);
 
       await sql`UPDATE plants SET name = ${originalName}, supplier_price = 18.50 WHERE id = ${plantId}`;
-      await sql`UPDATE plant_variants SET catalog_price = 40 WHERE id = ${variantA}::uuid`;
     }
 
     // 2. Opt-in multi-line: one document, one PDF email, total equals the order.
@@ -661,7 +657,6 @@ async function main(): Promise<void> {
       const email = `buy-${tag}@example.com`;
       const started = await startLines([lineA, linePot], email, true);
       await sql`UPDATE plants SET supplier_price = 99, name = 'LIVE RENAME' WHERE id = ${plantId}`;
-      await sql`UPDATE plant_variants SET catalog_price = 999 WHERE id = ${variantA}::uuid`;
       const created: CreateCardcomDocumentInput[] = [];
       const mails: MailCapture[] = [];
       let pdfCalls = 0;
@@ -808,7 +803,6 @@ async function main(): Promise<void> {
       assert.equal(await inventoryQty(variantA), 16);
 
       await sql`UPDATE plants SET name = ${originalName}, supplier_price = 18.50 WHERE id = ${plantId}`;
-      await sql`UPDATE plant_variants SET catalog_price = 40 WHERE id = ${variantA}::uuid`;
     }
 
     // 2b. One opted-in plant: the customer email includes that plant's care text.

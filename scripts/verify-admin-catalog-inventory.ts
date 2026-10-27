@@ -1,8 +1,12 @@
 /**
- * Admin Catalog + central inventory: publish flag, catalog_price, variant CRUD, qty adjust.
+ * Admin Catalog + central inventory: publish flag, variant CRUD, qty adjust.
  * Does not change POS checkout pricing, occupancy, Cycle/Segment, or payments.
  *
  * Run: npx tsx scripts/verify-admin-catalog-inventory.ts
+ *
+ * Compares the global published-plant set and placement-cycle count before and
+ * after. Other database verification scripts mutate those same tables, so this
+ * script must run serially with them.
  */
 
 import assert from "node:assert/strict";
@@ -102,15 +106,11 @@ async function main(): Promise<void> {
   assert.equal((flowerPublished as { n: number }[])[0].n, 0);
 
   const checks = await sql`
-    SELECT pg_get_constraintdef(oid) AS def
+    SELECT conname
     FROM pg_constraint
-    WHERE conrelid = 'plant_variants'::regclass
-      AND conname = 'plant_variants_catalog_price_positive'
+    WHERE conname = 'plant_variants_catalog_price_positive'
   `;
-  assert.match(
-    (checks as { def: string }[])[0]?.def ?? "",
-    /catalog_price > \(0\)::numeric|catalog_price > 0/,
-  );
+  assert.equal((checks as unknown[]).length, 0);
 
   const noAuth = resolveCatalogPublishedInput({
     body: { catalogPublished: true },
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
   if (leftoverIds.length > 0) {
     await sql`DELETE FROM inventory_history WHERE variant_id = ANY(${leftoverIds}::uuid[])`;
     await sql`DELETE FROM inventory WHERE variant_id = ANY(${leftoverIds}::uuid[])`;
-    await sql`DELETE FROM offers WHERE variant_id = ANY(${leftoverIds}::uuid[])`;
+    await sql`DELETE FROM sellable_variants WHERE plant_variant_id = ANY(${leftoverIds}::uuid[])`;
     await sql`DELETE FROM plant_variants WHERE id = ANY(${leftoverIds}::uuid[])`;
   }
 
@@ -221,41 +221,12 @@ async function main(): Promise<void> {
     const created = await createPlantVariant({
       plantId: testPlantId,
       sizeLabel: "M",
-      catalogPrice: 120,
     });
     variantA = created.id;
-    assert.equal(created.catalogPrice, 120);
+    assert.equal("catalogPrice" in created, false);
     assert.equal(await getInventoryQuantity(variantA), 0);
     const listed = await readPlantVariantsWithQuantity(testPlantId);
     assert.equal(listed.some((row) => row.id === variantA && row.quantity === 0), true);
-
-    let badPrice = false;
-    try {
-      await updatePlantVariant({
-        plantId: testPlantId,
-        variantId: variantA,
-        catalogPrice: 0,
-      });
-    } catch (error) {
-      badPrice = true;
-      assert.ok(error instanceof PlantVariantWriteError);
-      assert.equal(error.code, "invalid_catalog_price");
-    }
-    assert.equal(badPrice, true);
-
-    const priced = await updatePlantVariant({
-      plantId: testPlantId,
-      variantId: variantA,
-      catalogPrice: 99.5,
-    });
-    assert.equal(priced.catalogPrice, 99.5);
-
-    const cleared = await updatePlantVariant({
-      plantId: testPlantId,
-      variantId: variantA,
-      catalogPrice: null,
-    });
-    assert.equal(cleared.catalogPrice ?? null, null);
 
     const second = await createPlantVariant({
       plantId: testPlantId,
@@ -291,17 +262,17 @@ async function main(): Promise<void> {
     }
     assert.equal(immutable, true);
 
-    const inventoryBeforePrice = await getInventoryQuantity(variantA);
+    const inventoryBeforeEdit = await getInventoryQuantity(variantA);
     await updatePlantVariant({
       plantId: testPlantId,
       variantId: variantA,
-      catalogPrice: 80,
+      nurseryPotDiameterCm: 16,
     });
     await updatePlant(testPlantId, {
       ...(await getPlantByIdAsync(testPlantId))!,
       catalogPublished: false,
     });
-    assert.equal(await getInventoryQuantity(variantA), inventoryBeforePrice);
+    assert.equal(await getInventoryQuantity(variantA), inventoryBeforeEdit);
     const cyclesAfterPrice = await sql`SELECT COUNT(*)::int AS n FROM placement_cycles`;
     const segmentsAfterPrice = await sql`SELECT COUNT(*)::int AS n FROM placement_segments`;
     assert.equal((cyclesAfterPrice as { n: number }[])[0].n, cycleN);
@@ -337,9 +308,10 @@ async function main(): Promise<void> {
     assert.equal(await getInventoryQuantity(variantA), 2);
     assert.equal((await readInventoryHistory(variantA)).length, 2);
 
+    const blockingSellable = randomUUID();
     await sql`
-      INSERT INTO offers (id, product_id, variant_id, consumer_price, status, created_at)
-      VALUES (${offerId}, ${testPlantId}, ${variantA}::uuid, 50, 'active', now())
+      INSERT INTO sellable_variants (id, plant_variant_id)
+      VALUES (${blockingSellable}::uuid, ${variantA}::uuid)
     `;
     let inUse = false;
     try {
@@ -363,6 +335,7 @@ async function main(): Promise<void> {
   } finally {
     await sql`DELETE FROM offers WHERE id = ${offerId}`;
     if (variantA) {
+      await sql`DELETE FROM sellable_variants WHERE plant_variant_id = ${variantA}::uuid`;
       await sql`DELETE FROM inventory_history WHERE variant_id = ${variantA}::uuid`;
       await sql`DELETE FROM inventory WHERE variant_id = ${variantA}::uuid`;
       await sql`DELETE FROM plant_variants WHERE id = ${variantA}::uuid`;

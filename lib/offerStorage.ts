@@ -499,12 +499,11 @@ export async function appendFlowerOffer(input: NewFlowerOfferInput): Promise<Off
 
   await sql`
     INSERT INTO offers (
-      id, product_id, variant_id, consumer_price, status, created_at
+      id, product_id, consumer_price, status, created_at
     )
     VALUES (
       ${id},
       ${productId},
-      NULL,
       ${input.consumerPrice},
       ${status},
       ${createdAt}::timestamptz
