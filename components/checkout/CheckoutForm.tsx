@@ -32,7 +32,7 @@ import {
 import type { InventoryType } from "@/lib/inventoryType";
 import { displayApiError, translateCheckoutFieldErrors } from "@/lib/displayLabels";
 import { t } from "@/lib/messages";
-import { isPosSpotPurchasable, shouldShowHeldForPaymentCheckoutMessage } from "@/lib/posSpotHold";
+import { isPosSpotPurchasable } from "@/lib/posSpotHold";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
 import { routes } from "@/lib/routes";
 
@@ -277,9 +277,6 @@ export function CheckoutForm({
   );
   const canSubmit = canSubmitCheckout(fields, fulfillmentMethod, validationRules);
   const purchaseAllowed = isPosSpotPurchasable(posSpotStatus, { resumeHolder });
-  const showHeldCheckoutMessage = shouldShowHeldForPaymentCheckoutMessage(posSpotStatus, {
-    resumeHolder,
-  });
   /** Resume retry uses orderId + token only — do not gate on form canSubmit. */
   const isResumeRetry = Boolean(paymentResume);
 
@@ -519,11 +516,6 @@ export function CheckoutForm({
       </div>
 
       <div>
-        {showHeldCheckoutMessage ? (
-          <p className="text-body mb-3 leading-5 text-amber-950" role="status">
-            {t(locale, "plant.held.checkout")}
-          </p>
-        ) : null}
         <button
           type="submit"
           disabled={isSubmitDisabled}

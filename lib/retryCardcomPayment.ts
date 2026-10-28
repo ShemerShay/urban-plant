@@ -119,7 +119,7 @@ async function retryAttemptPayment(
     return {
       ok: false,
       code: "conflict",
-      error: "This plant is no longer held for your payment.",
+      error: "This POS Spot is no longer available for purchase.",
       httpStatus: 409,
     };
   }
@@ -139,7 +139,7 @@ async function retryAttemptPayment(
     return {
       ok: false,
       code: "conflict",
-      error: "This plant is no longer held for your payment.",
+      error: "This POS Spot is no longer available for purchase.",
       httpStatus: 409,
     };
   }
@@ -160,7 +160,7 @@ async function retryAttemptPayment(
     return {
       ok: false,
       code: "conflict",
-      error: "This plant is no longer held for your payment.",
+      error: "This POS Spot is no longer available for purchase.",
       httpStatus: 409,
     };
   }
@@ -373,14 +373,14 @@ async function retryLegacyOrderPayment(
   const plant = await getPlantById(order.plantId);
   const inventoryType = inventoryTypeOrDefault(plant?.inventoryType);
   const posOk =
-    inventoryType === "flowers"
+    inventoryType === "flowers" || inventoryType === "plants"
       ? posSpot?.status === "available"
-      : posSpot?.status === "held_for_payment";
+      : false;
   if (!posSpot || !posOk) {
     return {
       ok: false,
       code: "conflict",
-      error: "This plant is no longer held for your payment.",
+      error: "This POS Spot is no longer available for purchase.",
       httpStatus: 409,
     };
   }

@@ -39,10 +39,8 @@ async function main(): Promise<void> {
   } = await import("../lib/paymentAttemptStorage");
   const { getOfferById } = await import("../lib/offerStorage");
   const {
-    acquirePosSpotHoldForPayment,
     getPosSpotById,
     readPosSpots,
-    releasePosSpotHoldForPayment,
     setPosSpotStatus,
   } = await import("../lib/posSpotStorage");
   const { processCardcomWebhook } = await import("../lib/processCardcomWebhook");
@@ -169,8 +167,8 @@ async function main(): Promise<void> {
 
   async function releaseOwnedHold(): Promise<void> {
     const spot = await getPosSpotById(available!.id);
-    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
-      await releasePosSpotHoldForPayment(available!.id, spot.paymentHoldAttemptId);
+    if (spot?.status === "held_for_payment") {
+      await setPosSpotStatus(available!.id, "available");
     }
   }
 
@@ -241,8 +239,6 @@ async function main(): Promise<void> {
       if (!cancel.ok) assert.equal(cancel.reason, "not_cancellable");
       assert.equal((await getOrderById(orderId))?.orderStatus, "sold");
       assert.equal((await getPosSpotById(available.id))?.status, "sold");
-      const releaseSold = await releasePosSpotHoldForPayment(available.id, attemptId);
-      assert.equal(releaseSold.ok, false, "sold POS cannot be released");
       await setPosSpotStatus(available.id, "available");
     }
 
@@ -281,7 +277,7 @@ async function main(): Promise<void> {
       assert.equal(exp.expired, false);
       assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
       assert.equal(await getOrderById(attemptId), null);
-      assert.equal((await getPosSpotById(available.id))?.status, "held_for_payment");
+      assert.equal((await getPosSpotById(available.id))?.status, "available");
       await releaseOwnedHold();
       await setPosSpotStatus(available.id, "available");
     }
@@ -293,9 +289,9 @@ async function main(): Promise<void> {
         "integrity-hold-exp@example.com",
       );
       await sql`
-        UPDATE pos_spots
-        SET payment_hold_started_at = now() - interval '18 minutes'
-        WHERE id = ${available.id}::uuid
+        UPDATE payment_attempts
+        SET expires_at = now() - interval '1 minute'
+        WHERE id = ${attemptId}::uuid
       `;
       const exp = await expireStalePaymentHold(available.id);
       assert.equal(exp.expired, true);
@@ -364,35 +360,41 @@ async function main(): Promise<void> {
     {
       const { attemptId } = await seedAttempt("integrity-hold-next@example.com");
       await sql`
-        UPDATE pos_spots
-        SET payment_hold_started_at = now() - interval '18 minutes'
-        WHERE id = ${available.id}::uuid
+        UPDATE payment_attempts
+        SET expires_at = now() - interval '1 minute'
+        WHERE id = ${attemptId}::uuid
       `;
       await expireStalePaymentHold(available.id);
       assert.equal((await getPaymentAttemptById(attemptId))?.status, "expired");
-      const nextAttemptId = randomUUID();
-      const nowIso = new Date().toISOString();
-      await insertPaymentAttempt({
-        id: nextAttemptId,
-        status: "created",
-        posSpotId: available.id,
-        productId: offer.productId,
-        productName: "Integrity Next Hold",
-        fullName: "Integrity Next",
-        customerEmail: "integrity-next@example.com",
-        phone: "0500000000",
-        address: "",
-        apartmentOrNotes: "",
-        fulfillmentMethod: "delivery",
-        amount: 1,
-        paymentResumeToken: `resume-${randomUUID()}`,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      });
-      createdAttemptIds.push(nextAttemptId);
-      const next = await acquirePosSpotHoldForPayment(available.id, nextAttemptId);
-      assert.equal(next.ok, true);
-      await releasePosSpotHoldForPayment(available.id, nextAttemptId);
+      assert.equal((await getPosSpotById(available.id))?.status, "available");
+      const repurchase = await startCardcomPaymentPrep(
+        {
+          plantId: offer.productId,
+          spotSlug: available.spotSlug,
+          fullName: "Integrity Repurchase",
+          customerEmail: "integrity-repurchase@example.com",
+          phone: "0546605603",
+          fulfillmentMethod: "delivery",
+          deliveryStreet: street,
+          deliveryHouseNumber: "1",
+          apartmentOrNotes: "",
+        },
+        {
+          publicOrigin: TEST_PUBLIC_ORIGIN,
+          createLowProfile: async () => ({
+            ResponseCode: 0,
+            Description: "OK",
+            LowProfileId: `lp-re-${randomUUID()}`,
+            Url: "https://secure.cardcom.solutions/Interface/LowProfile.aspx?LowProfileId=re",
+          }),
+        },
+      );
+      assert.equal(repurchase.ok, true, "abandoned spot stays immediately purchasable");
+      if (!repurchase.ok) return;
+      createdAttemptIds.push(repurchase.attemptId);
+      assert.equal((await getPosSpotById(available.id))?.status, "available");
+      assert.equal((await getPosSpotById(available.id))?.paymentHoldAttemptId, undefined);
+      await deletePaymentAttemptById(repurchase.attemptId);
       await setPosSpotStatus(available.id, "available");
     }
 
@@ -400,9 +402,9 @@ async function main(): Promise<void> {
     {
       const { attemptId } = await seedAttempt("integrity-bulk-stale@example.com");
       await sql`
-        UPDATE pos_spots
-        SET payment_hold_started_at = now() - interval '18 minutes'
-        WHERE id = ${available.id}::uuid
+        UPDATE payment_attempts
+        SET expires_at = now() - interval '1 minute'
+        WHERE id = ${attemptId}::uuid
       `;
       const bulk = await expireAllStalePaymentHolds();
       assert.ok(bulk.expiredPosSpotIds.includes(available.id));
@@ -418,7 +420,7 @@ async function main(): Promise<void> {
       const bulk = await expireAllStalePaymentHolds();
       assert.equal(bulk.expiredPosSpotIds.includes(available.id), false);
       assert.equal((await getPaymentAttemptById(attemptId))?.status, "awaiting_payment");
-      assert.equal((await getPosSpotById(available.id))?.status, "held_for_payment");
+      assert.equal((await getPosSpotById(available.id))?.status, "available");
       await releaseOwnedHold();
       await setPosSpotStatus(available.id, "available");
     }
@@ -445,9 +447,9 @@ async function main(): Promise<void> {
     {
       const { attemptId } = await seedAttempt("integrity-bulk-idem@example.com");
       await sql`
-        UPDATE pos_spots
-        SET payment_hold_started_at = now() - interval '18 minutes'
-        WHERE id = ${available.id}::uuid
+        UPDATE payment_attempts
+        SET expires_at = now() - interval '1 minute'
+        WHERE id = ${attemptId}::uuid
       `;
       const first = await expireAllStalePaymentHolds();
       assert.ok(first.expiredPosSpotIds.includes(available.id));
@@ -464,9 +466,9 @@ async function main(): Promise<void> {
         "integrity-bulk-late@example.com",
       );
       await sql`
-        UPDATE pos_spots
-        SET payment_hold_started_at = now() - interval '18 minutes'
-        WHERE id = ${available.id}::uuid
+        UPDATE payment_attempts
+        SET expires_at = now() - interval '1 minute'
+        WHERE id = ${attemptId}::uuid
       `;
       await expireAllStalePaymentHolds();
       assert.equal((await getPaymentAttemptById(attemptId))?.status, "expired");

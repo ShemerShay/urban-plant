@@ -26,7 +26,6 @@ async function main(): Promise<void> {
   const {
     getPosSpotById,
     readPosSpots,
-    releasePosSpotHoldForPayment,
     setPosSpotStatus,
   } = await import("../lib/posSpotStorage");
   const {
@@ -121,10 +120,17 @@ async function main(): Promise<void> {
     assert.ok(attempt!.snapshot);
     assert.equal(attempt!.snapshot!.posSpotId, available.id);
 
-    const held = await getPosSpotById(available.id);
-    assert.equal(held?.status, "held_for_payment");
-    assert.equal(held?.paymentHoldAttemptId, first.attemptId);
-    assert.ok(held?.paymentHoldStartedAt);
+    const afterFirst = await getPosSpotById(available.id);
+    assert.equal(afterFirst?.status, "available");
+    assert.equal(afterFirst?.paymentHoldAttemptId, undefined);
+    assert.equal(afterFirst?.paymentHoldStartedAt, undefined);
+
+    const sameCustomer = await startCardcomPaymentPrep(baseInput, mockCreate());
+    assert.equal(sameCustomer.ok, true, "same customer rescan must not self-block");
+    if (!sameCustomer.ok) return;
+    createdAttemptIds.push(sameCustomer.attemptId);
+    assert.equal((await getPosSpotById(available.id))?.status, "available");
+    assert.equal((await getPosSpotById(available.id))?.paymentHoldAttemptId, undefined);
 
     const second = await startCardcomPaymentPrep(
       {
@@ -133,17 +139,18 @@ async function main(): Promise<void> {
       },
       mockCreate(),
     );
-    assert.equal(second.ok, false);
-    if (!second.ok) {
-      assert.equal(second.code, "unavailable");
-      assert.equal(second.httpStatus, 409);
-    }
+    assert.equal(second.ok, true, "second prep must not be blocked by a hold");
+    if (!second.ok) return;
+    createdAttemptIds.push(second.attemptId);
+    assert.equal((await getPosSpotById(available.id))?.status, "available");
+    assert.equal((await getPosSpotById(available.id))?.paymentHoldAttemptId, undefined);
+    const secondAttempt = await getPaymentAttemptById(second.attemptId);
+    assert.equal(secondAttempt?.status, "awaiting_payment");
 
     await compensatePaymentPrepFailure(
       attempt!,
       available.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
-      { releaseHold: true },
     );
     assert.equal((await getPaymentAttemptById(first.attemptId))?.status, "cancelled");
     assert.equal(
@@ -175,7 +182,6 @@ async function main(): Promise<void> {
       againAttempt!,
       available.id,
       CANCEL_REASON_POS_UNAVAILABLE_BEFORE_PAYMENT,
-      { releaseHold: true },
     );
     assert.equal(
       (await getPaymentAttemptById(againAttempt!.id))?.failureReason,
@@ -247,8 +253,8 @@ async function main(): Promise<void> {
       await deletePaymentAttemptById(id);
     }
     const spot = await getPosSpotById(available.id);
-    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
-      await releasePosSpotHoldForPayment(available.id, spot.paymentHoldAttemptId);
+    if (spot?.status === "held_for_payment") {
+      await setPosSpotStatus(available.id, "available");
     }
     await setPosSpotStatus(available.id, beforeStatus);
   }

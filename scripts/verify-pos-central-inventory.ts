@@ -72,9 +72,6 @@ async function main(): Promise<void> {
     appendPosSpot,
     getPosSpotById,
     updatePosSpot,
-    acquirePosSpotHoldForPayment,
-    completePosSpotSaleFromHold,
-    releasePosSpotHoldForPayment,
   } = await import("../lib/posSpotStorage");
   const { createPocket, deletePocket } = await import("../lib/pocketStorage");
   const {
@@ -100,9 +97,8 @@ async function main(): Promise<void> {
     applyPotInventoryDelta,
     getPotInventoryQuantity,
   } = await import("../lib/potInventoryStorage");
-  const { insertPaymentAttempt, deletePaymentAttemptById } = await import(
-    "../lib/paymentAttemptStorage"
-  );
+  const { insertPaymentAttempt, deletePaymentAttemptById, finalizeVerifiedPaymentAttemptAtomic } =
+    await import("../lib/paymentAttemptStorage");
   const { createPosCutoverFixture } = await import("./pos-offer-cutover-fixture.ts");
 
   const partners = await sql`SELECT id FROM partner_locations LIMIT 1`;
@@ -137,6 +133,7 @@ async function main(): Promise<void> {
   const offerLast = fixture.offerL;
   const lastVariant = fixture.variantL;
   const attemptIds: string[] = [];
+  const orderIds: string[] = [];
   const spotIds: string[] = [];
   let pocketId: string | undefined;
 
@@ -519,36 +516,11 @@ async function main(): Promise<void> {
       status: "available",
     });
 
-    const holdAttempt = randomUUID();
-    const now = new Date().toISOString();
-    await insertPaymentAttempt({
-      id: holdAttempt,
-      status: "created",
-      posSpotId: plantSpotInput.id,
-      productId: fixture.plantId,
-      productName: "Inv B Verify Plant",
-      fullName: "Inv B",
-      customerEmail: "inv-b@example.com",
-      phone: "0500000000",
-      address: "",
-      apartmentOrNotes: "",
-      fulfillmentMethod: "delivery",
-      amount: 40,
-      paymentResumeToken: `resume-${randomUUID()}`,
-      createdAt: now,
-      updatedAt: now,
-    });
-    attemptIds.push(holdAttempt);
-    const held = await acquirePosSpotHoldForPayment(plantSpotInput.id, holdAttempt);
-    assert.equal(held.ok, true);
-    const released = await releasePosSpotHoldForPayment(plantSpotInput.id, holdAttempt);
-    assert.equal(released.ok, true);
-    assert.equal(await getInventoryQuantity(variantA), qtyABeforeAdmin);
-
     const saleAttempt = randomUUID();
+    const saleSession = `cs-inv-${randomUUID()}`;
     await insertPaymentAttempt({
       id: saleAttempt,
-      status: "created",
+      status: "awaiting_payment",
       posSpotId: plantSpotInput.id,
       productId: fixture.plantId,
       productName: "Inv B Verify Plant",
@@ -559,15 +531,21 @@ async function main(): Promise<void> {
       apartmentOrNotes: "",
       fulfillmentMethod: "delivery",
       amount: 40,
+      checkoutSessionId: saleSession,
       paymentResumeToken: `resume-${randomUUID()}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
     attemptIds.push(saleAttempt);
-    const heldSale = await acquirePosSpotHoldForPayment(plantSpotInput.id, saleAttempt);
-    assert.equal(heldSale.ok, true);
-    const sold = await completePosSpotSaleFromHold(plantSpotInput.id, saleAttempt);
+    const sold = await finalizeVerifiedPaymentAttemptAtomic({
+      attemptId: saleAttempt,
+      checkoutSessionId: saleSession,
+      posSpotId: plantSpotInput.id,
+      fulfillmentMethod: "delivery",
+    });
     assert.equal(sold.ok, true);
+    if (sold.ok) orderIds.push(sold.order.orderId);
+    assert.equal((await getPosSpotById(plantSpotInput.id))?.status, "sold");
     assert.equal(await getInventoryQuantity(variantA), qtyABeforeAdmin);
     assert.equal(await historyCount(variantA), histABeforeAdmin);
 
@@ -824,6 +802,11 @@ async function main(): Promise<void> {
         )
       `;
       await sql`DELETE FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])`;
+    }
+    for (const orderId of orderIds) {
+      await sql`DELETE FROM orders WHERE order_id = ${orderId}::uuid`;
+    }
+    if (spotIds.length > 0) {
       await sql`DELETE FROM pos_spots WHERE id = ANY(${spotIds}::uuid[])`;
     }
     if (pocketId) {

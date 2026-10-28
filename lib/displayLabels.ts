@@ -134,7 +134,6 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not retry payment. Try again.": "checkout.error.retryPayment",
   "Payment is temporarily unavailable. Try again later.": "checkout.error.unavailable",
   "Payment session is not available to retry.": "checkout.error.retrySession",
-  "This plant is no longer held for your payment.": "checkout.error.noLongerHeld",
   "This order is no longer held for your payment.": "shop.error.orderNoLongerHeld",
   "Payment is already being prepared. Please wait.": "checkout.error.alreadyPreparing",
   "This POS Spot is not available for purchase.": "checkout.error.spotUnavailable",

@@ -247,24 +247,11 @@ async function main(): Promise<void> {
   assert.equal(PAYMENT_FAILED_CHECKOUT_MESSAGE, "Payment failed. Please try again.");
   assert.equal(isPosSpotPurchasable("held_for_payment"), false);
   assert.equal(isPosSpotPurchasable("held_for_payment", { resumeHolder: true }), true);
-  const {
-    POS_HELD_FOR_PAYMENT_CTA,
-    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
-    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
-    shouldShowHeldForPaymentCheckoutMessage,
-  } = await import("../lib/posSpotHold");
-  assert.equal(POS_HELD_FOR_PAYMENT_CTA, "Purchase in progress");
-  assert.equal(
-    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
-    "Another customer is currently purchasing this plant. Please check back shortly.",
-  );
-  assert.equal(
-    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
-    "This plant is currently being purchased by another customer.",
-  );
-  assert.equal(
-    shouldShowHeldForPaymentCheckoutMessage("held_for_payment", { resumeHolder: true }),
-    false,
+  assert.doesNotMatch(messagesSrc, /plant\.held\.checkout/);
+  assert.doesNotMatch(messagesSrc, /plant\.held\.product/);
+  assert.doesNotMatch(
+    messagesSrc,
+    /This plant is currently being purchased by another customer/,
   );
 
   // 12-ish: success page still not claiming paid while pending

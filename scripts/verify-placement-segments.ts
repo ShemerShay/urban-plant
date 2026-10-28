@@ -80,11 +80,8 @@ async function main(): Promise<void> {
   await loadEnvLocal();
   const { sql } = await import("../lib/db");
   const {
-    acquirePosSpotHoldForPayment,
     appendPosSpot,
-    completePosSpotSaleFromHold,
     getPosSpotById,
-    releasePosSpotHoldForPayment,
     updatePosSpot,
   } = await import("../lib/posSpotStorage");
   const { createPocket, deletePocket, updatePocket } = await import("../lib/pocketStorage");
@@ -334,29 +331,6 @@ async function main(): Promise<void> {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].id, firstSegmentId);
 
-    const holdAttempt = randomUUID();
-    const now = new Date().toISOString();
-    await insertPaymentAttempt({
-      id: holdAttempt,
-      status: "created",
-      posSpotId: created.id,
-      offerId: offerA,
-      productId: fixture.plantId,
-      productName: "Segment Verify Plant",
-      fullName: "Segment Verify",
-      customerEmail: "segment-verify@example.com",
-      phone: "0500000000",
-      address: "",
-      apartmentOrNotes: "",
-      fulfillmentMethod: "delivery",
-      amount: 40,
-      paymentResumeToken: `resume-${randomUUID()}`,
-      createdAt: now,
-      updatedAt: now,
-    });
-    attemptIds.push(holdAttempt);
-    assert.equal((await acquirePosSpotHoldForPayment(created.id, holdAttempt)).ok, true);
-    assert.equal((await releasePosSpotHoldForPayment(created.id, holdAttempt)).ok, true);
     rows = await segmentsFor(created.id);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].id, firstSegmentId);
@@ -681,7 +655,7 @@ async function main(): Promise<void> {
       updatedAt: new Date().toISOString(),
     });
     attemptIds.push(saleAttempt);
-    assert.equal((await acquirePosSpotHoldForPayment(saleSpot.id, saleAttempt)).ok, true);
+    assert.equal((await getPosSpotById(saleSpot.id))?.status, "available");
     const sold = await finalizeVerifiedPaymentAttemptAtomic({
       attemptId: saleAttempt,
       checkoutSessionId: saleSession,
@@ -702,34 +676,6 @@ async function main(): Promise<void> {
     });
     assert.equal(dup.ok, false);
     assert.equal((await segmentsFor(saleSpot.id)).length, rows.length);
-
-    const holdSale = await appendPosSpot(emptySpot(`seg-holdsale-${tag}`, "9110"));
-    spotIds.push(holdSale.id);
-    await placeOn(holdSale, variantA, offerA);
-    const holdSaleAttempt = randomUUID();
-    await insertPaymentAttempt({
-      id: holdSaleAttempt,
-      status: "awaiting_payment",
-      posSpotId: holdSale.id,
-      offerId: offerA,
-      productId: fixture.plantId,
-      productName: "Segment Verify Plant",
-      fullName: "Segment Verify",
-      customerEmail: "segment-verify@example.com",
-      phone: "0500000000",
-      address: "",
-      apartmentOrNotes: "",
-      fulfillmentMethod: "pickup",
-      amount: 40,
-      paymentResumeToken: `resume-${randomUUID()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-    attemptIds.push(holdSaleAttempt);
-    assert.equal((await acquirePosSpotHoldForPayment(holdSale.id, holdSaleAttempt)).ok, true);
-    const directSold = await completePosSpotSaleFromHold(holdSale.id, holdSaleAttempt);
-    assert.equal(directSold.ok, true);
-    assert.equal(openSegments(await segmentsFor(holdSale.id)).length, 0);
 
     const failSpot = await appendPosSpot(emptySpot(`seg-fail-${tag}`, "9111"));
     spotIds.push(failSpot.id);

@@ -122,8 +122,7 @@ async function main(): Promise<void> {
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
   const { sql } = await import("../lib/db");
-  const { appendPosSpot, getPosSpotById, updatePosSpot, acquirePosSpotHoldForPayment, completePosSpotSaleFromHold, releasePosSpotHoldForPayment } =
-    await import("../lib/posSpotStorage");
+  const { appendPosSpot, getPosSpotById, updatePosSpot } = await import("../lib/posSpotStorage");
   const { createPocket, deletePocket } = await import("../lib/pocketStorage");
   const {
     occupancyToSpotFields,
@@ -135,9 +134,8 @@ async function main(): Promise<void> {
   } = await import("../lib/posOccupancy");
   const { getPosSpotForCustomerPurchase } = await import("../lib/purchaseEligibility");
   const { startCardcomPaymentPrep } = await import("../lib/startCardcomPaymentPrep");
-  const { insertPaymentAttempt, deletePaymentAttemptById } = await import(
-    "../lib/paymentAttemptStorage"
-  );
+  const { insertPaymentAttempt, deletePaymentAttemptById, finalizeVerifiedPaymentAttemptAtomic } =
+    await import("../lib/paymentAttemptStorage");
   const { getInventoryQuantity } = await import("../lib/inventoryStorage");
   const { getPotInventoryQuantity } = await import("../lib/potInventoryStorage");
   const {
@@ -194,6 +192,7 @@ async function main(): Promise<void> {
   const slugFlower = `occ-flower-${tag}`;
   const slugLegacy = `occ-legacy-${tag}`;
   const attemptIds: string[] = [];
+  const orderIds: string[] = [];
   let pocketId: string | undefined;
   let plantSpotId: string | undefined;
   let flowerSpotId: string | undefined;
@@ -464,9 +463,6 @@ async function main(): Promise<void> {
       console.log("verify-pos-occupancy-contract: skip HTTP landing checks (no local server)");
     }
 
-    const emptyHold = await acquirePosSpotHoldForPayment(plantSpot.id, randomUUID());
-    assert.equal(emptyHold.ok, false);
-
     // Place again after Remove.
     const placedAgain = await applyPatch(plantSpot.id, removed.updated, {
       occupancyIntent: "place",
@@ -521,10 +517,11 @@ async function main(): Promise<void> {
 
     // 11-12. Plant sale ends occupancy, keeps offer; duplicate finalize is idempotent.
     const saleAttempt = randomUUID();
+    const saleSession = `cs-occ-${randomUUID()}`;
     const now = new Date().toISOString();
     await insertPaymentAttempt({
       id: saleAttempt,
-      status: "created",
+      status: "awaiting_payment",
       posSpotId: plantSpot.id,
       productId: plantId,
       productName: "Occupancy Verify Plant",
@@ -535,68 +532,40 @@ async function main(): Promise<void> {
       apartmentOrNotes: "",
       fulfillmentMethod: "delivery",
       amount: 40,
+      checkoutSessionId: saleSession,
       paymentResumeToken: `resume-${randomUUID()}`,
       createdAt: now,
       updatedAt: now,
     });
     attemptIds.push(saleAttempt);
-    const held = await acquirePosSpotHoldForPayment(plantSpot.id, saleAttempt);
-    assert.equal(held.ok, true);
-    const sold = await completePosSpotSaleFromHold(plantSpot.id, saleAttempt);
-    assert.equal(sold.ok, true);
-    if (sold.ok) {
-      assert.equal(sold.posSpot.status, "sold");
-      assert.equal(sold.posSpot.currentOfferId, offerA);
-      assert.equal(sold.posSpot.plantVariantId, undefined);
-      assert.equal(sold.posSpot.id, plantSpot.id);
-      assert.equal(isEmptyPosOccupancy(sold.posSpot), false);
-      assert.equal(posAllowsNewCustomerPurchase(sold.posSpot), false);
-      const soldPage = await fetchLocalPath(`/checkout/pos/${sold.posSpot.spotSlug}`);
-      if (soldPage) {
-        assert.equal(soldPage.status, 200);
-        assert.doesNotMatch(soldPage.body, /data-pos-empty="true"/);
-        assert.doesNotMatch(soldPage.body, /This spot is empty|הנקודה הזו ריקה/);
-      }
-    }
-    const soldAgain = await completePosSpotSaleFromHold(plantSpot.id, saleAttempt);
-    assert.equal(soldAgain.ok, false);
-
-    // Hold/release does not change occupancy: set back to available occupied, then hold+release.
-    await sql`
-      UPDATE pos_spots
-      SET status = 'available', plant_variant_id = ${variantA}::uuid, current_offer_id = ${offerA}
-      WHERE id = ${plantSpot.id}::uuid
-    `;
-    const releaseAttempt = randomUUID();
-    await insertPaymentAttempt({
-      id: releaseAttempt,
-      status: "created",
+    const sold = await finalizeVerifiedPaymentAttemptAtomic({
+      attemptId: saleAttempt,
+      checkoutSessionId: saleSession,
       posSpotId: plantSpot.id,
-      productId: plantId,
-      productName: "Occupancy Verify Plant",
-      fullName: "Occ Verify",
-      customerEmail: "occ-verify@example.com",
-      phone: "0500000000",
-      address: "",
-      apartmentOrNotes: "",
       fulfillmentMethod: "delivery",
-      amount: 40,
-      paymentResumeToken: `resume-${randomUUID()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     });
-    attemptIds.push(releaseAttempt);
-    const holdOcc = await acquirePosSpotHoldForPayment(plantSpot.id, releaseAttempt);
-    assert.equal(holdOcc.ok, true);
-    if (holdOcc.ok) {
-      assert.equal(holdOcc.posSpot.plantVariantId, variantA);
+    assert.equal(sold.ok, true);
+    if (sold.ok) orderIds.push(sold.order.orderId);
+    const soldSpot = await getPosSpotById(plantSpot.id);
+    assert.ok(soldSpot);
+    assert.equal(soldSpot.status, "sold");
+    assert.equal(soldSpot.currentOfferId, offerA);
+    assert.equal(soldSpot.plantVariantId, undefined);
+    assert.equal(isEmptyPosOccupancy(soldSpot), false);
+    assert.equal(posAllowsNewCustomerPurchase(soldSpot), false);
+    const soldPage = await fetchLocalPath(`/checkout/pos/${soldSpot.spotSlug}`);
+    if (soldPage) {
+      assert.equal(soldPage.status, 200);
+      assert.doesNotMatch(soldPage.body, /data-pos-empty="true"/);
+      assert.doesNotMatch(soldPage.body, /This spot is empty|הנקודה הזו ריקה/);
     }
-    const released = await releasePosSpotHoldForPayment(plantSpot.id, releaseAttempt);
-    assert.equal(released.ok, true);
-    if (released.ok) {
-      assert.equal(released.posSpot.plantVariantId, variantA);
-      assert.equal(released.posSpot.status, "available");
-    }
+    const soldAgain = await finalizeVerifiedPaymentAttemptAtomic({
+      attemptId: saleAttempt,
+      checkoutSessionId: saleSession,
+      posSpotId: plantSpot.id,
+      fulfillmentMethod: "delivery",
+    });
+    assert.equal(soldAgain.ok, false);
 
     // 14. Flowers unchanged: no variant, sale no-op, still purchasable.
     const flowerRow = await getPosSpotById(flowerSpot.id);
@@ -606,9 +575,10 @@ async function main(): Promise<void> {
     assert.equal(posAllowsNewCustomerPurchase(flowerRow), true);
     assert.equal(isEmptyPosOccupancy(flowerRow), false);
     const flowerAttempt = randomUUID();
+    const flowerSession = `cs-occ-flower-${randomUUID()}`;
     await insertPaymentAttempt({
       id: flowerAttempt,
-      status: "created",
+      status: "awaiting_payment",
       posSpotId: flowerSpot.id,
       productId: flower.id,
       productName: "Occupancy Verify Flower",
@@ -619,13 +589,23 @@ async function main(): Promise<void> {
       apartmentOrNotes: "",
       fulfillmentMethod: "pickup",
       amount: 25,
+      checkoutSessionId: flowerSession,
       paymentResumeToken: `resume-${randomUUID()}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
     attemptIds.push(flowerAttempt);
-    const flowerSale = await completePosSpotSaleFromHold(flowerSpot.id, flowerAttempt);
-    assert.equal(flowerSale.ok, false);
+    const flowerSale = await finalizeVerifiedPaymentAttemptAtomic({
+      attemptId: flowerAttempt,
+      checkoutSessionId: flowerSession,
+      posSpotId: flowerSpot.id,
+      fulfillmentMethod: "pickup",
+    });
+    assert.equal(flowerSale.ok, true);
+    if (flowerSale.ok) {
+      orderIds.push(flowerSale.order.orderId);
+      assert.equal(flowerSale.posStatus, "available");
+    }
     const flowerAfter = await getPosSpotById(flowerSpot.id);
     assert.equal(flowerAfter?.status, "available");
     assert.equal(flowerAfter?.currentOfferId, offerFlower);
@@ -734,6 +714,11 @@ async function main(): Promise<void> {
         )
       `;
       await sql`DELETE FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])`;
+    }
+    for (const orderId of orderIds) {
+      await sql`DELETE FROM orders WHERE order_id = ${orderId}::uuid`;
+    }
+    if (spotIds.length > 0) {
       await sql`DELETE FROM pos_spots WHERE id = ANY(${spotIds}::uuid[])`;
     }
     if (pocketId) {

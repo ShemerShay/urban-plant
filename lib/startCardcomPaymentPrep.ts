@@ -1,6 +1,6 @@
 /**
- * payment_attempt + owned POS hold + Cardcom LowProfile/Create.
- * Server-only. Does not create an Order, send email, or mark POS sold.
+ * payment_attempt + Cardcom LowProfile/Create.
+ * Server-only. Does not create an Order, send email, mark POS sold, or hold a Partner POS.
  * Callers may inject createLowProfile for offline tests.
  */
 
@@ -31,16 +31,11 @@ import { getPlantById } from "@/lib/plantCatalog";
 import {
   cardcomLineItemName,
   inventoryTypeOrDefault,
-  posRequiresPaymentHold,
   type InventoryType,
 } from "@/lib/inventoryType";
 import { posAllowsNewCustomerPurchase } from "@/lib/posOccupancy";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
-import {
-  acquirePosSpotHoldForPayment,
-  getPosSpotBySpotSlug,
-  releasePosSpotHoldForPayment,
-} from "@/lib/posSpotStorage";
+import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import type { PosSpot } from "@/lib/posSpotTypes";
 import {
   buildCardcomCallbackUrls,
@@ -133,36 +128,12 @@ async function buildOrderSnapshot(input: {
   };
 }
 
-/**
- * Release owned hold (if requested) and mark attempt terminal.
- */
+/** Mark a failed payment-prep attempt terminal. Does not change the POS. */
 export async function compensatePaymentPrepFailure(
   attempt: SavedPaymentAttempt,
-  posSpotId: string,
+  _posSpotId: string,
   reason: string,
-  options?: { releaseHold?: boolean },
 ): Promise<void> {
-  if (options?.releaseHold) {
-    try {
-      const released = await releasePosSpotHoldForPayment(posSpotId, attempt.id);
-      if (!released.ok) {
-        console.error(
-          "[payment-prep] POS hold release failed after payment prep error",
-          {
-            attemptId: attempt.id,
-            posSpotId,
-            outcome: released.outcome,
-            reason,
-          },
-        );
-      }
-    } catch {
-      console.error(
-        "[payment-prep] POS hold release threw after payment prep error",
-        { attemptId: attempt.id, posSpotId, reason },
-      );
-    }
-  }
   try {
     await markPaymentAttemptTerminal(attempt.id, "cancelled", reason);
   } catch {
@@ -456,30 +427,6 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const holdRequired = posRequiresPaymentHold(inventoryType);
-  let holdAcquired = false;
-  if (holdRequired) {
-    const hold = await acquirePosSpotHoldForPayment(posSpot.id, attemptId);
-    if (!hold.ok) {
-      await compensatePaymentPrepFailure(
-        attempt,
-        posSpot.id,
-        CANCEL_REASON_POS_UNAVAILABLE_BEFORE_PAYMENT,
-        { releaseHold: false },
-      );
-      return {
-        ok: false,
-        code: hold.outcome === "not_found" ? "not_found" : "unavailable",
-        error:
-          hold.outcome === "not_found"
-            ? "POS Spot not found"
-            : "This POS Spot is no longer available for purchase.",
-        httpStatus: hold.outcome === "not_found" ? 404 : 409,
-      };
-    }
-    holdAcquired = true;
-  }
-
   let publicOrigin: string;
   try {
     publicOrigin = resolvePublicOrigin(deps.publicOrigin);
@@ -488,7 +435,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_CREATE_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -506,7 +452,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -525,7 +470,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -564,9 +508,7 @@ export async function startCardcomPaymentPrep(
     cardcomResult = await createFn(createInput);
   } catch (error) {
     const mapped = mapCardcomFailure(error);
-    await compensatePaymentPrepFailure(attempt, posSpot.id, mapped.reason, {
-      releaseHold: holdAcquired,
-    });
+    await compensatePaymentPrepFailure(attempt, posSpot.id, mapped.reason);
     return {
       ok: false,
       code: mapped.code,
@@ -582,7 +524,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_RESPONSE_INVALID,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -602,7 +543,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_SESSION_ATTACH_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -617,7 +557,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_SESSION_ATTACH_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -633,7 +572,7 @@ export async function startCardcomPaymentPrep(
       lowProfileId,
       attemptStatus: "awaiting_payment",
       posSpotId: posSpot.id,
-      posStatus: holdRequired ? "held_for_payment" : posSpot.status,
+      posStatus: posSpot.status,
       environment: "test",
     });
   }
