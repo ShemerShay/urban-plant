@@ -7,15 +7,13 @@
  * 3. very old hold expires
  * 4. invalid/missing hold timestamp is safely recovered
  * 5. available/sold spots are untouched
- * 6. expired spot can be held again
- * 7. active hold cannot be stolen
- * 8. Admin can recover an expired hold
- * 9. Admin can manually override an active hold
- * 10. leaving held_for_payment clears timestamp
- * 11. entering held_for_payment sets timestamp
- * 12. cron only releases expired holds
- * 13. stale cleanup cannot release a newer hold
- * 14. payment-success/expiry race is safe (sold not released)
+ * 6. Admin can recover an expired hold
+ * 7. Admin can manually override an active hold
+ * 8. leaving held_for_payment clears timestamp
+ * 9. entering held_for_payment sets timestamp
+ * 10. cron only releases expired holds
+ * 11. stale cleanup cannot release a newer hold
+ * 12. payment-success/expiry race is safe (sold not released)
  *
  * Run: npx tsx scripts/verify-payment-hold-lifecycle.ts
  */
@@ -41,11 +39,8 @@ async function main(): Promise<void> {
     finalizeVerifiedPaymentAttemptAtomic,
   } = await import("../lib/paymentAttemptStorage");
   const {
-    acquirePosSpotHoldForPayment,
-    completePosSpotSaleFromHold,
     getPosSpotById,
     readPosSpots,
-    releasePosSpotHoldForPayment,
     setPosSpotStatus,
     updatePosSpot,
   } = await import("../lib/posSpotStorage");
@@ -112,11 +107,19 @@ async function main(): Promise<void> {
     return id;
   }
 
+  async function seedOwnedHold(attemptId: string): Promise<void> {
+    await sql`
+      UPDATE pos_spots
+      SET
+        status = 'held_for_payment',
+        payment_hold_started_at = now(),
+        payment_hold_attempt_id = ${attemptId}::uuid
+      WHERE id = ${available!.id}::uuid
+    `;
+  }
+
   async function restore(): Promise<void> {
     const current = await getPosSpotById(available!.id);
-    if (current?.status === "held_for_payment" && current.paymentHoldAttemptId) {
-      await releasePosSpotHoldForPayment(available!.id, current.paymentHoldAttemptId);
-    }
     if (current?.status === "held_for_payment") {
       await setPosSpotStatus(available!.id, "available");
     }
@@ -133,19 +136,18 @@ async function main(): Promise<void> {
     // Fresh hold not expired (16-min equivalent: just acquired)
     {
       const attemptId = await insertAwaitingAttempt();
-      const acquired = await acquirePosSpotHoldForPayment(available.id, attemptId);
-      assert.equal(acquired.ok, true);
+      await seedOwnedHold(attemptId);
       const exp = await expireStalePaymentHold(available.id);
       assert.equal(exp.expired, false);
       assert.equal(exp.reason, "not_stale");
       assert.equal((await getPosSpotById(available.id))?.status, "held_for_payment");
-      await releasePosSpotHoldForPayment(available.id, attemptId);
+      await setPosSpotStatus(available.id, "available");
     }
 
     // 2. >17-minute hold expires
     {
       const attemptId = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
+      await seedOwnedHold(attemptId);
       await sql`
         UPDATE pos_spots
         SET payment_hold_started_at = now() - interval '18 minutes'
@@ -161,7 +163,7 @@ async function main(): Promise<void> {
     // 3. very old hold expires
     {
       const attemptId = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
+      await seedOwnedHold(attemptId);
       await sql`
         UPDATE pos_spots
         SET payment_hold_started_at = now() - interval '30 days'
@@ -176,7 +178,7 @@ async function main(): Promise<void> {
     //    DB: age clock + expire; also ensure available has no leftover timestamp)
     {
       const attemptId = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
+      await seedOwnedHold(attemptId);
       await sql`
         UPDATE pos_spots
         SET payment_hold_started_at = now() - interval '20 minutes'
@@ -197,9 +199,7 @@ async function main(): Promise<void> {
       assert.equal(expAvail.expired, false);
       assert.ok(expAvail.reason === "not_held" || expAvail.reason === "not_found");
 
-      const attemptId = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
-      assert.equal((await completePosSpotSaleFromHold(available.id, attemptId)).ok, true);
+      await setPosSpotStatus(available.id, "sold");
       await sql`
         UPDATE pos_spots
         SET payment_hold_started_at = now() - interval '18 minutes'
@@ -211,31 +211,10 @@ async function main(): Promise<void> {
       await setPosSpotStatus(available.id, "available");
     }
 
-    // 6. expired spot can be held again
-    // 7. active hold cannot be stolen
-    {
-      const attemptA = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptA)).ok, true);
-      const attemptB = await insertAwaitingAttempt();
-      const steal = await acquirePosSpotHoldForPayment(available.id, attemptB);
-      assert.equal(steal.ok, false);
-      assert.equal(steal.outcome, "unavailable");
-
-      await sql`
-        UPDATE pos_spots
-        SET payment_hold_started_at = now() - interval '18 minutes'
-        WHERE id = ${available.id}::uuid
-      `;
-      assert.equal((await expireStalePaymentHold(available.id)).expired, true);
-      const rehold = await acquirePosSpotHoldForPayment(available.id, attemptB);
-      assert.equal(rehold.ok, true);
-      await releasePosSpotHoldForPayment(available.id, attemptB);
-    }
-
-    // 8. Admin can recover an expired hold (lazy repair + status change)
+    // 6. Admin can recover an expired hold (lazy repair + status change)
     {
       const attemptId = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
+      await seedOwnedHold(attemptId);
       await sql`
         UPDATE pos_spots
         SET payment_hold_started_at = now() - interval '18 minutes'
@@ -259,7 +238,7 @@ async function main(): Promise<void> {
     // 10. leaving held clears timestamp
     {
       const attemptId = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
+      await seedOwnedHold(attemptId);
       assert.ok((await getPosSpotById(available.id))?.paymentHoldStartedAt);
       const overridden = await updatePosSpot(available.id, {
         partnerLocationId: available.partnerLocationId,
@@ -290,7 +269,7 @@ async function main(): Promise<void> {
     // 12. cron only releases expired holds
     {
       const freshAttempt = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, freshAttempt)).ok, true);
+      await seedOwnedHold(freshAttempt);
       const bulkFresh = await expireAllStalePaymentHolds();
       assert.equal(bulkFresh.expiredPosSpotIds.includes(available.id), false);
       assert.equal((await getPosSpotById(available.id))?.status, "held_for_payment");
@@ -308,39 +287,29 @@ async function main(): Promise<void> {
     // 13. stale cleanup cannot release a newer hold
     {
       const oldAttempt = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, oldAttempt)).ok, true);
+      await seedOwnedHold(oldAttempt);
       await sql`
         UPDATE pos_spots
         SET payment_hold_started_at = now() - interval '18 minutes'
         WHERE id = ${available.id}::uuid
       `;
-      // Expire old → available, then new customer acquires.
       assert.equal((await expireStalePaymentHold(available.id)).expired, true);
       const newAttempt = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, newAttempt)).ok, true);
+      await seedOwnedHold(newAttempt);
 
-      // Simulate delayed cleanup for the old attempt id targeting the same spot:
-      // expireStalePaymentHold re-reads; fresh hold must survive.
+      // Delayed cleanup re-reads; a fresh hold must survive.
       const delayed = await expireStalePaymentHold(available.id);
       assert.equal(delayed.expired, false);
       assert.equal(delayed.reason, "not_stale");
       const stillNew = await getPosSpotById(available.id);
       assert.equal(stillNew?.status, "held_for_payment");
       assert.equal(stillNew?.paymentHoldAttemptId, newAttempt);
-
-      // Also: ownership-conditional release for old attempt must not clear new hold.
-      const stolen = await releasePosSpotHoldForPayment(available.id, oldAttempt);
-      assert.equal(stolen.ok, false);
-      assert.equal((await getPosSpotById(available.id))?.paymentHoldAttemptId, newAttempt);
-
-      await releasePosSpotHoldForPayment(available.id, newAttempt);
+      await setPosSpotStatus(available.id, "available");
     }
 
     // 14. payment-success/expiry race is safe (sold not released by expiry)
     {
-      const attemptId = await insertAwaitingAttempt();
-      assert.equal((await acquirePosSpotHoldForPayment(available.id, attemptId)).ok, true);
-      assert.equal((await completePosSpotSaleFromHold(available.id, attemptId)).ok, true);
+      await setPosSpotStatus(available.id, "sold");
       await sql`
         UPDATE pos_spots
         SET payment_hold_started_at = now() - interval '18 minutes'
@@ -352,7 +321,7 @@ async function main(): Promise<void> {
       await setPosSpotStatus(available.id, "available");
     }
 
-    // Flower inventory: no POS hold; completePosSpotSaleFromHold is a no-op; POS stays available.
+    // Flower inventory: expiry does not change the POS.
     {
       const sample = await getPlantByIdAsync("monstera");
       assert.ok(sample, "need a catalog row to clone a flower inventory type");
@@ -368,8 +337,6 @@ async function main(): Promise<void> {
       try {
         await setPosSpotStatus(available.id, "available");
         const attemptId = await insertAwaitingAttempt(flowerId);
-        const sale = await completePosSpotSaleFromHold(available.id, attemptId);
-        assert.equal(sale.ok, false);
         assert.equal((await getPosSpotById(available.id))?.status, "available");
         const fresh = await expireStalePaymentHold(available.id);
         assert.equal(fresh.expired, false);
@@ -456,18 +423,11 @@ async function main(): Promise<void> {
       }
 
       try {
-        // Path: completePosSpotSaleFromHold — missing catalog falls back to sold.
-        await setPosSpotStatus(available.id, "available");
-        const missingAttempt = await insertAwaitingAttempt("missing-catalog-product");
-        assert.equal((await acquirePosSpotHoldForPayment(available.id, missingAttempt)).ok, true);
-        assert.equal((await completePosSpotSaleFromHold(available.id, missingAttempt)).ok, true);
-        assert.equal((await getPosSpotById(available.id))?.status, "sold");
-
         // Path: finalizeVerifiedPaymentAttemptAtomic — plant → sold, flower → available.
         await setPosSpotStatus(available.id, "available");
         const plantSession = `cs-plant-${randomUUID()}`;
         const plantAttempt = await insertAwaitingAttempt(plantId, plantSession);
-        assert.equal((await acquirePosSpotHoldForPayment(available.id, plantAttempt)).ok, true);
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
         const plantFinal = await finalizeVerifiedPaymentAttemptAtomic({
           attemptId: plantAttempt,
           checkoutSessionId: plantSession,
@@ -522,14 +482,7 @@ async function main(): Promise<void> {
         // Path: finalizeVerifiedPendingPaymentAtomic
         await setPosSpotStatus(available.id, "available");
         const pendingPlant = await seedPendingOrder(plantId);
-        await sql`
-          UPDATE pos_spots
-          SET
-            status = 'held_for_payment',
-            payment_hold_started_at = now(),
-            payment_hold_attempt_id = NULL
-          WHERE id = ${available.id}::uuid
-        `;
+        assert.equal((await getPosSpotById(available.id))?.status, "available");
         const pendingPlantFinal = await finalizeVerifiedPendingPaymentAtomic({
           orderId: pendingPlant.orderId,
           checkoutSessionId: pendingPlant.checkoutSessionId,

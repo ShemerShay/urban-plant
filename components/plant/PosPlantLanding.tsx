@@ -18,7 +18,6 @@ import { formatBuyCta } from "@/lib/mockPlants";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { getPosLandingDetails } from "@/lib/posLandingRead";
 import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
-import { shouldShowHeldForPaymentProductMessage } from "@/lib/posSpotHold";
 import { posSpotCheckoutPath } from "@/lib/routes";
 
 /** Neutral-600 (~4.7:1 on page background) — WCAG AA for small text */
@@ -51,9 +50,6 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
   const displayWater = localizedPlantText(locale, plant.water, plant.waterHe);
   const availableCtaText = formatBuyCta(offer.consumerPrice, plant.currency, locale);
   const ctaText = productPageCtaDisplay(locale, posSpot.status, availableCtaText);
-  const heldMessage = shouldShowHeldForPaymentProductMessage(posSpot.status)
-    ? t(locale, "plant.held.product")
-    : undefined;
   const whatsAppMessage = partnerName
     ? t(locale, "plant.whatsapp.withPartner", {
         plantName: displayName,
@@ -66,11 +62,7 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
       id="main-content"
       tabIndex={-1}
       data-page="plant-page"
-      className={`bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pt-10 ${
-        heldMessage
-          ? "pb-[calc(9.5rem+env(safe-area-inset-bottom))]"
-          : "pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
-      }`}
+      className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pt-10 pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
     >
       <TrackPosScan
         pos_spot_id={posSpot.id}
@@ -150,7 +142,6 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
         href={posSpotCheckoutPath(posSpot.spotSlug)}
         ctaText={ctaText}
         purchaseEnabled={purchaseEnabled}
-        messageBelow={heldMessage}
       />
     </main>
   );

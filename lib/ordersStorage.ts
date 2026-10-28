@@ -959,7 +959,8 @@ export type FinalizeVerifiedPendingPaymentResult =
  *
  * Delivery: pending_payment → sold
  * Pickup: pending_payment → picked_up (+ picked_up_at)
- * POS: plants held_for_payment → sold. Flowers: POS is not updated.
+ * POS: plants available → sold, and the order status changes only if that sold update wins.
+ * Flowers: POS is not updated.
  *
  * Also persists verified Cardcom TranzactionId and sets purchase_email_status = pending
  * so post-payment document/email can be claimed without rolling back payment.
@@ -1002,16 +1003,28 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         AND o.order_status = 'pending_payment'
         AND o.checkout_session_id = ${checkoutSessionId}
         AND o.pos_spot_id = ${posSpotId}::uuid
-        AND (
-          (
-            COALESCE(pl.inventory_type, 'plants') = 'flowers'
-            AND p.status = 'available'
-          )
-          OR (
-            COALESCE(pl.inventory_type, 'plants') <> 'flowers'
-            AND p.status = 'held_for_payment'
-          )
-        )
+        AND p.status = 'available'
+    ),
+    plant_lock AS (
+      SELECT p.id
+      FROM pos_spots p
+      INNER JOIN eligible e ON e.pos_spot_id = p.id
+      WHERE e.inventory_type <> 'flowers'
+        AND p.status = 'available'
+      FOR UPDATE OF p
+    ),
+    pos_upd AS (
+      UPDATE pos_spots p
+      SET
+        status = 'sold',
+        payment_hold_started_at = NULL,
+        payment_hold_attempt_id = NULL,
+        plant_variant_id = NULL,
+        pot_color_id = NULL
+      FROM plant_lock l
+      WHERE p.id = l.id
+        AND p.status = 'available'
+      RETURNING p.id, p.status
     ),
     order_upd AS (
       UPDATE orders o
@@ -1028,6 +1041,10 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         purchase_email_status = COALESCE(o.purchase_email_status, 'pending')
       FROM eligible e
       WHERE o.order_id = e.order_id
+        AND (
+          e.inventory_type = 'flowers'
+          OR EXISTS (SELECT 1 FROM pos_upd)
+        )
       RETURNING
         o.order_id,
         o.checkout_session_id,
@@ -1065,19 +1082,6 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         o.purchase_email_status,
         o.purchase_email_sent_at,
         o.purchase_email_last_error
-    ),
-    pos_upd AS (
-      UPDATE pos_spots p
-      SET
-        status = 'sold',
-        payment_hold_started_at = NULL,
-        payment_hold_attempt_id = NULL,
-        plant_variant_id = NULL,
-        pot_color_id = NULL
-      FROM eligible e
-      WHERE p.id = e.pos_spot_id
-        AND e.inventory_type <> 'flowers'
-      RETURNING p.id, p.status
     ),
     cycle_close AS (
       UPDATE placement_cycles c

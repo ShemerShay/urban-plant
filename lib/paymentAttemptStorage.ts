@@ -681,6 +681,48 @@ export async function rotateCheckoutSessionIdForAttemptResume(input: {
 }
 
 /**
+ * Verified Partner payment that lost the plant sale: retain evidence, no Order.
+ * Only an awaiting partner attempt can take this transition.
+ */
+export async function markPartnerLostSaleNeedsReconciliation(input: {
+  attemptId: string;
+  checkoutSessionId: string;
+  cardcomTransactionId?: number;
+  reason: string;
+}): Promise<SavedPaymentAttempt | null> {
+  const attemptId = input.attemptId.trim();
+  const sessionId = input.checkoutSessionId.trim();
+  const reason = input.reason.trim() || "verified_payment_lost_pos_sale";
+  if (!attemptId || !sessionId) return null;
+
+  const txId =
+    typeof input.cardcomTransactionId === "number" &&
+    Number.isFinite(input.cardcomTransactionId)
+      ? Math.trunc(input.cardcomTransactionId)
+      : null;
+
+  const rows = await sql`
+    UPDATE payment_attempts
+    SET
+      status = 'needs_reconciliation',
+      failure_reason = ${reason},
+      cardcom_transaction_id = COALESCE(
+        cardcom_transaction_id,
+        ${txId}::bigint
+      ),
+      payment_retry_lock_at = NULL,
+      updated_at = now()
+    WHERE id = ${attemptId}::uuid
+      AND checkout_session_id = ${sessionId}
+      AND channel = 'partner'
+      AND status = 'awaiting_payment'
+    RETURNING ${PAYMENT_ATTEMPT_ROW_SQL}
+  `;
+  const row = (rows as PaymentAttemptRow[])[0];
+  return row ? mapPaymentAttemptRow(row) : null;
+}
+
+/**
  * Late Cardcom success after local expiry/cancel/fail: retain evidence, no Order.
  */
 export async function markPaymentAttemptNeedsReconciliation(input: {
@@ -773,8 +815,9 @@ export type FinalizeVerifiedPaymentAttemptResult =
   | { ok: false; reason: "ineligible" | "conflict" };
 
 /**
- * Atomic: awaiting attempt + eligible POS → insert Order + plant POS sold + attempt finalized.
- * Flowers do not update POS. Single SQL statement (Postgres CTE).
+ * Atomic: lock an available plant POS, mark it sold, close its cycle and segment,
+ * insert one order, and finalize the attempt. Only the transaction that wins the
+ * sold update inserts the order. Flowers do not update POS. Single SQL statement.
  * Email/document run after commit by caller.
  */
 export async function finalizeVerifiedPaymentAttemptAtomic(input: {
@@ -845,17 +888,28 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         AND a.status = 'awaiting_payment'
         AND a.checkout_session_id = ${checkoutSessionId}
         AND a.pos_spot_id = ${posSpotId}::uuid
-        AND (
-          (
-            COALESCE(pl.inventory_type, 'plants') = 'flowers'
-            AND p.status = 'available'
-          )
-          OR (
-            COALESCE(pl.inventory_type, 'plants') <> 'flowers'
-            AND p.status = 'held_for_payment'
-            AND p.payment_hold_attempt_id = a.id
-          )
-        )
+        AND p.status = 'available'
+    ),
+    plant_lock AS (
+      SELECT p.id
+      FROM pos_spots p
+      INNER JOIN eligible e ON e.pos_spot_id = p.id
+      WHERE e.inventory_type <> 'flowers'
+        AND p.status = 'available'
+      FOR UPDATE OF p
+    ),
+    pos_upd AS (
+      UPDATE pos_spots p
+      SET
+        status = 'sold',
+        payment_hold_started_at = NULL,
+        payment_hold_attempt_id = NULL,
+        plant_variant_id = NULL,
+        pot_color_id = NULL
+      FROM plant_lock l
+      WHERE p.id = l.id
+        AND p.status = 'available'
+      RETURNING p.id, p.status
     ),
     order_ins AS (
       INSERT INTO orders (
@@ -918,6 +972,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         ${cardcomTransactionId}::bigint,
         'pending'
       FROM eligible e
+      WHERE e.inventory_type = 'flowers'
+         OR EXISTS (SELECT 1 FROM pos_upd)
       RETURNING
         order_id,
         checkout_session_id,
@@ -955,21 +1011,6 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         purchase_email_status,
         purchase_email_sent_at,
         purchase_email_last_error
-    ),
-    pos_upd AS (
-      UPDATE pos_spots p
-      SET
-        status = 'sold',
-        payment_hold_started_at = NULL,
-        payment_hold_attempt_id = NULL,
-        plant_variant_id = NULL,
-        pot_color_id = NULL
-      FROM eligible e
-      WHERE p.id = e.pos_spot_id
-        AND e.inventory_type <> 'flowers'
-        AND p.status = 'held_for_payment'
-        AND p.payment_hold_attempt_id = e.attempt_id
-      RETURNING p.id, p.status
     ),
     cycle_close AS (
       UPDATE placement_cycles c

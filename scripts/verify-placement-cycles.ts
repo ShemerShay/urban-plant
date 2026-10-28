@@ -121,8 +121,6 @@ async function main(): Promise<void> {
     appendPosSpot,
     getPosSpotById,
     updatePosSpot,
-    acquirePosSpotHoldForPayment,
-    releasePosSpotHoldForPayment,
   } = await import("../lib/posSpotStorage");
   const { createPocket, deletePocket } = await import("../lib/pocketStorage");
   const {
@@ -426,29 +424,6 @@ async function main(): Promise<void> {
     assert.equal(afterUpdate[0].id, openAfterSame.id);
     assert.equal(String(afterUpdate[0].started_at), String(openAfterSame.started_at));
 
-    const holdAttempt = randomUUID();
-    const now = new Date().toISOString();
-    await insertPaymentAttempt({
-      id: holdAttempt,
-      status: "created",
-      posSpotId: created.id,
-      offerId: offerB,
-      productId: fixture.plantId,
-      productName: "Cycle Verify Plant",
-      fullName: "Cycle Verify",
-      customerEmail: "cycle-verify@example.com",
-      phone: "0500000000",
-      address: "",
-      apartmentOrNotes: "",
-      fulfillmentMethod: "delivery",
-      amount: 55,
-      paymentResumeToken: `resume-${randomUUID()}`,
-      createdAt: now,
-      updatedAt: now,
-    });
-    attemptIds.push(holdAttempt);
-    assert.equal((await acquirePosSpotHoldForPayment(created.id, holdAttempt)).ok, true);
-    assert.equal((await releasePosSpotHoldForPayment(created.id, holdAttempt)).ok, true);
     const afterHold = await openCycles(created.id);
     assert.equal(afterHold.length, 1);
     assert.equal(afterHold[0].id, openAfterSame.id);
@@ -590,7 +565,7 @@ async function main(): Promise<void> {
       updatedAt: new Date().toISOString(),
     });
     attemptIds.push(saleAttempt);
-    assert.equal((await acquirePosSpotHoldForPayment(created.id, saleAttempt)).ok, true);
+    assert.equal((await getPosSpotById(created.id))?.status, "available");
     const openBeforeSale = (await openCycles(created.id))[0];
     const sold = await finalizeVerifiedPaymentAttemptAtomic({
       attemptId: saleAttempt,

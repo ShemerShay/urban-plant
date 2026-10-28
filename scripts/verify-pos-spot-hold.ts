@@ -1,32 +1,24 @@
 /**
- * Offline (+ optional DB) checks for POS held_for_payment.
+ * Offline (+ optional DB) checks for POS purchase gates and leftover admin holds.
  *
- * Always runs pure gate/UI checks (no network, no Cardcom).
- * If DATABASE_URL is set, also exercises atomic hold/release against Neon
- * on one spot and restores its prior status (Option B: owned by payment_attempt).
+ * Always runs pure gate checks (no network, no Cardcom).
+ * If DATABASE_URL is set, exercises admin hold status and migration 053
+ * on one spot and restores its prior status.
  *
  * Run: npx tsx scripts/verify-pos-spot-hold.ts
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
-  POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
-  POS_HELD_FOR_PAYMENT_CTA,
-  POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
-  POS_SOLD_CTA,
   isPosSpotPurchasable,
   posAllowsVerifiedPaymentFinalize,
-  productPageCtaText,
-  shouldShowHeldForPaymentCheckoutMessage,
-  shouldShowHeldForPaymentProductMessage,
 } from "../lib/posSpotHold";
 import type { PosSpotStatus } from "../lib/posSpotTypes";
-import {
-  posRequiresPaymentHold,
-  posStatusAfterSuccessfulPayment,
-} from "../lib/inventoryType";
+import { posStatusAfterSuccessfulPayment } from "../lib/inventoryType";
 
 function assertGates(): void {
   const statuses: PosSpotStatus[] = [
@@ -41,59 +33,18 @@ function assertGates(): void {
     assert.equal(isPosSpotPurchasable(status), false, `${status} must not be purchasable`);
   }
 
-  assert.equal(shouldShowHeldForPaymentProductMessage("held_for_payment"), true);
-  assert.equal(shouldShowHeldForPaymentCheckoutMessage("held_for_payment"), true);
-  // Resume holder may purchase while held, and must not see the "another customer" checkout block.
+  // Resume holder may continue while an admin or leftover hold is set.
   assert.equal(isPosSpotPurchasable("held_for_payment", { resumeHolder: true }), true);
-  assert.equal(
-    shouldShowHeldForPaymentCheckoutMessage("held_for_payment", { resumeHolder: true }),
-    false,
-  );
-  for (const status of statuses.filter((s) => s !== "held_for_payment")) {
-    assert.equal(
-      shouldShowHeldForPaymentProductMessage(status),
-      false,
-      `product held message must not show for ${status}`,
-    );
-    assert.equal(
-      shouldShowHeldForPaymentCheckoutMessage(status),
-      false,
-      `checkout held message must not show for ${status}`,
-    );
-  }
-
-  const buyCta = "Buy for ₪89";
-  assert.equal(productPageCtaText("held_for_payment", buyCta), POS_HELD_FOR_PAYMENT_CTA);
-  assert.equal(productPageCtaText("available", buyCta), buyCta);
-  assert.equal(productPageCtaText("sold", buyCta), POS_SOLD_CTA);
-  assert.equal(productPageCtaText("inactive", buyCta), buyCta);
-
-  // Sold disables purchase without held copy.
   assert.equal(isPosSpotPurchasable("sold"), false);
-  assert.equal(shouldShowHeldForPaymentProductMessage("sold"), false);
-  assert.equal(shouldShowHeldForPaymentCheckoutMessage("sold"), false);
-
-  assert.equal(
-    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
-    "Another customer is currently purchasing this plant. Please check back shortly.",
-  );
-  assert.equal(
-    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
-    "This plant is currently being purchased by another customer.",
-  );
-  assert.equal(POS_HELD_FOR_PAYMENT_CTA, "Purchase in progress");
-  assert.equal(POS_SOLD_CTA, "Already found a home");
   assert.equal(posStatusAfterSuccessfulPayment("plants"), "sold");
   assert.equal(posStatusAfterSuccessfulPayment("flowers"), null);
-  assert.equal(posRequiresPaymentHold("plants"), true);
-  assert.equal(posRequiresPaymentHold("flowers"), false);
   assert.equal(
     posAllowsVerifiedPaymentFinalize("plants", { status: "held_for_payment", paymentHoldAttemptId: "a1" }, "a1"),
-    true,
+    false,
   );
   assert.equal(
     posAllowsVerifiedPaymentFinalize("plants", { status: "available" }, "a1"),
-    false,
+    true,
   );
   assert.equal(
     posAllowsVerifiedPaymentFinalize("flowers", { status: "available" }, "a1"),
@@ -104,50 +55,19 @@ function assertGates(): void {
     false,
   );
 
-  // Product page must derive CTA + gate + message from one post-cleanup status.
-  // Documents the fixed race: never mix pre-expiry held copy with post-expiry enabled.
-  function productPageHoldUi(status: PosSpotStatus, buyCtaText: string) {
-    return {
-      ctaText: productPageCtaText(status, buyCtaText),
-      purchaseEnabled: isPosSpotPurchasable(status),
-      showHeldMessage: shouldShowHeldForPaymentProductMessage(status),
-    };
-  }
-
-  const preCleanup: PosSpotStatus = "held_for_payment";
-  const postCleanup: PosSpotStatus = "available";
-  // Old bug shape (must not be how the page renders):
-  assert.equal(productPageCtaText(preCleanup, buyCta), POS_HELD_FOR_PAYMENT_CTA);
-  assert.equal(isPosSpotPurchasable(postCleanup), true);
-
-  const afterExpiry = productPageHoldUi(postCleanup, buyCta);
-  assert.equal(afterExpiry.purchaseEnabled, true);
-  assert.equal(afterExpiry.ctaText, buyCta);
-  assert.equal(afterExpiry.showHeldMessage, false);
-  assert.notEqual(afterExpiry.ctaText, POS_HELD_FOR_PAYMENT_CTA);
-
-  const activeHold = productPageHoldUi("held_for_payment", buyCta);
-  assert.equal(activeHold.purchaseEnabled, false);
-  assert.equal(activeHold.ctaText, POS_HELD_FOR_PAYMENT_CTA);
-  assert.equal(activeHold.showHeldMessage, true);
-
-  const availableUi = productPageHoldUi("available", buyCta);
-  assert.equal(availableUi.purchaseEnabled, true);
-  assert.equal(availableUi.ctaText, buyCta);
-  assert.equal(availableUi.showHeldMessage, false);
-
-  for (const status of statuses) {
-    const ui = productPageHoldUi(status, buyCta);
-    const holdCopy =
-      ui.ctaText === POS_HELD_FOR_PAYMENT_CTA || ui.showHeldMessage;
-    if (holdCopy) {
-      assert.equal(
-        ui.purchaseEnabled,
-        false,
-        `${status}: hold copy must never pair with purchaseEnabled`,
-      );
-    }
-  }
+  const root = process.cwd();
+  const landing = readFileSync(join(root, "components/plant/PosPlantLanding.tsx"), "utf8");
+  const checkout = readFileSync(join(root, "components/checkout/CheckoutForm.tsx"), "utf8");
+  const messages = readFileSync(join(root, "lib/messages.ts"), "utf8");
+  assert.doesNotMatch(landing, /plant\.held\./);
+  assert.doesNotMatch(checkout, /plant\.held\./);
+  assert.doesNotMatch(messages, /plant\.held\.product/);
+  assert.doesNotMatch(messages, /plant\.held\.checkout/);
+  assert.doesNotMatch(
+    messages,
+    /This plant is currently being purchased by another customer/,
+  );
+  assert.match(messages, /"plant\.cta\.held": "Purchase in progress"/);
 
   console.log("verify-pos-spot-hold: pure gates ok");
 }
@@ -163,9 +83,6 @@ async function assertDbMutations(): Promise<void> {
   }
 
   const {
-    acquirePosSpotHoldForPayment,
-    completePosSpotSaleFromHold,
-    releasePosSpotHoldForPayment,
     setPosSpotStatus,
     updatePosSpot,
     readPosSpots,
@@ -218,102 +135,6 @@ async function assertDbMutations(): Promise<void> {
   try {
     await setPosSpotStatus(spot.id, "available");
 
-    const attemptA = await insertAttempt();
-    const acquired = await acquirePosSpotHoldForPayment(spot.id, attemptA);
-    assert.equal(acquired.ok, true);
-    if (acquired.ok) {
-      assert.equal(acquired.outcome, "acquired");
-      assert.equal(acquired.posSpot.status, "held_for_payment");
-      assert.ok(
-        acquired.posSpot.paymentHoldStartedAt,
-        "acquire must set payment_hold_started_at",
-      );
-      assert.equal(
-        acquired.posSpot.paymentHoldAttemptId,
-        attemptA,
-        "acquire must set payment_hold_attempt_id",
-      );
-    }
-
-    const attemptB = await insertAttempt();
-    const second = await acquirePosSpotHoldForPayment(spot.id, attemptB);
-    assert.equal(second.ok, false);
-    if (!second.ok) assert.equal(second.outcome, "unavailable");
-
-    const releaseOk = await releasePosSpotHoldForPayment(spot.id, attemptA);
-    assert.equal(releaseOk.ok, true);
-    if (releaseOk.ok) {
-      assert.equal(releaseOk.outcome, "released");
-      assert.equal(releaseOk.posSpot.status, "available");
-      assert.equal(
-        releaseOk.posSpot.paymentHoldStartedAt,
-        undefined,
-        "release must clear payment_hold_started_at",
-      );
-      assert.equal(
-        releaseOk.posSpot.paymentHoldAttemptId,
-        undefined,
-        "release must clear payment_hold_attempt_id",
-      );
-    }
-
-    const releaseOnAvailable = await releasePosSpotHoldForPayment(spot.id, attemptA);
-    assert.equal(releaseOnAvailable.ok, false);
-    if (!releaseOnAvailable.ok) assert.equal(releaseOnAvailable.outcome, "unavailable");
-
-    // Ownership: newer attempt owns the hold; older attempt cannot release it.
-    const owned = await acquirePosSpotHoldForPayment(spot.id, attemptB);
-    assert.equal(owned.ok, true);
-    if (owned.ok) {
-      assert.equal(owned.posSpot.paymentHoldAttemptId, attemptB);
-      assert.ok(owned.posSpot.paymentHoldStartedAt);
-    }
-    const staleRelease = await releasePosSpotHoldForPayment(spot.id, attemptA);
-    assert.equal(staleRelease.ok, false);
-    if (!staleRelease.ok) assert.equal(staleRelease.outcome, "unavailable");
-    const stillHeld = await getPosSpotById(spot.id);
-    assert.equal(stillHeld?.status, "held_for_payment");
-    assert.equal(stillHeld?.paymentHoldAttemptId, attemptB);
-    const ownerRelease = await releasePosSpotHoldForPayment(spot.id, attemptB);
-    assert.equal(ownerRelease.ok, true);
-    assert.equal((await getPosSpotById(spot.id))?.status, "available");
-    assert.equal((await getPosSpotById(spot.id))?.paymentHoldAttemptId, undefined);
-
-    await setPosSpotStatus(spot.id, "sold");
-    const holdSold = await acquirePosSpotHoldForPayment(spot.id, attemptA);
-    assert.equal(holdSold.ok, false);
-
-    await setPosSpotStatus(spot.id, "inactive");
-    const holdInactive = await acquirePosSpotHoldForPayment(spot.id, attemptA);
-    assert.equal(holdInactive.ok, false);
-
-    await setPosSpotStatus(spot.id, "available");
-    const attemptC = await insertAttempt();
-    await acquirePosSpotHoldForPayment(spot.id, attemptC);
-    const soldFromHold = await completePosSpotSaleFromHold(spot.id, attemptC);
-    assert.equal(soldFromHold.ok, true);
-    if (soldFromHold.ok) {
-      assert.equal(soldFromHold.outcome, "sold");
-      assert.equal(soldFromHold.posSpot.status, "sold");
-      assert.equal(
-        soldFromHold.posSpot.paymentHoldStartedAt,
-        undefined,
-        "complete sale must clear payment_hold_started_at",
-      );
-      assert.equal(
-        soldFromHold.posSpot.paymentHoldAttemptId,
-        undefined,
-        "complete sale must clear payment_hold_attempt_id",
-      );
-    }
-
-    const completeAgain = await completePosSpotSaleFromHold(spot.id, attemptC);
-    assert.equal(completeAgain.ok, false);
-
-    // Sold POS cannot be released via release API.
-    const releaseSold = await releasePosSpotHoldForPayment(spot.id, attemptC);
-    assert.equal(releaseSold.ok, false);
-
     // Admin/updatePosSpot path must not create held_for_payment without timestamp.
     await setPosSpotStatus(spot.id, "available");
     const viaUpdate = await updatePosSpot(spot.id, {
@@ -360,10 +181,17 @@ async function assertDbMutations(): Promise<void> {
     assert.equal(reloaded?.status, "available");
     assert.equal(reloaded?.paymentHoldStartedAt, undefined);
 
-    // Attempt-owned hold: Admin may deliberately override an active hold.
+    // Leftover attempt-owned hold: Admin may deliberately override it.
     const attemptAdmin = await insertAttempt();
-    const ownedForAdmin = await acquirePosSpotHoldForPayment(spot.id, attemptAdmin);
-    assert.equal(ownedForAdmin.ok, true);
+    const { sql: holdSql } = await import("../lib/db");
+    await holdSql`
+      UPDATE pos_spots
+      SET
+        status = 'held_for_payment',
+        payment_hold_started_at = now(),
+        payment_hold_attempt_id = ${attemptAdmin}::uuid
+      WHERE id = ${spot.id}::uuid
+    `;
     assert.equal(
       (await getPosSpotById(spot.id))?.paymentHoldAttemptId,
       attemptAdmin,
@@ -448,10 +276,6 @@ async function assertDbMutations(): Promise<void> {
       const flowerAttemptB = await insertFlowerAttempt(sessionB);
       assert.equal((await getPosSpotById(spot.id))?.status, "available");
 
-      const noHoldSale = await completePosSpotSaleFromHold(spot.id, flowerAttemptA);
-      assert.equal(noHoldSale.ok, false);
-      assert.equal((await getPosSpotById(spot.id))?.status, "available");
-
       const flowerFinalA = await finalizeVerifiedPaymentAttemptAtomic({
         attemptId: flowerAttemptA,
         checkoutSessionId: sessionA,
@@ -505,12 +329,200 @@ async function assertDbMutations(): Promise<void> {
       await deletePlant(flowerId);
     }
 
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const migration = readFileSync(
+      join(process.cwd(), "db/migrations/053_release_partner_plant_pos_holds.sql"),
+      "utf8",
+    );
+    assert.match(migration, /SET\s+status = 'available'/);
+    assert.match(migration, /payment_hold_started_at = NULL/);
+    assert.match(migration, /payment_hold_attempt_id = NULL/);
+    assert.match(migration, /p\.status = 'held_for_payment'/);
+    assert.match(migration, /pl\.inventory_type = 'flowers'/);
+    assert.doesNotMatch(migration, /catalog_stock_holds/);
+    assert.doesNotMatch(migration, /payment_attempts/);
+    assert.doesNotMatch(migration, /DELETE/i);
+
+    const { sql } = await import("../lib/db");
+    const dbHost = new URL(process.env.DATABASE_URL ?? "http://invalid").hostname;
+    if (dbHost.includes("twilight-truth")) {
+      throw new Error("Refusing to exercise migration 053 against production");
+    }
+
+    const evidenceBefore = await sql`
+      SELECT
+        count(*)::int AS attempts,
+        count(cardcom_transaction_id)::int AS evidenced
+      FROM payment_attempts
+    `;
+    const catalogHoldsBefore = await sql`
+      SELECT count(*)::int AS holds FROM catalog_stock_holds
+    `;
+    await sql`
+      UPDATE pos_spots
+      SET
+        status = 'held_for_payment',
+        payment_hold_started_at = now(),
+        payment_hold_attempt_id = NULL
+      WHERE id = ${spot.id}::uuid
+        AND status = 'available'
+    `;
+    assert.equal((await getPosSpotById(spot.id))?.status, "held_for_payment");
+    const releasedOnce = await sql`
+      UPDATE pos_spots AS p
+      SET
+        status = 'available',
+        payment_hold_started_at = NULL,
+        payment_hold_attempt_id = NULL
+      WHERE p.id = ${spot.id}::uuid
+        AND p.status = 'held_for_payment'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM offers AS o
+          INNER JOIN plants AS pl ON pl.id = o.product_id
+          WHERE o.id = p.current_offer_id
+            AND pl.inventory_type = 'flowers'
+        )
+      RETURNING p.id
+    `;
+    assert.equal((releasedOnce as { id: string }[]).length, 1);
+    assert.equal((await getPosSpotById(spot.id))?.status, "available");
+    assert.equal((await getPosSpotById(spot.id))?.paymentHoldAttemptId, undefined);
+    assert.equal((await getPosSpotById(spot.id))?.paymentHoldStartedAt, undefined);
+    const releasedTwice = await sql`
+      UPDATE pos_spots AS p
+      SET
+        status = 'available',
+        payment_hold_started_at = NULL,
+        payment_hold_attempt_id = NULL
+      WHERE p.id = ${spot.id}::uuid
+        AND p.status = 'held_for_payment'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM offers AS o
+          INNER JOIN plants AS pl ON pl.id = o.product_id
+          WHERE o.id = p.current_offer_id
+            AND pl.inventory_type = 'flowers'
+        )
+      RETURNING p.id
+    `;
+    assert.equal((releasedTwice as { id: string }[]).length, 0);
+    const evidenceAfter = await sql`
+      SELECT
+        count(*)::int AS attempts,
+        count(cardcom_transaction_id)::int AS evidenced
+      FROM payment_attempts
+    `;
+    const catalogHoldsAfter = await sql`
+      SELECT count(*)::int AS holds FROM catalog_stock_holds
+    `;
+    assert.deepEqual(evidenceAfter, evidenceBefore);
+    assert.deepEqual(catalogHoldsAfter, catalogHoldsBefore);
+
+    const flowerSpots = await sql`
+      SELECT p.id
+      FROM pos_spots p
+      INNER JOIN offers o ON o.id = p.current_offer_id
+      INNER JOIN plants pl ON pl.id = o.product_id
+      WHERE pl.inventory_type = 'flowers'
+        AND p.status = 'available'
+        AND p.id <> ${spot.id}::uuid
+      LIMIT 1
+    `;
+    const flowerSpot = (flowerSpots as { id: string }[])[0];
+    if (flowerSpot) {
+      await sql`
+        UPDATE pos_spots
+        SET
+          status = 'held_for_payment',
+          payment_hold_started_at = now(),
+          payment_hold_attempt_id = NULL
+        WHERE id = ${flowerSpot.id}::uuid
+          AND status = 'available'
+      `;
+      const flowerReleased = await sql`
+        UPDATE pos_spots AS p
+        SET
+          status = 'available',
+          payment_hold_started_at = NULL,
+          payment_hold_attempt_id = NULL
+        WHERE p.id = ${flowerSpot.id}::uuid
+          AND p.status = 'held_for_payment'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM offers AS o
+            INNER JOIN plants AS pl ON pl.id = o.product_id
+            WHERE o.id = p.current_offer_id
+              AND pl.inventory_type = 'flowers'
+          )
+        RETURNING p.id
+      `;
+      assert.equal((flowerReleased as { id: string }[]).length, 0);
+      const flowerAfter = await sql`
+        SELECT status FROM pos_spots WHERE id = ${flowerSpot.id}::uuid
+      `;
+      assert.equal((flowerAfter as { status: string }[])[0]?.status, "held_for_payment");
+      await sql`
+        UPDATE pos_spots
+        SET
+          status = 'available',
+          payment_hold_started_at = NULL,
+          payment_hold_attempt_id = NULL
+        WHERE id = ${flowerSpot.id}::uuid
+          AND status = 'held_for_payment'
+          AND payment_hold_attempt_id IS NULL
+      `;
+    }
+
+    if (dbHost.includes("snowy-credit")) {
+      const updateMatch = migration.match(/UPDATE pos_spots AS p[\s\S]*?;/);
+      if (!updateMatch) {
+        throw new Error("migration 053 is missing its UPDATE statement");
+      }
+      const fullRelease = updateMatch[0].replace(/;\s*$/, "");
+      const query = (
+        sql as unknown as { query: (text: string) => Promise<unknown[]> }
+      ).query.bind(sql);
+      const plantHeld = async () => {
+        const rows = await sql`
+          SELECT count(*)::int AS n
+          FROM pos_spots p
+          WHERE p.status = 'held_for_payment'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM offers AS o
+              INNER JOIN plants AS pl ON pl.id = o.product_id
+              WHERE o.id = p.current_offer_id
+                AND pl.inventory_type = 'flowers'
+            )
+        `;
+        return (rows as { n: number }[])[0]?.n ?? -1;
+      };
+      await query(fullRelease);
+      const afterFirst = await plantHeld();
+      const evidenceMid = await sql`
+        SELECT
+          count(*)::int AS attempts,
+          count(cardcom_transaction_id)::int AS evidenced
+        FROM payment_attempts
+      `;
+      await query(fullRelease);
+      const afterSecond = await plantHeld();
+      const evidenceEnd = await sql`
+        SELECT
+          count(*)::int AS attempts,
+          count(cardcom_transaction_id)::int AS evidenced
+        FROM payment_attempts
+      `;
+      assert.equal(afterFirst, 0, "migration 053 releases plant holds");
+      assert.equal(afterSecond, 0, "migration 053 is idempotent");
+      assert.deepEqual(evidenceMid, evidenceBefore);
+      assert.deepEqual(evidenceEnd, evidenceBefore);
+    }
+
     console.log("verify-pos-spot-hold: DB atomic mutations ok");
   } finally {
-    const current = await getPosSpotById(spot.id);
-    if (current?.status === "held_for_payment" && current.paymentHoldAttemptId) {
-      await releasePosSpotHoldForPayment(spot.id, current.paymentHoldAttemptId);
-    }
     for (const id of [...new Set(attemptIds)]) {
       await deletePaymentAttemptById(id);
     }

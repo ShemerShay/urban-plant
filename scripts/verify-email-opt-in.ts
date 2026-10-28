@@ -243,7 +243,6 @@ async function main(): Promise<void> {
   const {
     getPosSpotById,
     readPosSpots,
-    releasePosSpotHoldForPayment,
     setPosSpotStatus,
   } = await import("../lib/posSpotStorage");
   const { processCardcomWebhook } = await import("../lib/processCardcomWebhook");
@@ -271,8 +270,8 @@ async function main(): Promise<void> {
 
   async function releaseOwnedHold(): Promise<void> {
     const spot = await getPosSpotById(available!.id);
-    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
-      await releasePosSpotHoldForPayment(available!.id, spot.paymentHoldAttemptId);
+    if (spot?.status === "held_for_payment") {
+      await setPosSpotStatus(available!.id, "available");
     }
   }
 

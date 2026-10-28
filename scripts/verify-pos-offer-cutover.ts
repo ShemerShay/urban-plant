@@ -144,6 +144,7 @@ async function main(): Promise<void> {
     flowerPlantId,
   });
   const spotIds: string[] = [];
+  const orderIds: string[] = [];
 
   function emptySpot(slug: string, posNumber: string) {
     return {
@@ -482,17 +483,14 @@ async function main(): Promise<void> {
 
     const salePlantBefore = await getInventoryQuantity(fixture.variantS);
     const saleColorBefore = await getPotInventoryQuantity(fixture.colorA);
-    const { completePosSpotSaleFromHold, acquirePosSpotHoldForPayment } = await import(
-      "../lib/posSpotStorage"
-    );
-    const { insertPaymentAttempt, deletePaymentAttemptById } = await import(
-      "../lib/paymentAttemptStorage"
-    );
+    const { insertPaymentAttempt, deletePaymentAttemptById, finalizeVerifiedPaymentAttemptAtomic } =
+      await import("../lib/paymentAttemptStorage");
     const saleAttempt = randomUUID();
+    const saleSession = `cs-s6-${randomUUID()}`;
     const now = new Date().toISOString();
     await insertPaymentAttempt({
       id: saleAttempt,
-      status: "created",
+      status: "awaiting_payment",
       posSpotId: centralSpot.id,
       productId: fixture.plantId,
       productName: "Slice 6 sale",
@@ -503,23 +501,27 @@ async function main(): Promise<void> {
       apartmentOrNotes: "",
       fulfillmentMethod: "pickup",
       amount: 88,
+      checkoutSessionId: saleSession,
       paymentResumeToken: `resume-${randomUUID()}`,
       createdAt: now,
       updatedAt: now,
     });
-    const held = await acquirePosSpotHoldForPayment(centralSpot.id, saleAttempt);
-    assert.equal(held.ok, true);
-    const sold = await completePosSpotSaleFromHold(centralSpot.id, saleAttempt);
+    const sold = await finalizeVerifiedPaymentAttemptAtomic({
+      attemptId: saleAttempt,
+      checkoutSessionId: saleSession,
+      posSpotId: centralSpot.id,
+      fulfillmentMethod: "pickup",
+    });
     assert.equal(sold.ok, true);
-    if (sold.ok) {
-      assert.equal(sold.posSpot.status, "sold");
-      assert.equal(sold.posSpot.currentOfferId, fixture.offerPot);
-      assert.equal(sold.posSpot.plantVariantId, undefined);
-      assert.equal(sold.posSpot.potColorId, undefined);
-    }
+    const soldSpot = await getPosSpotById(centralSpot.id);
+    assert.equal(soldSpot?.status, "sold");
+    assert.equal(soldSpot?.currentOfferId, fixture.offerPot);
+    assert.equal(soldSpot?.plantVariantId, undefined);
+    assert.equal(soldSpot?.potColorId, undefined);
     assert.equal(await getInventoryQuantity(fixture.variantS), salePlantBefore);
     assert.equal(await getPotInventoryQuantity(fixture.colorA), saleColorBefore);
     await deletePaymentAttemptById(saleAttempt);
+    if (sold.ok) orderIds.push(sold.order.orderId);
 
     const splitSpot = await appendPosSpot(emptySpot(`s6-seg-${tag}`, "64"));
     spotIds.push(splitSpot.id);
@@ -673,6 +675,11 @@ async function main(): Promise<void> {
         )
       `;
       await sql`DELETE FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])`;
+    }
+    for (const orderId of orderIds) {
+      await sql`DELETE FROM orders WHERE order_id = ${orderId}::uuid`;
+    }
+    if (spotIds.length > 0) {
       await sql`DELETE FROM pos_spots WHERE id = ANY(${spotIds}::uuid[])`;
     }
     await fixture.cleanup();

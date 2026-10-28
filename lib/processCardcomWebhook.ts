@@ -22,6 +22,7 @@ import {
   getPaymentAttemptByCheckoutSessionId,
   getPaymentAttemptById,
   markCatalogLateSuccessNeedsReconciliation,
+  markPartnerLostSaleNeedsReconciliation,
   markPaymentAttemptNeedsReconciliation,
 } from "@/lib/paymentAttemptStorage";
 import type { SavedPaymentAttempt } from "@/lib/paymentAttemptTypes";
@@ -119,15 +120,48 @@ async function attemptPosAllowsFinalize(
   );
 }
 
-/** Legacy pending Order: plants need a hold; flowers need POS available (no owner). */
+/** Legacy pending Order: plants and flowers both need the POS still available. */
 async function legacyOrderPosAllowsFinalize(
   posSpot: PosSpot,
   productId: string,
 ): Promise<boolean> {
   const plant = await getPlantById(productId);
   const inventoryType = inventoryTypeOrDefault(plant?.inventoryType);
-  if (inventoryType === "flowers") return posSpot.status === "available";
-  return posSpot.status === "held_for_payment";
+  if (inventoryType === "flowers" || inventoryType === "plants") {
+    return posSpot.status === "available";
+  }
+  return false;
+}
+
+/**
+ * A verified Partner plant payment that finds the spot already sold keeps its
+ * Cardcom evidence and becomes needs_reconciliation. No order is created.
+ */
+async function reconcilePartnerPlantLostSale(input: {
+  attempt: SavedPaymentAttempt;
+  posSpot: PosSpot | null | undefined;
+  checkoutSessionId: string;
+  cardcomTransactionId?: number;
+}): Promise<boolean> {
+  if (!input.posSpot || input.posSpot.status !== "sold") return false;
+  if (input.attempt.channel !== "partner") return false;
+  if (input.attempt.status !== "awaiting_payment") return false;
+  const plant = await getPlantById(input.attempt.productId);
+  if (inventoryTypeOrDefault(plant?.inventoryType) === "flowers") return false;
+  const marked = await markPartnerLostSaleNeedsReconciliation({
+    attemptId: input.attempt.id,
+    checkoutSessionId: input.checkoutSessionId,
+    cardcomTransactionId: input.cardcomTransactionId,
+    reason: "verified_payment_lost_pos_sale",
+  });
+  if (!marked) return false;
+  logWebhookOp("partner_lost_sale_needs_reconciliation", {
+    attemptId: input.attempt.id,
+    posSpotId: input.posSpot.id,
+    checkoutSessionId: input.checkoutSessionId,
+    cardcomTransactionId: input.cardcomTransactionId ?? null,
+  });
+  return true;
 }
 
 function verifyGetLpResultAgainstAttempt(
@@ -556,6 +590,7 @@ async function processAttemptWebhook(
   }
 
   const posSpot = await getPosSpotById(attemptAfterExpiry.posSpotId);
+  const cardcomTransactionId = resolveVerifiedTransactionId(verified);
   if (
     !posSpot ||
     !(await attemptPosAllowsFinalize(
@@ -564,7 +599,31 @@ async function processAttemptWebhook(
       attemptAfterExpiry.id,
     ))
   ) {
-    logWebhookOp("pos_not_held_by_attempt", {
+    const lostSale = await reconcilePartnerPlantLostSale({
+      attempt: attemptAfterExpiry,
+      posSpot,
+      checkoutSessionId: verified.lowProfileId,
+      cardcomTransactionId,
+    });
+    if (lostSale) {
+      return {
+        httpStatus: 200,
+        body: { ok: true },
+        outcome: "needs_reconciliation",
+      };
+    }
+    if (posSpot?.status === "available") {
+      logWebhookOp("finalize_retry_spot_still_available", {
+        attemptId: attemptAfterExpiry.id,
+        posSpotId: attemptAfterExpiry.posSpotId,
+      });
+      return {
+        httpStatus: 500,
+        body: { ok: false, error: "Internal error" },
+        outcome: "server_error",
+      };
+    }
+    logWebhookOp("pos_not_available_for_attempt", {
       attemptId: attemptAfterExpiry.id,
       posSpotId: attemptAfterExpiry.posSpotId,
       posStatus: posSpot?.status ?? null,
@@ -576,8 +635,6 @@ async function processAttemptWebhook(
       outcome: "ignored_ineligible",
     };
   }
-
-  const cardcomTransactionId = resolveVerifiedTransactionId(verified);
   const partnerId = attemptAfterExpiry.snapshot?.partnerLocationId;
   const partner = partnerId ? await getLocationById(partnerId) : undefined;
 
@@ -601,9 +658,37 @@ async function processAttemptWebhook(
           outcome: "already_finalized",
         };
       }
+      const spotNow = await getPosSpotById(attemptAfterExpiry.posSpotId);
+      if (
+        again?.status === "awaiting_payment" &&
+        (await reconcilePartnerPlantLostSale({
+          attempt: again,
+          posSpot: spotNow,
+          checkoutSessionId: verified.lowProfileId,
+          cardcomTransactionId,
+        }))
+      ) {
+        return {
+          httpStatus: 200,
+          body: { ok: true },
+          outcome: "needs_reconciliation",
+        };
+      }
+      if (spotNow?.status === "available") {
+        logWebhookOp("finalize_conflict_spot_still_available", {
+          attemptId: attemptAfterExpiry.id,
+          lowProfileId: verified.lowProfileId,
+        });
+        return {
+          httpStatus: 500,
+          body: { ok: false, error: "Internal error" },
+          outcome: "server_error",
+        };
+      }
       logWebhookOp("finalize_conflict", {
         attemptId: attemptAfterExpiry.id,
         lowProfileId: verified.lowProfileId,
+        posStatus: spotNow?.status ?? null,
       });
       return {
         httpStatus: 200,
