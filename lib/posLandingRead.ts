@@ -44,21 +44,19 @@ function emptyPlacement(): PosPlacementDisplay {
 
 async function loadPlacementDisplay(posSpot: PosSpot): Promise<PosPlacementDisplay> {
   const plantVariantId = posSpot.plantVariantId?.trim() || null;
-  const potColorId = posSpot.potColorId?.trim() || null;
-  if (!plantVariantId && !potColorId) return emptyPlacement();
+  const potId = posSpot.potId?.trim() || null;
+  if (!plantVariantId && !potId) return emptyPlacement();
 
   const rows = (await sql`
     SELECT
       pv.size_label AS plant_size_label,
-      CASE WHEN ${potColorId}::uuid IS NULL THEN NULL ELSE pc.color END AS pot_color,
-      CASE WHEN ${potColorId}::uuid IS NULL THEN NULL ELSE pc.color_he END AS pot_color_he,
-      CASE WHEN ${potColorId}::uuid IS NULL THEN NULL ELSE ps.size_label END AS pot_size_label,
-      CASE WHEN ${potColorId}::uuid IS NULL THEN NULL ELSE pot.name END AS pot_name
+      CASE WHEN ${potId}::uuid IS NULL THEN NULL ELSE pot.color END AS pot_color,
+      NULL::text AS pot_color_he,
+      NULL::text AS pot_size_label,
+      CASE WHEN ${potId}::uuid IS NULL THEN NULL ELSE pot.name END AS pot_name
     FROM (SELECT 1) AS dummy
     LEFT JOIN plant_variants pv ON pv.id = ${plantVariantId}::uuid
-    LEFT JOIN pot_colors pc ON pc.id = ${potColorId}::uuid
-    LEFT JOIN pot_sizes ps ON ps.id = pc.pot_size_id
-    LEFT JOIN pots pot ON pot.id = ps.pot_id
+    LEFT JOIN pots pot ON pot.id = ${potId}::uuid
   `) as {
     plant_size_label: string | null;
     pot_color: string | null;
@@ -70,10 +68,10 @@ async function loadPlacementDisplay(posSpot: PosSpot): Promise<PosPlacementDispl
   if (!row) return emptyPlacement();
   return {
     plantSizeLabel: row.plant_size_label?.trim() || null,
-    potName: potColorId ? row.pot_name?.trim() || null : null,
-    potSizeLabel: potColorId ? row.pot_size_label?.trim() || null : null,
-    potColor: potColorId ? row.pot_color?.trim() || null : null,
-    potColorHe: potColorId ? row.pot_color_he?.trim() || null : null,
+    potName: potId ? row.pot_name?.trim() || null : null,
+    potSizeLabel: null,
+    potColor: potId ? row.pot_color?.trim() || null : null,
+    potColorHe: null,
   };
 }
 

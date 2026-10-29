@@ -1,7 +1,7 @@
 /**
  * Public Catalog shop reads. Published plants only.
  * The active Catalog Offer is the only customer selling price.
- * Plant stock stays on the Plant Size. Pot stock stays on the Pot Color.
+ * Plant stock stays on the Plant Size. Pot stock stays on the Catalog Pot.
  * Does not write inventory.
  */
 
@@ -9,27 +9,18 @@ import type { CatalogCartItem, CatalogCartResolvedLine } from "@/lib/catalogCart
 import { sql } from "@/lib/db";
 import { getInventoryQuantities } from "@/lib/inventoryStorage";
 import { catalogPlantSizeCodes, type PlantSizeLabel } from "@/lib/plantSizes";
-import type { PotSizeLabel } from "@/lib/potSizes";
 import type { LightLevel, PlantProduct } from "@/lib/types";
-
-export type CatalogShopColor = {
-  id: string;
-  color: string;
-  colorHe?: string;
-  quantity: number;
-};
 
 export type CatalogShopVariant = {
   id: string;
-  potSizeId: string | null;
-  potId?: string;
+  potId: string | null;
   potName?: string;
   potNameHe?: string;
   potImage?: string;
-  potSizeLabel?: PotSizeLabel;
+  potColor?: string;
   offerId: string;
   unitPrice: number;
-  colors: CatalogShopColor[];
+  potQuantity: number;
 };
 
 export type CatalogShopSize = {
@@ -94,22 +85,13 @@ type VariantShopRow = {
 type OfferVariantRow = {
   id: string;
   plant_variant_id: string;
-  pot_size_id: string | null;
   pot_id: string | null;
   pot_name: string | null;
   pot_name_he: string | null;
   pot_image: string | null;
-  pot_size_label: string | null;
+  pot_color: string | null;
   offer_id: string;
   consumer_price: string | number;
-};
-
-type ColorRow = {
-  id: string;
-  pot_size_id: string;
-  color: string;
-  color_he: string | null;
-  quantity: string | number | null;
 };
 
 function optionalTrimmed(value: string | null | undefined): string | undefined {
@@ -179,10 +161,57 @@ function variantKey(id: string): string {
   return id.trim().toLowerCase();
 }
 
-function potSizeLabel(value: string | null): PotSizeLabel | undefined {
-  const label = optionalTrimmed(value);
-  if (label === "S" || label === "M" || label === "L") return label;
-  return undefined;
+async function readOfferVariants(plantVariantIds: string[]): Promise<OfferVariantRow[]> {
+  if (plantVariantIds.length === 0) return [];
+  const rows = await sql`
+    SELECT
+      sv.id,
+      sv.plant_variant_id,
+      sv.pot_id,
+      pot.name AS pot_name,
+      pot.name_he AS pot_name_he,
+      pot.image AS pot_image,
+      pot.color AS pot_color,
+      o.id AS offer_id,
+      o.consumer_price
+    FROM sellable_variants sv
+    INNER JOIN offers o
+      ON o.sellable_variant_id = sv.id
+     AND o.status = 'active'
+    INNER JOIN offer_availabilities a
+      ON a.offer_id = o.id
+     AND a.scope = 'catalog'
+    LEFT JOIN pots pot ON pot.id = sv.pot_id
+    WHERE sv.plant_variant_id = ANY(${plantVariantIds}::uuid[])
+    ORDER BY pot.name ASC NULLS FIRST, sv.id ASC
+  `;
+  return rows as OfferVariantRow[];
+}
+
+async function availablePotQuantities(potIds: string[]): Promise<Map<string, number>> {
+  const available = new Map<string, number>();
+  if (potIds.length === 0) return available;
+  const rows = await sql`
+    SELECT
+      p.id::text AS pot_id,
+      GREATEST(
+        COALESCE(i.quantity, 0) - COALESCE((
+          SELECT SUM(h.quantity)::int
+          FROM catalog_stock_holds h
+          WHERE h.pot_id = p.id
+            AND h.status = 'active'
+            AND h.expires_at > now()
+        ), 0),
+        0
+      )::int AS quantity
+    FROM pots p
+    LEFT JOIN pot_inventory i ON i.pot_id = p.id
+    WHERE p.id = ANY(${potIds}::uuid[])
+  `;
+  for (const row of rows as { pot_id: string; quantity: number | string }[]) {
+    available.set(variantKey(row.pot_id), Number(row.quantity) || 0);
+  }
+  return available;
 }
 
 async function readPublishedPlantRows(): Promise<PlantShopRow[]> {
@@ -225,76 +254,6 @@ async function heldPlantQuantities(ids: string[]): Promise<Map<string, number>> 
   return held;
 }
 
-async function readOfferVariants(plantVariantIds: string[]): Promise<OfferVariantRow[]> {
-  if (plantVariantIds.length === 0) return [];
-  const rows = await sql`
-    SELECT
-      sv.id,
-      sv.plant_variant_id,
-      sv.pot_size_id,
-      ps.pot_id,
-      pot.name AS pot_name,
-      pot.name_he AS pot_name_he,
-      pot.image AS pot_image,
-      ps.size_label AS pot_size_label,
-      o.id AS offer_id,
-      o.consumer_price
-    FROM sellable_variants sv
-    INNER JOIN offers o
-      ON o.sellable_variant_id = sv.id
-     AND o.status = 'active'
-    INNER JOIN offer_availabilities a
-      ON a.offer_id = o.id
-     AND a.scope = 'catalog'
-    LEFT JOIN pot_sizes ps ON ps.id = sv.pot_size_id
-    LEFT JOIN pots pot ON pot.id = ps.pot_id
-    WHERE sv.plant_variant_id = ANY(${plantVariantIds}::uuid[])
-    ORDER BY pot.name ASC NULLS FIRST, ps.size_label ASC, sv.id ASC
-  `;
-  return rows as OfferVariantRow[];
-}
-
-async function readInStockColors(potSizeIds: string[]): Promise<Map<string, CatalogShopColor[]>> {
-  const grouped = new Map<string, CatalogShopColor[]>();
-  if (potSizeIds.length === 0) return grouped;
-  const rows = await sql`
-    SELECT
-      c.id,
-      c.pot_size_id,
-      c.color,
-      c.color_he,
-      GREATEST(
-        COALESCE(i.quantity, 0) - COALESCE((
-          SELECT SUM(h.quantity)::int
-          FROM catalog_stock_holds h
-          WHERE h.pot_color_id = c.id
-            AND h.status = 'active'
-            AND h.expires_at > now()
-        ), 0),
-        0
-      )::int AS quantity
-    FROM pot_colors c
-    LEFT JOIN pot_inventory i ON i.pot_color_id = c.id
-    WHERE c.pot_size_id = ANY(${potSizeIds}::uuid[])
-    ORDER BY c.color ASC, c.id ASC
-  `;
-  for (const row of rows as ColorRow[]) {
-    const quantity = Number(row.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) continue;
-    const colorHe = optionalTrimmed(row.color_he);
-    const color: CatalogShopColor = {
-      id: row.id,
-      color: row.color.trim(),
-      quantity,
-      ...(colorHe ? { colorHe } : {}),
-    };
-    const list = grouped.get(row.pot_size_id) ?? [];
-    list.push(color);
-    grouped.set(row.pot_size_id, list);
-  }
-  return grouped;
-}
-
 async function buildSizesByPlant(plantIds: string[]): Promise<Map<string, CatalogShopSize[]>> {
   const byPlant = new Map<string, CatalogShopSize[]>();
   const variants = await readVariantRows(plantIds);
@@ -303,33 +262,28 @@ async function buildSizesByPlant(plantIds: string[]): Promise<Map<string, Catalo
   const quantities = await getInventoryQuantities(variantIds);
   const held = await heldPlantQuantities(variantIds);
   const offerRows = await readOfferVariants(variantIds);
-  const potSizeIds = [
-    ...new Set(
-      offerRows
-        .map((row) => row.pot_size_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
+  const potIds = [
+    ...new Set(offerRows.map((row) => row.pot_id).filter((id): id is string => Boolean(id))),
   ];
-  const colorsBySize = await readInStockColors(potSizeIds);
+  const potsAvailable = await availablePotQuantities(potIds);
   const variantsByPlantSize = new Map<string, CatalogShopVariant[]>();
   for (const row of offerRows) {
     const unitPrice = parsePrice(row.consumer_price);
     if (unitPrice == null) continue;
-    const potLabel = potSizeLabel(row.pot_size_label);
     const potName = optionalTrimmed(row.pot_name ?? undefined);
     const potNameHe = optionalTrimmed(row.pot_name_he ?? undefined);
     const potImage = optionalTrimmed(row.pot_image ?? undefined);
+    const potColor = optionalTrimmed(row.pot_color ?? undefined);
     const shopVariant: CatalogShopVariant = {
       id: row.id,
-      potSizeId: row.pot_size_id,
+      potId: row.pot_id,
       offerId: row.offer_id,
       unitPrice,
-      colors: row.pot_size_id ? (colorsBySize.get(row.pot_size_id) ?? []) : [],
-      ...(row.pot_id ? { potId: row.pot_id } : {}),
+      potQuantity: row.pot_id ? (potsAvailable.get(variantKey(row.pot_id)) ?? 0) : 0,
       ...(potName ? { potName } : {}),
       ...(potNameHe ? { potNameHe } : {}),
       ...(potImage ? { potImage } : {}),
-      ...(potLabel ? { potSizeLabel: potLabel } : {}),
+      ...(potColor ? { potColor } : {}),
     };
     const list = variantsByPlantSize.get(variantKey(row.plant_variant_id)) ?? [];
     list.push(shopVariant);
@@ -439,8 +393,8 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
 
 /**
  * Map stored v2 Cart lines onto current published Catalog Offers.
- * Drops a line whose Offer, Variant, Plant Size, color, or stock no longer agrees.
- * Clamps quantity to the smaller of plant and color availability.
+ * Drops a line whose Offer, Variant, Plant Size, or stock no longer agrees.
+ * Clamps quantity to the smaller of plant and pot availability.
  * Does not write inventory.
  */
 export async function resolveCatalogCartLines(
@@ -463,19 +417,10 @@ export async function resolveCatalogCartLines(
       (entry) => variantKey(entry.id) === variantKey(item.sellableVariantId),
     );
     if (!sellable || sellable.offerId !== item.offerId) continue;
-
-    let potColor: CatalogShopColor | undefined;
-    if (sellable.potSizeId == null) {
-      if (item.potColorId) continue;
-    } else {
-      if (!item.potColorId) continue;
-      potColor = sellable.colors.find((entry) => variantKey(entry.id) === variantKey(item.potColorId!));
-      if (!potColor || potColor.quantity <= 0) continue;
-    }
-
-    const available = potColor
-      ? Math.min(size.quantity, potColor.quantity)
-      : size.quantity;
+    const available =
+      sellable.potId == null
+        ? size.quantity
+        : Math.min(size.quantity, sellable.potQuantity);
     const quantity = Math.min(item.quantity, available);
     if (quantity < 1) continue;
 
@@ -484,7 +429,7 @@ export async function resolveCatalogCartLines(
       plantSizeId: size.id,
       sellableVariantId: sellable.id,
       offerId: sellable.offerId,
-      potColorId: potColor?.id ?? null,
+      potId: sellable.potId,
       quantity,
       availableQuantity: available,
       name: plant.name,
@@ -500,13 +445,7 @@ export async function resolveCatalogCartLines(
         ? {
             potName: sellable.potName,
             ...(sellable.potNameHe ? { potNameHe: sellable.potNameHe } : {}),
-            ...(sellable.potSizeLabel ? { potSizeLabel: sellable.potSizeLabel } : {}),
-          }
-        : {}),
-      ...(potColor
-        ? {
-            potColor: potColor.color,
-            ...(potColor.colorHe ? { potColorHe: potColor.colorHe } : {}),
+            ...(sellable.potColor ? { potColor: sellable.potColor } : {}),
           }
         : {}),
     });

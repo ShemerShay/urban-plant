@@ -30,6 +30,8 @@ export function TrackPurchaseCompleted({
   partner_name,
   amount,
   fulfillment_method,
+  channel,
+  currency = "ILS",
 }: TrackPurchaseCompletedProps) {
   const posthog = usePostHog();
   const firedRef = useRef(false);
@@ -52,7 +54,9 @@ export function TrackPurchaseCompleted({
         partner_id,
         partner_name,
         amount,
+        currency,
         fulfillment_method,
+        channel,
       },
     );
     if (sent) firedRef.current = true;
@@ -68,7 +72,9 @@ export function TrackPurchaseCompleted({
     partner_id,
     partner_name,
     amount,
+    currency,
     fulfillment_method,
+    channel,
   ]);
 
   return null;

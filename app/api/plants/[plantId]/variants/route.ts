@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminRequest } from "@/lib/adminAuth";
+import { InventoryChangeError } from "@/lib/inventoryStorage";
 import { getPlantByIdAsync } from "@/lib/plantStorage";
 import {
   PlantVariantWriteError,
-  createPlantVariant,
+  createPlantSizeWithOpeningQuantity,
+  parsePlantSizeOpeningQuantity,
   plantVariantWriteHttp,
   readPlantVariantsWithQuantity,
 } from "@/lib/plantVariantStorage";
@@ -55,16 +57,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const record = body as Record<string, unknown>;
 
   try {
-    const variant = await createPlantVariant({
+    const created = await createPlantSizeWithOpeningQuantity({
       plantId,
       sizeLabel: record.sizeLabel ?? record.size_label,
-      nurseryPotDiameterCm: record.nurseryPotDiameterCm ?? record.nursery_pot_diameter_cm,
+      quantity: parsePlantSizeOpeningQuantity(record.quantity),
     });
-    return NextResponse.json({ variant, quantity: 0 }, { status: 201 });
+    return NextResponse.json(
+      { variant: created.variant, quantity: created.quantity },
+      { status: 201 },
+    );
   } catch (error) {
     if (error instanceof PlantVariantWriteError) {
       const mapped = plantVariantWriteHttp(error);
       return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    }
+    if (error instanceof InventoryChangeError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : "Could not create variant";
     return NextResponse.json({ error: message }, { status: 500 });

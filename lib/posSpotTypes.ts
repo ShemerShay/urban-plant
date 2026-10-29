@@ -39,8 +39,8 @@ export interface PosSpot {
   currentOfferId?: string;
   /** Physical plant SKU occupying this POS. Null for empty, sold leftover, flowers, and legacy rows. */
   plantVariantId?: string;
-  /** Actual physical Pot Color on the occupying plant. Null when no pot is placed. */
-  potColorId?: string;
+  /** Actual physical Catalog Pot on the occupying plant. Null when no pot is placed. */
+  potId?: string;
   status: PosSpotStatus;
   /** When the current offer was placed on this POS (timestamptz). */
   offerPlacedAt?: string;

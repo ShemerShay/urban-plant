@@ -8,7 +8,6 @@ export type CatalogCartItem = {
   plantSizeId: string;
   sellableVariantId: string;
   offerId: string;
-  potColorId: string | null;
   quantity: number;
 };
 
@@ -23,11 +22,10 @@ export type CatalogCartResolvedLine = CatalogCartItem & {
   nurseryPotDiameterCm?: number;
   unitPrice: number;
   currency: PlantProduct["currency"];
+  potId: string | null;
   potName?: string;
   potNameHe?: string;
-  potSizeLabel?: string;
   potColor?: string;
-  potColorHe?: string;
 };
 
 export const EMPTY_CATALOG_CART: CatalogCart = { v: 2, items: [] };
@@ -35,10 +33,10 @@ export const EMPTY_CATALOG_CART: CatalogCart = { v: 2, items: [] };
 export function catalogCartItemKey(
   item: Pick<
     CatalogCartItem,
-    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId"
+    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId"
   >,
 ): string {
-  return `${item.plantId}::${item.plantSizeId}::${item.sellableVariantId}::${item.offerId}::${item.potColorId ?? ""}`;
+  return `${item.plantId}::${item.plantSizeId}::${item.sellableVariantId}::${item.offerId}`;
 }
 
 export function catalogCartLineAmount(unitPrice: number, quantity: number): number {
@@ -54,13 +52,6 @@ function parseQuantity(value: unknown): number | null {
   return value as number;
 }
 
-function parseOptionalId(value: unknown): string | null | undefined {
-  if (value == null) return null;
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed || null;
-}
-
 export function parseCatalogCartItem(raw: unknown): CatalogCartItem | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
@@ -69,13 +60,12 @@ export function parseCatalogCartItem(raw: unknown): CatalogCartItem | null {
   const sellableVariantId =
     typeof row.sellableVariantId === "string" ? row.sellableVariantId.trim() : "";
   const offerId = typeof row.offerId === "string" ? row.offerId.trim() : "";
-  const potColorId = parseOptionalId(row.potColorId);
   const quantity = parseQuantity(row.quantity);
-  if (!plantId || !plantSizeId || !sellableVariantId || !offerId || potColorId === undefined) {
+  if (!plantId || !plantSizeId || !sellableVariantId || !offerId) {
     return null;
   }
   if (quantity == null) return null;
-  return { plantId, plantSizeId, sellableVariantId, offerId, potColorId, quantity };
+  return { plantId, plantSizeId, sellableVariantId, offerId, quantity };
 }
 
 function mergeCatalogCartItems(items: CatalogCartItem[]): CatalogCartItem[] {
@@ -144,7 +134,6 @@ export function catalogCartItemsEqual(a: CatalogCartItem[], b: CatalogCartItem[]
       item.plantSizeId === other.plantSizeId &&
       item.sellableVariantId === other.sellableVariantId &&
       item.offerId === other.offerId &&
-      item.potColorId === other.potColorId &&
       item.quantity === other.quantity
     );
   });
@@ -154,7 +143,7 @@ export function storedCatalogCartItems(
   lines: Array<
     Pick<
       CatalogCartItem,
-      "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId" | "quantity"
+      "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "quantity"
     >
   >,
 ): CatalogCartItem[] {
@@ -163,7 +152,6 @@ export function storedCatalogCartItems(
     plantSizeId: line.plantSizeId,
     sellableVariantId: line.sellableVariantId,
     offerId: line.offerId,
-    potColorId: line.potColorId,
     quantity: line.quantity,
   }));
 }
@@ -172,7 +160,7 @@ export function addCatalogCartItem(
   cart: CatalogCart,
   input: Pick<
     CatalogCartItem,
-    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId"
+    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId"
   >,
   stock: number,
 ): { cart: CatalogCart; added: boolean } {
@@ -194,7 +182,7 @@ export function updateCatalogCartQuantity(
   cart: CatalogCart,
   input: Pick<
     CatalogCartItem,
-    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId"
+    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId"
   >,
   quantity: number,
   stock: number,
@@ -234,7 +222,7 @@ export function removeCatalogCartItem(
   cart: CatalogCart,
   input: Pick<
     CatalogCartItem,
-    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId"
+    "plantId" | "plantSizeId" | "sellableVariantId" | "offerId"
   >,
 ): CatalogCart {
   const key = catalogCartItemKey(input);

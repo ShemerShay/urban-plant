@@ -31,6 +31,7 @@ import {
 } from "@/lib/checkoutFulfillment";
 import type { InventoryType } from "@/lib/inventoryType";
 import { displayApiError, translateCheckoutFieldErrors } from "@/lib/displayLabels";
+import { browserIsInternal } from "@/lib/internalTraffic";
 import { t } from "@/lib/messages";
 import { isPosSpotPurchasable } from "@/lib/posSpotHold";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
@@ -324,14 +325,19 @@ export function CheckoutForm({
           );
           return;
         }
-        captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
-          ...analyticsContext,
-          plant_id: plantId,
-          plant_name: analyticsContext?.plant_name,
-          spot_slug: spotSlug,
-          fulfillment_method: fulfillmentMethod,
-          attempt_id: data.attemptId || data.orderId || paymentResume.orderId,
-        });
+        try {
+          captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
+            ...analyticsContext,
+            plant_id: plantId,
+            plant_name: analyticsContext?.plant_name,
+            spot_slug: spotSlug,
+            fulfillment_method: fulfillmentMethod,
+            currency: "ILS",
+            attempt_id: data.attemptId || data.orderId || paymentResume.orderId,
+          });
+        } catch {
+          // Analytics must not block the Cardcom redirect.
+        }
         window.location.assign(data.paymentUrl);
         return;
       }
@@ -365,6 +371,7 @@ export function CheckoutForm({
                 apartmentOrNotes: fields.apartmentOrNotes.trim(),
               }
             : {}),
+          isInternal: browserIsInternal(),
         }),
       });
 
@@ -380,14 +387,19 @@ export function CheckoutForm({
         return;
       }
 
-      captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
-        ...analyticsContext,
-        plant_id: plantId,
-        plant_name: analyticsContext?.plant_name,
-        spot_slug: spotSlug,
-        fulfillment_method: fulfillmentMethod,
-        attempt_id: data.attemptId || data.orderId,
-      });
+      try {
+        captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
+          ...analyticsContext,
+          plant_id: plantId,
+          plant_name: analyticsContext?.plant_name,
+          spot_slug: spotSlug,
+          fulfillment_method: fulfillmentMethod,
+          currency: "ILS",
+          attempt_id: data.attemptId || data.orderId,
+        });
+      } catch {
+        // Analytics must not block the Cardcom redirect.
+      }
       window.location.assign(data.paymentUrl);
     } catch {
       setSubmitError(t(locale, "common.networkError"));

@@ -1,8 +1,8 @@
 /**
  * Catalog stock reservations.
- * A hold is either a Plant Size or a Pot Color, never both and never a Variant.
+ * A hold is either a Plant Size or a Catalog Pot, never both and never a Variant.
  * Available plant quantity = inventory.quantity - active unexpired plant holds.
- * Available color quantity = pot_inventory.quantity - active unexpired color holds.
+ * Available pot quantity = pot_inventory.quantity - active unexpired pot holds.
  * A missing pot inventory row is 0.
  * Acquire, release, expire, and consume do not change inventory quantities.
  */
@@ -19,7 +19,7 @@ export type CatalogStockHold = {
   id: string;
   attemptId: string;
   plantVariantId: string | null;
-  potColorId: string | null;
+  potId: string | null;
   quantity: number;
   status: CatalogStockHoldStatus;
   expiresAt: string;
@@ -29,7 +29,7 @@ export type CatalogStockHold = {
 
 export type CatalogHoldRequestLine = {
   plantVariantId?: string | null;
-  potColorId?: string | null;
+  potId?: string | null;
   quantity: number;
 };
 
@@ -56,7 +56,7 @@ type HoldRow = {
   id: string;
   attempt_id: string;
   plant_variant_id: string | null;
-  pot_color_id: string | null;
+  pot_id: string | null;
   quantity: string | number;
   status: string;
   expires_at: string | Date;
@@ -87,7 +87,7 @@ function mapHoldRow(row: HoldRow): CatalogStockHold {
     id: String(row.id),
     attemptId: String(row.attempt_id),
     plantVariantId: row.plant_variant_id ? String(row.plant_variant_id) : null,
-    potColorId: row.pot_color_id ? String(row.pot_color_id) : null,
+    potId: row.pot_id ? String(row.pot_id) : null,
     quantity: parseNumeric(row.quantity),
     status,
     expiresAt,
@@ -118,11 +118,11 @@ function aggregateLines(lines: CatalogHoldRequestLine[]): HoldResource[] {
   const totals = new Map<string, HoldResource>();
   for (const line of lines) {
     const plantId = line.plantVariantId?.trim() || "";
-    const colorId = line.potColorId?.trim() || "";
+    const colorId = line.potId?.trim() || "";
     if ((plantId && colorId) || (!plantId && !colorId)) {
       throw new CatalogStockHoldError(
         "invalid_quantity",
-        "A catalog hold is a plant size or a pot color",
+        "A catalog hold is a plant size or a pot",
       );
     }
     if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
@@ -151,7 +151,7 @@ async function canonicalResources(resources: HoldResource[]): Promise<HoldResour
     }
     if (colorIds.length > 0) {
       colorRows = (await sql`
-        SELECT id::text AS id FROM pot_colors WHERE id = ANY(${colorIds}::uuid[])
+        SELECT id::text AS id FROM pots WHERE id = ANY(${colorIds}::uuid[])
       `) as { id: string }[];
     }
   } catch (error) {
@@ -171,7 +171,7 @@ async function canonicalResources(resources: HoldResource[]): Promise<HoldResour
     if (!stored) {
       throw new CatalogStockHoldError(
         resource.kind === "plant" ? "variant_not_found" : "color_not_found",
-        resource.kind === "plant" ? "Plant size was not found" : "Pot color was not found",
+        resource.kind === "plant" ? "Plant size was not found" : "Pot was not found",
       );
     }
     const key = `${resource.kind}:${stored}`;
@@ -210,8 +210,8 @@ function mapAcquireError(error: unknown, attemptId: string): Promise<never> {
     if (code === "23503" && /payment_attempts/i.test(message)) {
       throw new CatalogStockHoldError("attempt_not_found", "Payment attempt not found");
     }
-    if (code === "23514" || (code === "23503" && /pot_colors/i.test(message))) {
-      throw new CatalogStockHoldError("color_not_found", "Pot color was not found");
+    if (code === "23514" || (code === "23503" && /pots/i.test(message))) {
+      throw new CatalogStockHoldError("color_not_found", "Pot was not found");
     }
     if (code === "23503") {
       throw new CatalogStockHoldError("variant_not_found", "Plant size was not found");
@@ -297,11 +297,11 @@ export async function acquireCatalogStockHolds(input: {
                 0
               )
               ELSE GREATEST(
-                COALESCE((SELECT pi.quantity FROM pot_inventory pi WHERE pi.pot_color_id = r.resource_id), 0)
+                COALESCE((SELECT pi.quantity FROM pot_inventory pi WHERE pi.pot_id = r.resource_id), 0)
                 - COALESCE((
                   SELECT SUM(h.quantity)::int
                   FROM catalog_stock_holds h
-                  WHERE h.pot_color_id = r.resource_id
+                  WHERE h.pot_id = r.resource_id
                     AND h.status = 'active'
                     AND h.expires_at > now()
                 ), 0),
@@ -314,7 +314,7 @@ export async function acquireCatalogStockHolds(input: {
           INSERT INTO catalog_stock_holds (
             attempt_id,
             plant_variant_id,
-            pot_color_id,
+            pot_id,
             quantity,
             status,
             expires_at,
@@ -364,7 +364,7 @@ export async function listCatalogStockHoldsForAttempt(
       id,
       attempt_id,
       plant_variant_id,
-      pot_color_id,
+      pot_id,
       quantity,
       status,
       expires_at,
@@ -372,7 +372,7 @@ export async function listCatalogStockHoldsForAttempt(
       updated_at
     FROM catalog_stock_holds
     WHERE attempt_id = ${id}::uuid
-    ORDER BY plant_variant_id ASC NULLS LAST, pot_color_id ASC NULLS LAST, id ASC
+    ORDER BY plant_variant_id ASC NULLS LAST, pot_id ASC NULLS LAST, id ASC
   `;
   return (rows as HoldRow[]).map(mapHoldRow);
 }

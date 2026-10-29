@@ -14,6 +14,7 @@ export function TrackProductView({
   plant_id,
   plant_name,
   inventory_type,
+  channel = "catalog",
 }: AnalyticsCommerceProps) {
   const posthog = usePostHog();
   const firedRef = useRef(false);
@@ -25,9 +26,10 @@ export function TrackProductView({
       plant_id: plantId,
       plant_name,
       inventory_type,
+      channel,
     });
     if (sent) firedRef.current = true;
-  }, [posthog, plantId, plant_name, inventory_type]);
+  }, [posthog, plantId, plant_name, inventory_type, channel]);
 
   return null;
 }

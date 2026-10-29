@@ -13,11 +13,12 @@ import {
   parseOptionalCommissionRate,
 } from "@/lib/orderCommission";
 import { resolveOrderSaleIdentity, saleIdentityFromRow } from "@/lib/orderSaleIdentity";
-import type {
-  FulfillmentMethod,
-  OrderSnapshot,
-  PurchaseEmailStatus,
-  SavedOrder,
+import {
+  saleTimeSnapshotFields,
+  type FulfillmentMethod,
+  type OrderSnapshot,
+  type PurchaseEmailStatus,
+  type SavedOrder,
 } from "./orderTypes";
 import type { OrderStatus } from "./status";
 import { isOrderStatus } from "./status";
@@ -105,6 +106,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       : {}),
     ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
+    ...saleTimeSnapshotFields(o),
   };
 }
 
@@ -1020,7 +1022,7 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         payment_hold_started_at = NULL,
         payment_hold_attempt_id = NULL,
         plant_variant_id = NULL,
-        pot_color_id = NULL
+        pot_id = NULL
       FROM plant_lock l
       WHERE p.id = l.id
         AND p.status = 'available'

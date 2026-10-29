@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { TrackCheckoutStarted } from "@/components/analytics/TrackCheckoutStarted";
@@ -9,6 +10,7 @@ import { FlowerPosScanRedirect } from "@/components/checkout/FlowerPosScanRedire
 import { PlantImageGallery } from "@/components/plant/PlantImageGallery";
 import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
 import { getLocale } from "@/lib/getLocale";
+import { INTERNAL_COOKIE_NAME, isInternalAnalyticsSignal } from "@/lib/internalTraffic";
 import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import { t } from "@/lib/messages";
 import { formatPrice } from "@/lib/mockPlants";
@@ -28,6 +30,7 @@ interface PosCheckoutPageProps {
     paymentFailed?: string | string[];
     orderId?: string | string[];
     resume?: string | string[];
+    up_internal?: string | string[];
   }>;
 }
 
@@ -65,6 +68,7 @@ export default async function PosCheckoutPage({
           partner_name={partnerName}
           pocket_id={posSpot.pocketId}
           pocket_name={pocket?.name}
+          channel="partner"
         />
         <RememberCustomerPath />
         <div className="space-y-6">
@@ -109,9 +113,11 @@ export default async function PosCheckoutPage({
     pocket_id: posSpot.pocketId,
     pocket_name: pocket?.name,
     amount: offer.consumerPrice,
+    channel: "partner" as const,
   };
 
   if (isFlowerCheckout) {
+    const jar = await cookies();
     const result = await startCardcomPaymentPrep({
       plantId: plant.id,
       spotSlug: posSpot.spotSlug,
@@ -119,6 +125,10 @@ export default async function PosCheckoutPage({
       customerEmail: "",
       phone: "",
       fulfillmentMethod: "pickup",
+      isInternal: isInternalAnalyticsSignal({
+        queryValue: readParam(sp.up_internal),
+        cookieValue: jar.get(INTERNAL_COOKIE_NAME)?.value ?? null,
+      }),
     });
     if (!result.ok) {
       return (

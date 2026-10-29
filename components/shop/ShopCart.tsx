@@ -167,9 +167,10 @@ export function ShopCart({
       plant_variant_id: line.plantSizeId,
       sellable_variant_id: line.sellableVariantId,
       offer_id: line.offerId,
-      ...(line.potColorId ? { pot_color_id: line.potColorId } : {}),
+      ...(line.potId ? { pot_id: line.potId } : {}),
       quantity: line.quantity,
       amount: catalogCartLineAmount(line.unitPrice, line.quantity),
+      channel: "catalog",
     });
   }
 
@@ -220,11 +221,9 @@ export function ShopCart({
             <ul className="flex flex-col gap-6">
               {lines.map((line) => {
                 const name = localizedPlantText(locale, line.name, line.nameHe);
-                const potColor = localizedPlantText(locale, line.potColor, line.potColorHe);
                 const potLabel = [
                   localizedPlantText(locale, line.potName, line.potNameHe),
-                  line.potSizeLabel,
-                  potColor,
+                  line.potColor,
                 ]
                   .filter(Boolean)
                   .join(" ");

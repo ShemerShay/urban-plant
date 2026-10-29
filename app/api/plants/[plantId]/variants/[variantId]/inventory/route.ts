@@ -40,15 +40,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const record = body as Record<string, unknown>;
   const delta = record.delta;
   const noteRaw = record.note;
-  if (typeof noteRaw !== "string" || !noteRaw.trim()) {
-    return NextResponse.json({ error: "note is required" }, { status: 400 });
-  }
-  const note = noteRaw.trim();
-  if (note.length > NOTE_MAX) {
-    return NextResponse.json(
-      { error: "note must be at most 200 characters" },
-      { status: 400 },
-    );
+  let note: string | undefined;
+  if (noteRaw !== undefined && noteRaw !== null && noteRaw !== "") {
+    if (typeof noteRaw !== "string") {
+      return NextResponse.json({ error: "note must be a string" }, { status: 400 });
+    }
+    note = noteRaw.trim();
+    if (!note) note = undefined;
+    else if (note.length > NOTE_MAX) {
+      return NextResponse.json(
+        { error: "note must be at most 200 characters" },
+        { status: 400 },
+      );
+    }
   }
 
   try {
@@ -57,9 +61,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       throw new PlantVariantWriteError("not_found", "Variant not found");
     }
     if (typeof delta !== "number" || !Number.isInteger(delta)) {
-      throw new InventoryChangeError("invalid_delta", "delta must be a non-zero integer");
+      throw new InventoryChangeError(
+        "invalid_delta",
+        "Inventory delta must be a non-zero integer",
+      );
     }
-    const balance = await applyInventoryDelta({ variantId, delta, note });
+    const balance = await applyInventoryDelta({
+      variantId,
+      delta,
+      ...(note ? { note } : {}),
+    });
     const quantity = await getInventoryQuantity(variantId);
     return NextResponse.json({
       variantId,

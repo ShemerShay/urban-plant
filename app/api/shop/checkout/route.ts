@@ -9,6 +9,7 @@ import {
   startCatalogCardcomPayment,
   type CatalogCheckoutLineInput,
 } from "@/lib/catalogPaymentPrep";
+import { INTERNAL_COOKIE_NAME, isInternalAnalyticsSignal } from "@/lib/internalTraffic";
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -35,6 +36,12 @@ export async function POST(request: NextRequest) {
     deliveryStreet: cleanString(record.deliveryStreet),
     deliveryHouseNumber: cleanString(record.deliveryHouseNumber),
     apartmentOrNotes: cleanString(record.apartmentOrNotes),
+    isInternal:
+      record.isInternal === true ||
+      isInternalAnalyticsSignal({
+        cookieValue: request.cookies.get(INTERNAL_COOKIE_NAME)?.value ?? null,
+      }) ||
+      false,
   });
 
   if (!result.ok) {

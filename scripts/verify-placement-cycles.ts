@@ -255,11 +255,11 @@ async function main(): Promise<void> {
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: source,
-      introducesNewPotColor: occupancy.introducesNewPotColor,
+      introducesNewPot: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
-      potColorId: occupancy.potColorId,
+      potId: occupancy.potId,
       patch: {
         partnerLocationId: existing.partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -285,11 +285,11 @@ async function main(): Promise<void> {
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: "already_at_partner",
-      introducesNewPotColor: occupancy.introducesNewPotColor,
+      introducesNewPot: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
-      potColorId: occupancy.potColorId,
+      potId: occupancy.potId,
       patch: {
         partnerLocationId: existing.partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -722,7 +722,7 @@ async function main(): Promise<void> {
         variantId: variantB,
         action: "place",
         decrementPlant: true,
-        decrementPotColor: false,
+        decrementPot: false,
         existing: occupiedForGuard,
       });
     } catch (error) {

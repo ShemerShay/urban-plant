@@ -9,7 +9,6 @@ import {
   isPlantPosEligibleOffer,
   isPosAssignableOffer,
 } from "@/lib/offerTypes";
-import { readColorsForPotSizeIds } from "@/lib/potSizeStorage";
 import { resolveSpotOffers, type PartnerPlantProduct } from "@/lib/partnerPlantSummary";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
 import { getPocketById } from "@/lib/pocketStorage";
@@ -82,10 +81,6 @@ export async function GET(request: NextRequest) {
     if (inventoryType === "flowers") return true;
     return partnerId ? isPlantPosEligibleOffer(offer, partnerId) : Boolean(offer.sellableVariantId);
   });
-  const potSizeIds = posOffers
-    .map((offer) => offer.sellableVariant?.potSizeId)
-    .filter((id): id is string => Boolean(id));
-  const potColors = await readColorsForPotSizeIds(potSizeIds);
 
   const enrichedOffers = posOffers.map((offer) => {
     const product = productById.get(offer.productId);
@@ -107,7 +102,7 @@ export async function GET(request: NextRequest) {
     spotOffers: resolveSpotOffers(posSpots, offers, catalogById),
     locations,
     posSpots,
-    potColors,
+    potColors: [],
   });
 }
 
@@ -125,7 +120,6 @@ export async function POST(request: NextRequest) {
   const record = body as Record<string, unknown>;
   const partnerLocationId = cleanString(record.partnerLocationId);
   const currentOfferId = cleanString(record.currentOfferId);
-  const potColorId = cleanString(record.potColorId);
   const spotDescription = cleanString(record.spotDescription);
   const posNumber = cleanString(record.posNumber);
   const placementNotes = cleanString(record.placementNotes);
@@ -157,7 +151,6 @@ export async function POST(request: NextRequest) {
     occupancy = await resolveOccupancyForPosCreate({
       offerId: currentOfferId,
       partnerLocationId,
-      potColorId: potColorId || null,
     });
   } catch (err) {
     if (err instanceof PosOccupancyError) {
@@ -214,7 +207,7 @@ export async function POST(request: NextRequest) {
     ...(occupancyFields.plantVariantId
       ? { plantVariantId: occupancyFields.plantVariantId }
       : {}),
-    ...(occupancyFields.potColorId ? { potColorId: occupancyFields.potColorId } : {}),
+    ...(occupancyFields.potId ? { potId: occupancyFields.potId } : {}),
     status: occupancy.forceAvailable ? "available" : status,
     checkStatus: false as const,
     ...(occupancyFields.offerPlacedAt
@@ -229,7 +222,7 @@ export async function POST(request: NextRequest) {
       inventorySource: record.inventorySource,
       posSpot,
       variantId: occupancy.plantVariantId,
-      potColorId: occupancy.potColorId,
+      potId: occupancy.potId,
     });
   } catch (err) {
     if (err instanceof PosSpotSlugConflictError) {

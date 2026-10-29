@@ -1,7 +1,7 @@
 /**
  * Placement Segment boundaries share the statement that changes occupancy or price.
  * Requires a preceding CTE named `written` with id, plant_variant_id, pocket_id,
- * current_offer_id, pot_color_id. Callers must read `segment_guard` so the CTEs run.
+ * current_offer_id, pot_id. Callers must read `segment_guard` so the CTEs run.
  */
 
 import { sql } from "@/lib/db";
@@ -56,7 +56,7 @@ export function placementBoundaryCtes(input: {
         w.pocket_id,
         w.current_offer_id,
         o.sellable_variant_id,
-        w.pot_color_id
+        w.pot_id
       FROM written w
       INNER JOIN placement_cycles c
         ON c.pos_spot_id = w.id
@@ -71,7 +71,7 @@ export function placementBoundaryCtes(input: {
           s.pocket_id IS DISTINCT FROM w.pocket_id
           OR s.offer_id IS DISTINCT FROM w.current_offer_id
           OR s.sellable_variant_id IS DISTINCT FROM o.sellable_variant_id
-          OR s.pot_color_id IS DISTINCT FROM w.pot_color_id
+          OR s.pot_id IS DISTINCT FROM w.pot_id
         )
     ),
     exposure_close AS (
@@ -80,7 +80,7 @@ export function placementBoundaryCtes(input: {
       FROM exposure_targets t
       WHERE s.id = t.segment_id
         AND s.ended_at IS NULL
-      RETURNING s.placement_cycle_id, t.pocket_id, t.current_offer_id, t.sellable_variant_id, t.pot_color_id
+      RETURNING s.placement_cycle_id, t.pocket_id, t.current_offer_id, t.sellable_variant_id, t.pot_id
     ),
     opened_segments AS (
       INSERT INTO placement_segments (
@@ -93,7 +93,7 @@ export function placementBoundaryCtes(input: {
         offer_id,
         consumer_price,
         sellable_variant_id,
-        pot_color_id
+        pot_id
       )
       SELECT
         gen_random_uuid(),
@@ -105,14 +105,14 @@ export function placementBoundaryCtes(input: {
         src.offer_id,
         o.consumer_price,
         COALESCE(src.sellable_variant_id, o.sellable_variant_id),
-        src.pot_color_id
+        src.pot_id
       FROM (
         SELECT
           oc.id AS cycle_id,
           w.pocket_id,
           w.current_offer_id AS offer_id,
           o.sellable_variant_id,
-          w.pot_color_id
+          w.pot_id
         FROM opened_cycles oc
         INNER JOIN written w ON w.id = oc.pos_spot_id
         LEFT JOIN offers o ON o.id = w.current_offer_id
@@ -122,7 +122,7 @@ export function placementBoundaryCtes(input: {
           ec.pocket_id,
           ec.current_offer_id,
           ec.sellable_variant_id,
-          ec.pot_color_id
+          ec.pot_id
         FROM exposure_close ec
         INNER JOIN exposure_targets t ON t.cycle_id = ec.placement_cycle_id
       ) src

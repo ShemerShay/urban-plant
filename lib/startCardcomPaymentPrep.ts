@@ -28,6 +28,7 @@ import type { SavedPaymentAttempt } from "@/lib/paymentAttemptTypes";
 import { PAYMENT_HOLD_TTL_MS } from "@/lib/paymentHoldExpiry";
 import { createPaymentResumeToken } from "@/lib/paymentResume";
 import { getPlantById } from "@/lib/plantCatalog";
+import { getPlantVariantById } from "@/lib/plantVariantStorage";
 import {
   cardcomLineItemName,
   inventoryTypeOrDefault,
@@ -71,6 +72,8 @@ export type StartCardcomPaymentPrepInput = {
   deliveryStreet?: string;
   deliveryHouseNumber?: string;
   apartmentOrNotes?: string;
+  /** Staff browser. False when omitted. */
+  isInternal?: boolean;
 };
 
 export type StartCardcomPaymentPrepDeps = {
@@ -108,9 +111,17 @@ async function buildOrderSnapshot(input: {
   offer: Offer;
   posSpot: PosSpot;
   fulfillmentMethod: FulfillmentMethod;
+  inventoryType: InventoryType;
 }): Promise<OrderSnapshot> {
-  const { plant, offer, posSpot, fulfillmentMethod } = input;
+  const { plant, offer, posSpot, fulfillmentMethod, inventoryType } = input;
   const partner = await getLocationById(posSpot.partnerLocationId);
+  const plantVariantId = posSpot.plantVariantId?.trim() || "";
+  let sizeLabel: string | undefined;
+  if (plantVariantId) {
+    const variant = await getPlantVariantById(plantVariantId);
+    const label = variant?.sizeLabel?.trim();
+    if (label) sizeLabel = label;
+  }
   return {
     productId: plant.id,
     productName: plant.name,
@@ -125,6 +136,9 @@ async function buildOrderSnapshot(input: {
     posSpotDescription: posSpot.posName,
     spotSlug: posSpot.spotSlug,
     fulfillmentType: fulfillmentMethod,
+    inventoryType,
+    ...(plantVariantId ? { plantVariantId } : {}),
+    ...(sizeLabel ? { sizeLabel } : {}),
   };
 }
 
@@ -392,6 +406,7 @@ export async function startCardcomPaymentPrep(
     offer,
     posSpot,
     fulfillmentMethod,
+    inventoryType,
   });
 
   const attempt: SavedPaymentAttempt = {
@@ -412,6 +427,7 @@ export async function startCardcomPaymentPrep(
     snapshot,
     paymentResumeToken,
     expiresAt,
+    isInternal: input.isInternal === true,
     createdAt,
     updatedAt: createdAt,
   };

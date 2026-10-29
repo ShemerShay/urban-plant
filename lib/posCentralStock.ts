@@ -15,7 +15,9 @@ import {
   prepareInventoryDelta,
 } from "@/lib/inventoryStorage";
 import {
+  POT_OUT_OF_STOCK_MESSAGE,
   PotInventoryChangeError,
+  potCentralStockGuardQuery,
   preparePotInventoryDelta,
 } from "@/lib/potInventoryStorage";
 import type { OccupancyIntent } from "@/lib/posOccupancy";
@@ -63,12 +65,9 @@ function rethrowCombinedWriteError(error: unknown): never {
   if (error instanceof PotInventoryChangeError) throw error;
   if (error instanceof PosSpotSlugConflictError) throw error;
   const message = error instanceof Error ? error.message : String(error);
-  if (/division by zero/i.test(message)) {
-    if (/pot_inventory/i.test(message)) {
-      throw new PotInventoryChangeError(
-        "insufficient_quantity",
-        "This pot color has no remaining Back Office stock",
-      );
+  if (/division by zero/i.test(message) || /This pot is out of stock/i.test(message)) {
+    if (/pot_inventory|This pot is out of stock/i.test(message)) {
+      throw new PotInventoryChangeError("insufficient_quantity", POT_OUT_OF_STOCK_MESSAGE);
     }
     throw new OccupancyWriteFailedError();
   }
@@ -76,10 +75,7 @@ function rethrowCombinedWriteError(error: unknown): never {
     throw new PosSpotSlugConflictError();
   }
   if (/pot_inventory_quantity_non_negative/i.test(message)) {
-    throw new PotInventoryChangeError(
-      "insufficient_quantity",
-      "This pot color has no remaining Back Office stock",
-    );
+    throw new PotInventoryChangeError("insufficient_quantity", POT_OUT_OF_STOCK_MESSAGE);
   }
   mapInventoryWriteError(error);
 }
@@ -101,7 +97,7 @@ export function posCentralStockHttpError(
   }
   if (error instanceof PotInventoryChangeError) {
     if (error.code === "insufficient_quantity") {
-      return { status: 400, error: "This pot color has no remaining Back Office stock" };
+      return { status: 400, error: POT_OUT_OF_STOCK_MESSAGE };
     }
     return { status: 400, error: error.message };
   }
@@ -131,36 +127,37 @@ async function plantLockAndDelta(input: {
   ];
 }
 
-async function colorLockAndDelta(input: {
-  potColorId: string;
+async function potLockAndDelta(input: {
+  potId: string;
   note: string;
 }): Promise<ReturnType<typeof sql>[]> {
+  const potId = input.potId.trim();
   const prepared = await preparePotInventoryDelta({
-    potColorId: input.potColorId,
+    potId,
     delta: -1,
     note: input.note,
   });
-  return prepared.queries;
+  return [potCentralStockGuardQuery(potId), ...prepared.queries];
 }
 
 export async function commitPosCreateFromCentral(input: {
   posSpot: PosSpot;
   variantId: string;
-  potColorId?: string | null;
+  potId?: string | null;
 }): Promise<PosSpot> {
   const variantId = input.variantId.trim();
-  const potColorId = input.potColorId?.trim() || "";
+  const potId = input.potId?.trim() || "";
   const queries = [
+    ...(potId
+      ? await potLockAndDelta({
+          potId,
+          note: `POS place ${input.posSpot.id}`,
+        })
+      : []),
     ...(await plantLockAndDelta({
       variantId,
       note: `POS place ${input.posSpot.id}`,
     })),
-    ...(potColorId
-      ? await colorLockAndDelta({
-          potColorId,
-          note: `POS place ${input.posSpot.id}`,
-        })
-      : []),
     insertPosSpotWithOccupancyGuardQuery(input.posSpot, variantId),
   ];
   try {
@@ -177,11 +174,11 @@ export async function commitPosUpdateFromCentral(input: {
   id: string;
   patch: PosSpotUpdatePatch;
   variantId: string;
-  potColorId?: string | null;
+  potId?: string | null;
   action: "place" | "replace" | "update";
   existing: PosSpot;
   decrementPlant: boolean;
-  decrementPotColor: boolean;
+  decrementPot: boolean;
 }): Promise<PosSpot | null> {
   const variantId = input.variantId.trim();
   const occupancyWriteGuard =
@@ -203,19 +200,19 @@ export async function commitPosUpdateFromCentral(input: {
   if (!preparedUpdate) return null;
 
   const queries: ReturnType<typeof sql>[] = [];
-  if (input.decrementPlant) {
+  const potId = input.potId?.trim() || "";
+  if (input.decrementPot && potId) {
     queries.push(
-      ...(await plantLockAndDelta({
-        variantId,
+      ...(await potLockAndDelta({
+        potId,
         note: `POS ${input.action} ${input.id}`,
       })),
     );
   }
-  const potColorId = input.potColorId?.trim() || "";
-  if (input.decrementPotColor && potColorId) {
+  if (input.decrementPlant) {
     queries.push(
-      ...(await colorLockAndDelta({
-        potColorId,
+      ...(await plantLockAndDelta({
+        variantId,
         note: `POS ${input.action} ${input.id}`,
       })),
     );
@@ -237,7 +234,7 @@ export async function writePosCreate(input: {
   inventorySource: unknown;
   posSpot: PosSpot;
   variantId: string | null | undefined;
-  potColorId?: string | null;
+  potId?: string | null;
 }): Promise<PosSpot> {
   if (!occupancyActionNeedsInventorySource(input.occupancyAction)) {
     await appendPosSpot(input.posSpot);
@@ -255,23 +252,23 @@ export async function writePosCreate(input: {
   return commitPosCreateFromCentral({
     posSpot: input.posSpot,
     variantId,
-    potColorId: input.potColorId,
+    potId: input.potId,
   });
 }
 
 export async function writePosUpdate(input: {
   occupancyAction: OccupancyIntent;
   inventorySource: unknown;
-  introducesNewPotColor?: boolean;
+  introducesNewPot?: boolean;
   id: string;
   patch: PosSpotUpdatePatch;
   existing: PosSpot;
   variantId: string | null | undefined;
-  potColorId?: string | null;
+  potId?: string | null;
 }): Promise<PosSpot | null> {
   const needsSource = occupancyActionNeedsInventorySource(
     input.occupancyAction,
-    Boolean(input.introducesNewPotColor),
+    Boolean(input.introducesNewPot),
   );
   if (!needsSource) {
     return updatePosSpot(input.id, {
@@ -281,7 +278,7 @@ export async function writePosUpdate(input: {
   }
   const source = requireInventorySource(
     input.inventorySource,
-    input.occupancyAction === "update" ? "a new Pot Color" : "Place and Replace",
+    input.occupancyAction === "update" ? "a new pot" : "Place and Replace",
   );
   if (source === "already_at_partner") {
     return updatePosSpot(input.id, {
@@ -297,10 +294,10 @@ export async function writePosUpdate(input: {
         ? "place"
         : "update";
   const decrementPlant = action === "place" || action === "replace";
-  const decrementPotColor =
+  const decrementPot =
     action === "place" || action === "replace"
-      ? Boolean(input.potColorId?.trim())
-      : Boolean(input.introducesNewPotColor && input.potColorId?.trim());
+      ? Boolean(input.potId?.trim())
+      : Boolean(input.introducesNewPot && input.potId?.trim());
 
   if (decrementPlant) {
     const variantId = input.variantId?.trim() || "";
@@ -310,18 +307,18 @@ export async function writePosUpdate(input: {
       );
     }
   }
-  if (decrementPotColor && !input.potColorId?.trim()) {
-    throw new PosCentralStockError("A pot-bearing Offer requires a Pot Color");
+  if (decrementPot && !input.potId?.trim()) {
+    throw new PosCentralStockError("A pot-bearing Offer requires a pot");
   }
 
   return commitPosUpdateFromCentral({
     id: input.id,
     patch: input.patch,
     variantId: input.variantId?.trim() || "",
-    potColorId: input.potColorId,
+    potId: input.potId,
     action,
     existing: input.existing,
     decrementPlant,
-    decrementPotColor,
+    decrementPot,
   });
 }

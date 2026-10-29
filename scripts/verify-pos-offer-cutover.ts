@@ -45,7 +45,8 @@ function assertSources(): void {
 
   const admin = read("components/admin/AdminPartnerDetail.tsx");
   assert.match(admin, /derivedPlantSize/);
-  assert.match(admin, /potColorId/);
+  assert.match(admin, /potId/);
+  assert.doesNotMatch(admin, /potColorId/);
   assert.doesNotMatch(admin, /setPlantVariantId/);
   assert.doesNotMatch(admin, /variantId/);
 
@@ -105,13 +106,14 @@ async function main(): Promise<void> {
     FROM information_schema.columns
     WHERE table_schema = 'public'
       AND (
-        (table_name = 'pos_spots' AND column_name = 'pot_color_id')
-        OR (table_name = 'placement_segments' AND column_name IN ('sellable_variant_id', 'pot_color_id'))
+        (table_name = 'pos_spots' AND column_name IN ('pot_id', 'pot_color_id'))
+        OR (table_name = 'placement_segments' AND column_name IN ('sellable_variant_id', 'pot_id', 'pot_color_id'))
         OR (table_name = 'offers' AND column_name = 'variant_id')
       )
   `;
   const names = new Set((cols as { column_name: string }[]).map((row) => row.column_name));
-  assert.equal(names.has("pot_color_id"), true);
+  assert.equal(names.has("pot_id"), true);
+  assert.equal(names.has("pot_color_id"), false);
   assert.equal(names.has("sellable_variant_id"), true);
   assert.equal(names.has("variant_id"), false);
 
@@ -119,7 +121,7 @@ async function main(): Promise<void> {
     SELECT column_name FROM information_schema.columns
     WHERE table_schema = 'public'
       AND table_name = 'placement_cycles'
-      AND column_name IN ('sellable_variant_id', 'pot_color_id', 'pot_size_id')
+      AND column_name IN ('sellable_variant_id', 'pot_id', 'pot_color_id', 'pot_size_id')
   `;
   assert.equal((cycleCols as { column_name: string }[]).length, 0);
 
@@ -173,11 +175,11 @@ async function main(): Promise<void> {
     const updated = await writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: source,
-      introducesNewPotColor: occupancy.introducesNewPotColor,
+      introducesNewPot: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
-      potColorId: occupancy.potColorId,
+      potId: occupancy.potId,
       patch: {
         partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -200,14 +202,14 @@ async function main(): Promise<void> {
 
   async function openSegments(spotId: string) {
     return (await sql`
-      SELECT s.offer_id, s.sellable_variant_id, s.pot_color_id, s.pocket_id, s.consumer_price
+      SELECT s.offer_id, s.sellable_variant_id, s.pot_id, s.pocket_id, s.consumer_price
       FROM placement_segments s
       INNER JOIN placement_cycles c ON c.id = s.placement_cycle_id
       WHERE c.pos_spot_id = ${spotId}::uuid AND s.ended_at IS NULL
     `) as {
       offer_id: string | null;
       sellable_variant_id: string | null;
-      pot_color_id: string | null;
+      pot_id: string | null;
       pocket_id: string | null;
       consumer_price: string | number | null;
     }[];
@@ -255,45 +257,27 @@ async function main(): Promise<void> {
     });
     assert.equal(derived.action, "place");
     assert.equal(derived.plantVariantId, fixture.variantS);
-    assert.equal(derived.potColorId, null);
+    assert.equal(derived.potId, null);
 
-    await assert.rejects(
-      () =>
-        resolveOccupancyForPosCreate({
-          offerId: fixture.offerPot,
-          partnerLocationId,
-        }),
-      (err: unknown) =>
-        err instanceof PosOccupancyError && /Pot Color/.test((err as Error).message),
-    );
+    const derivedPot = await resolveOccupancyForPosCreate({
+      offerId: fixture.offerPot,
+      partnerLocationId,
+    });
+    assert.equal(derivedPot.potId, fixture.potId);
+    assert.equal(derivedPot.introducesNewPotColor, true);
 
     await applyInventoryDelta({ variantId: fixture.variantS, delta: 5, note: `${tag} plant S` });
     await applyInventoryDelta({ variantId: fixture.variantL, delta: 3, note: `${tag} plant L` });
-    await applyPotInventoryDelta({
-      potId: fixture.potId,
-      sizeId: fixture.potSizeId,
-      potColorId: fixture.colorA,
-      delta: 4,
-      note: `${tag} color A`,
-    });
-    await applyPotInventoryDelta({
-      potId: fixture.potId,
-      sizeId: fixture.potSizeId,
-      potColorId: fixture.colorB,
-      delta: 3,
-      note: `${tag} color B`,
-    });
 
     const createPotPlace = await resolveOccupancyForPosCreate({
       offerId: fixture.offerPot,
       partnerLocationId,
-      potColorId: fixture.colorA,
     });
     const centralSpot = {
       ...emptySpot(`s6-central-${tag}`, "61"),
       currentOfferId: createPotPlace.currentOfferId ?? fixture.offerPot,
       plantVariantId: createPotPlace.plantVariantId ?? fixture.variantS,
-      potColorId: createPotPlace.potColorId ?? fixture.colorA,
+      potId: createPotPlace.potId ?? fixture.potId,
       offerPlacedAt: createPotPlace.offerPlacedAt ?? new Date().toISOString(),
     };
     spotIds.push(centralSpot.id);
@@ -302,24 +286,23 @@ async function main(): Promise<void> {
       inventorySource: "central",
       posSpot: centralSpot,
       variantId: createPotPlace.plantVariantId,
-      potColorId: createPotPlace.potColorId,
+      potId: createPotPlace.potId,
     });
     assert.equal(placedCentral.plantVariantId, fixture.variantS);
-    assert.equal(placedCentral.potColorId, fixture.colorA);
+    assert.equal(placedCentral.potId, fixture.potId);
     assert.equal(await getInventoryQuantity(fixture.variantS), 4);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), 3);
-    assert.equal(await getPotInventoryQuantity(fixture.colorB), 3);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), 4);
+    assert.equal(await getPotInventoryQuantity(fixture.potBId), 5);
 
     const atpCreate = await resolveOccupancyForPosCreate({
       offerId: fixture.offerPot,
       partnerLocationId,
-      potColorId: fixture.colorA,
     });
     const atpSpot = {
       ...emptySpot(`s6-atp-${tag}`, "62"),
       currentOfferId: atpCreate.currentOfferId ?? fixture.offerPot,
       plantVariantId: atpCreate.plantVariantId ?? fixture.variantS,
-      potColorId: atpCreate.potColorId ?? fixture.colorA,
+      potId: atpCreate.potId ?? fixture.potId,
       offerPlacedAt: atpCreate.offerPlacedAt ?? new Date().toISOString(),
     };
     spotIds.push(atpSpot.id);
@@ -328,51 +311,49 @@ async function main(): Promise<void> {
       inventorySource: "already_at_partner",
       posSpot: atpSpot,
       variantId: atpCreate.plantVariantId,
-      potColorId: atpCreate.potColorId,
+      potId: atpCreate.potId,
     });
     assert.equal(await getInventoryQuantity(fixture.variantS), 4);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), 3);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), 4);
 
     const plantBeforeSameOffer = await getInventoryQuantity(fixture.variantS);
-    const colorBeforeSameOffer = await getPotInventoryQuantity(fixture.colorA);
-    const sameColorUpdate = await patch(
+    const potBeforeSameOffer = await getPotInventoryQuantity(fixture.potId);
+    const samePotUpdate = await patch(
       (await getPosSpotById(centralSpot.id))!,
       {
         occupancyIntent: "update",
         requestedOfferId: fixture.offerPot,
-        requestedPotColorId: fixture.colorA,
       },
       "central",
     );
-    assert.equal(sameColorUpdate.occupancy.action, "update");
-    assert.equal(sameColorUpdate.occupancy.introducesNewPotColor, false);
+    assert.equal(samePotUpdate.occupancy.action, "update");
+    assert.equal(samePotUpdate.occupancy.introducesNewPotColor, false);
     assert.equal(await getInventoryQuantity(fixture.variantS), plantBeforeSameOffer);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), colorBeforeSameOffer);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), potBeforeSameOffer);
 
-    const colorUpdate = await patch(
+    const potUpdate = await patch(
       (await getPosSpotById(centralSpot.id))!,
       {
         occupancyIntent: "update",
-        requestedOfferId: fixture.offerPot,
-        requestedPotColorId: fixture.colorB,
+        requestedOfferId: fixture.offerPotB,
       },
       "central",
     );
-    assert.equal(colorUpdate.occupancy.introducesNewPotColor, true);
-    assert.equal(colorUpdate.updated.potColorId, fixture.colorB);
+    assert.equal(potUpdate.occupancy.introducesNewPotColor, true);
+    assert.equal(potUpdate.updated.potId, fixture.potBId);
     assert.equal(await getInventoryQuantity(fixture.variantS), plantBeforeSameOffer);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), colorBeforeSameOffer);
-    assert.equal(await getPotInventoryQuantity(fixture.colorB), 2);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), potBeforeSameOffer);
+    assert.equal(await getPotInventoryQuantity(fixture.potBId), 4);
 
-    const atpColorBefore = await getPotInventoryQuantity(fixture.colorB);
+    const atpPotBefore = await getPotInventoryQuantity(fixture.potBId);
     const atpPlantBefore = await getInventoryQuantity(fixture.variantS);
-    const atpColorUpdate = await patch((await getPosSpotById(atpSpot.id))!, {
+    const atpPotUpdate = await patch((await getPosSpotById(atpSpot.id))!, {
       occupancyIntent: "update",
-      requestedOfferId: fixture.offerPot,
-      requestedPotColorId: fixture.colorB,
+      requestedOfferId: fixture.offerPotB,
     });
-    assert.equal(atpColorUpdate.occupancy.introducesNewPotColor, true);
-    assert.equal(await getPotInventoryQuantity(fixture.colorB), atpColorBefore);
+    assert.equal(atpPotUpdate.occupancy.introducesNewPotColor, true);
+    assert.equal(atpPotUpdate.updated.potId, fixture.potBId);
+    assert.equal(await getPotInventoryQuantity(fixture.potBId), atpPotBefore);
     assert.equal(await getInventoryQuantity(fixture.variantS), atpPlantBefore);
 
     const removePot = await patch((await getPosSpotById(centralSpot.id))!, {
@@ -380,9 +361,9 @@ async function main(): Promise<void> {
       requestedOfferId: fixture.offerS,
     });
     assert.equal(removePot.updated.plantVariantId, fixture.variantS);
-    assert.equal(removePot.updated.potColorId, undefined);
+    assert.equal(removePot.updated.potId, undefined);
     assert.equal(await getInventoryQuantity(fixture.variantS), plantBeforeSameOffer);
-    assert.equal(await getPotInventoryQuantity(fixture.colorB), 2);
+    assert.equal(await getPotInventoryQuantity(fixture.potBId), 4);
 
     const occupiedForSize = await getPosSpotById(centralSpot.id);
     assert.ok(occupiedForSize);
@@ -399,22 +380,21 @@ async function main(): Promise<void> {
     );
 
     const plantBeforeReplace = await getInventoryQuantity(fixture.variantL);
-    const colorBeforeReplace = await getPotInventoryQuantity(fixture.colorA);
+    const potBeforeReplace = await getPotInventoryQuantity(fixture.potId);
     const replaced = await patch(
       (await getPosSpotById(centralSpot.id))!,
       {
         occupancyIntent: "replace",
         requestedOfferId: fixture.offerPot,
-        requestedPotColorId: fixture.colorA,
       },
       "central",
     );
     assert.equal(replaced.occupancy.action, "replace");
     assert.equal(replaced.updated.plantVariantId, fixture.variantS);
-    assert.equal(replaced.updated.potColorId, fixture.colorA);
+    assert.equal(replaced.updated.potId, fixture.potId);
     assert.equal(await getInventoryQuantity(fixture.variantS), plantBeforeSameOffer - 1);
     assert.equal(await getInventoryQuantity(fixture.variantL), plantBeforeReplace);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), colorBeforeReplace - 1);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), potBeforeReplace - 1);
 
     const cycleRows = await cycles(centralSpot.id);
     assert.ok(cycleRows.length >= 2);
@@ -426,7 +406,7 @@ async function main(): Promise<void> {
     assert.equal(openBeforeRemove.length, 1);
     const removed = await patch((await getPosSpotById(atpSpot.id))!, { occupancyIntent: "remove" });
     assert.equal(removed.updated.plantVariantId, undefined);
-    assert.equal(removed.updated.potColorId, undefined);
+    assert.equal(removed.updated.potId, undefined);
     assert.equal(removed.updated.currentOfferId, undefined);
     const afterRemoveCycles = await cycles(atpSpot.id);
     assert.equal(
@@ -482,7 +462,7 @@ async function main(): Promise<void> {
     assert.equal(reactCycles.filter((row) => !row.ended_at).length, 1);
 
     const salePlantBefore = await getInventoryQuantity(fixture.variantS);
-    const saleColorBefore = await getPotInventoryQuantity(fixture.colorA);
+    const salePotBefore = await getPotInventoryQuantity(fixture.potId);
     const { insertPaymentAttempt, deletePaymentAttemptById, finalizeVerifiedPaymentAttemptAtomic } =
       await import("../lib/paymentAttemptStorage");
     const saleAttempt = randomUUID();
@@ -517,9 +497,9 @@ async function main(): Promise<void> {
     assert.equal(soldSpot?.status, "sold");
     assert.equal(soldSpot?.currentOfferId, fixture.offerPot);
     assert.equal(soldSpot?.plantVariantId, undefined);
-    assert.equal(soldSpot?.potColorId, undefined);
+    assert.equal(soldSpot?.potId, undefined);
     assert.equal(await getInventoryQuantity(fixture.variantS), salePlantBefore);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), saleColorBefore);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), salePotBefore);
     await deletePaymentAttemptById(saleAttempt);
     if (sold.ok) orderIds.push(sold.order.orderId);
 
@@ -544,63 +524,59 @@ async function main(): Promise<void> {
     const addPot = await patch((await getPosSpotById(splitSpot.id))!, {
       occupancyIntent: "update",
       requestedOfferId: fixture.offerPot,
-      requestedPotColorId: fixture.colorA,
     });
-    assert.equal(addPot.updated.potColorId, fixture.colorA);
+    assert.equal(addPot.updated.potId, fixture.potId);
     assert.equal((await cycles(splitSpot.id)).filter((row) => !row.ended_at).length, 1);
-    const colorSeg = await openSegments(splitSpot.id);
-    assert.equal(colorSeg[0]?.pot_color_id, fixture.colorA);
-    assert.equal(colorSeg[0]?.sellable_variant_id, fixture.sellableSPot);
+    const potSeg = await openSegments(splitSpot.id);
+    assert.equal(potSeg[0]?.pot_id, fixture.potId);
+    assert.equal(potSeg[0]?.sellable_variant_id, fixture.sellableSPot);
 
     const occupiedLanding = await getPosLandingDetails((await getPosSpotById(splitSpot.id))!);
     assert.equal(occupiedLanding.placement.plantSizeLabel, "S");
-    assert.ok(occupiedLanding.placement.potColor);
-    assert.ok(occupiedLanding.placement.potSizeLabel);
+    assert.ok(occupiedLanding.placement.potName);
+    assert.equal(occupiedLanding.placement.potSizeLabel, null);
+    assert.equal(occupiedLanding.placement.potColor, null);
     assert.equal(occupiedLanding.offer?.consumerPrice, 88);
 
-    const keepColorSpot = await appendPosSpot(emptySpot(`s6-keep-color-${tag}`, "66"));
-    spotIds.push(keepColorSpot.id);
-    await patch(keepColorSpot, {
+    const keepPotSpot = await appendPosSpot(emptySpot(`s6-keep-pot-${tag}`, "66"));
+    spotIds.push(keepPotSpot.id);
+    await patch(keepPotSpot, {
       occupancyIntent: "place",
       requestedOfferId: fixture.offerPot,
-      requestedPotColorId: fixture.colorA,
     });
-    const colorAQty = await getPotInventoryQuantity(fixture.colorA);
-    if (colorAQty > 0) {
+    const potAQty = await getPotInventoryQuantity(fixture.potId);
+    if (potAQty > 0) {
       await applyPotInventoryDelta({
         potId: fixture.potId,
-        sizeId: fixture.potSizeId,
-        potColorId: fixture.colorA,
-        delta: -colorAQty,
+        delta: -potAQty,
         note: `${tag} drain A`,
       });
     }
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), 0);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), 0);
     const selectableKept = selectablePosPotColors(
       [
-        { id: fixture.colorA, quantity: 0 },
-        { id: fixture.colorB, quantity: 1 },
+        { id: fixture.potId, quantity: 0 },
+        { id: fixture.potBId, quantity: 1 },
       ],
-      { inventorySource: "central", occupiedColorId: fixture.colorA },
+      { inventorySource: "central", occupiedColorId: fixture.potId },
     );
-    assert.equal(selectableKept.some((color) => color.id === fixture.colorA), true);
+    assert.equal(selectableKept.some((color) => color.id === fixture.potId), true);
     const plantBeforeKeep = await getInventoryQuantity(fixture.variantS);
-    const colorBeforeKeep = await getPotInventoryQuantity(fixture.colorA);
-    const cyclesBeforeKeep = await cycles(keepColorSpot.id);
+    const potBeforeKeep = await getPotInventoryQuantity(fixture.potId);
+    const cyclesBeforeKeep = await cycles(keepPotSpot.id);
     assert.equal(cyclesBeforeKeep.filter((row) => !row.ended_at).length, 1);
-    const keepColor = await patch((await getPosSpotById(keepColorSpot.id))!, {
+    const keepPot = await patch((await getPosSpotById(keepPotSpot.id))!, {
       occupancyIntent: "update",
       requestedOfferId: fixture.offerPot2,
-      requestedPotColorId: fixture.colorA,
     });
-    assert.equal(keepColor.occupancy.action, "update");
-    assert.equal(keepColor.occupancy.introducesNewPotColor, false);
-    assert.equal(keepColor.updated.potColorId, fixture.colorA);
-    assert.equal(keepColor.updated.currentOfferId, fixture.offerPot2);
+    assert.equal(keepPot.occupancy.action, "update");
+    assert.equal(keepPot.occupancy.introducesNewPotColor, false);
+    assert.equal(keepPot.updated.potId, fixture.potId);
+    assert.equal(keepPot.updated.currentOfferId, fixture.offerPot2);
     assert.equal(await getInventoryQuantity(fixture.variantS), plantBeforeKeep);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), colorBeforeKeep);
-    assert.equal((await cycles(keepColorSpot.id)).filter((row) => !row.ended_at).length, 1);
-    assert.equal((await cycles(keepColorSpot.id))[0]?.id, cyclesBeforeKeep[0]?.id);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), potBeforeKeep);
+    assert.equal((await cycles(keepPotSpot.id)).filter((row) => !row.ended_at).length, 1);
+    assert.equal((await cycles(keepPotSpot.id))[0]?.id, cyclesBeforeKeep[0]?.id);
     assert.equal(
       adminSaveNeedsInventorySource({
         selectedIsPlant: true,
@@ -614,29 +590,29 @@ async function main(): Promise<void> {
       false,
     );
 
-    const segsBeforePrice = await openSegments(keepColorSpot.id);
-    assert.equal(segsBeforePrice[0]?.pot_color_id, fixture.colorA);
+    const segsBeforePrice = await openSegments(keepPotSpot.id);
+    assert.equal(segsBeforePrice[0]?.pot_id, fixture.potId);
     assert.equal(segsBeforePrice[0]?.sellable_variant_id, fixture.sellableSPot);
     const segmentCountBeforePrice = (
       (await sql`
         SELECT COUNT(*)::int AS n
         FROM placement_segments s
         INNER JOIN placement_cycles c ON c.id = s.placement_cycle_id
-        WHERE c.pos_spot_id = ${keepColorSpot.id}::uuid
+        WHERE c.pos_spot_id = ${keepPotSpot.id}::uuid
       `) as { n: number }[]
     )[0].n;
     await updateOffer(fixture.offerPot2, { consumerPrice: 93 });
     const segsAfterPrice = await sql`
-      SELECT s.offer_id, s.sellable_variant_id, s.pot_color_id, s.consumer_price, s.ended_at,
+      SELECT s.offer_id, s.sellable_variant_id, s.pot_id, s.consumer_price, s.ended_at,
              s.placement_cycle_id
       FROM placement_segments s
       INNER JOIN placement_cycles c ON c.id = s.placement_cycle_id
-      WHERE c.pos_spot_id = ${keepColorSpot.id}::uuid
+      WHERE c.pos_spot_id = ${keepPotSpot.id}::uuid
       ORDER BY s.started_at ASC, s.id ASC
     ` as {
       offer_id: string;
       sellable_variant_id: string | null;
-      pot_color_id: string | null;
+      pot_id: string | null;
       consumer_price: string | number;
       ended_at: string | Date | null;
       placement_cycle_id: string;
@@ -647,12 +623,12 @@ async function main(): Promise<void> {
     assert.equal(openPrice.length, 1);
     assert.equal(Number(openPrice[0]?.consumer_price), 93);
     assert.equal(openPrice[0]?.sellable_variant_id, fixture.sellableSPot);
-    assert.equal(openPrice[0]?.pot_color_id, fixture.colorA);
+    assert.equal(openPrice[0]?.pot_id, fixture.potId);
     assert.equal(openPrice[0]?.offer_id, fixture.offerPot2);
     assert.ok(closedPrice.every((row) => row.placement_cycle_id === openPrice[0]?.placement_cycle_id));
-    assert.equal((await cycles(keepColorSpot.id)).filter((row) => !row.ended_at).length, 1);
+    assert.equal((await cycles(keepPotSpot.id)).filter((row) => !row.ended_at).length, 1);
     assert.equal(await getInventoryQuantity(fixture.variantS), plantBeforeKeep);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), 0);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), 0);
 
     const legacySpot = await appendPosSpot({
       ...emptySpot(`s6-legacy-${tag}`, "65"),

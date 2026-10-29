@@ -10,6 +10,7 @@ import {
   catalogLineTotal,
   PLANT_UNIT_COST_SOURCE,
   POT_UNIT_COST_SOURCE,
+  LEGACY_POT_UNIT_COST_SOURCE,
   type CatalogCurrency,
   type CatalogPaymentSnapshot,
   type CatalogPaymentSnapshotLine,
@@ -26,6 +27,7 @@ export type OrderItem = {
   plantVariantId: string;
   sellableVariantId: string | null;
   offerId: string | null;
+  potId: string | null;
   potSizeId: string | null;
   potColorId: string | null;
   quantity: number;
@@ -53,6 +55,7 @@ type OrderItemRow = {
   plant_variant_id: string;
   sellable_variant_id: string | null;
   offer_id: string | null;
+  pot_id: string | null;
   pot_size_id: string | null;
   pot_color_id: string | null;
   quantity: string | number;
@@ -94,6 +97,7 @@ function mapOrderItemRow(row: OrderItemRow): OrderItem {
     plantVariantId: String(row.plant_variant_id),
     sellableVariantId: row.sellable_variant_id ? String(row.sellable_variant_id) : null,
     offerId: row.offer_id,
+    potId: row.pot_id ? String(row.pot_id) : null,
     potSizeId: row.pot_size_id ? String(row.pot_size_id) : null,
     potColorId: row.pot_color_id ? String(row.pot_color_id) : null,
     quantity: parseNumeric(row.quantity),
@@ -114,8 +118,10 @@ function mapOrderItemRow(row: OrderItemRow): OrderItem {
         : null,
     potUnitCost,
     potUnitCostSource:
-      potUnitCost != null && row.pot_unit_cost_source === POT_UNIT_COST_SOURCE
-        ? POT_UNIT_COST_SOURCE
+      potUnitCost != null &&
+      (row.pot_unit_cost_source === POT_UNIT_COST_SOURCE ||
+        row.pot_unit_cost_source === LEGACY_POT_UNIT_COST_SOURCE)
+        ? row.pot_unit_cost_source
         : null,
   };
 }
@@ -128,6 +134,7 @@ const ORDER_ITEM_SQL = sql`
   plant_variant_id,
   sellable_variant_id,
   offer_id,
+  pot_id,
   pot_size_id,
   pot_color_id,
   quantity,
@@ -167,8 +174,12 @@ function assertInsertableLine(line: CatalogPaymentSnapshotLine): void {
   if ((line.potUnitCost != null) !== (line.potUnitCostSource != null)) {
     throw new Error("Order item pot cost and cost source must be stored together");
   }
-  if (line.potUnitCostSource != null && line.potUnitCostSource !== POT_UNIT_COST_SOURCE) {
-    throw new Error("Order item pot cost source is not pot_sizes.supplier_price@sale");
+  if (
+    line.potUnitCostSource != null &&
+    line.potUnitCostSource !== POT_UNIT_COST_SOURCE &&
+    line.potUnitCostSource !== LEGACY_POT_UNIT_COST_SOURCE
+  ) {
+    throw new Error("Order item pot cost source is not pots.supplier_price@sale");
   }
   if (!line.sellableVariantId || !line.offerId) {
     throw new Error("Order item requires an Offer and a Sellable Variant");
@@ -205,6 +216,7 @@ export async function insertOrderItems(
           plant_variant_id,
           sellable_variant_id,
           offer_id,
+          pot_id,
           pot_size_id,
           pot_color_id,
           quantity,
@@ -230,6 +242,7 @@ export async function insertOrderItems(
           ${line.plantVariantId}::uuid,
           ${line.sellableVariantId}::uuid,
           ${line.offerId},
+          ${line.potId}::uuid,
           ${line.potSizeId}::uuid,
           ${line.potColorId}::uuid,
           ${line.quantity},

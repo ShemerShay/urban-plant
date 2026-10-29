@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { usePostHog } from "posthog-js/react";
 
 import { CheckoutCustomerFields } from "@/components/checkout/CheckoutCustomerFields";
 import { CheckoutEmailOptIn } from "@/components/checkout/CheckoutEmailOptIn";
 import { DeliveryAddressFields } from "@/components/checkout/DeliveryAddressFields";
 import { useLocale } from "@/components/locale/LocaleProvider";
+import {
+  ANALYTICS_EVENTS,
+  captureAnalyticsEvent,
+  captureOncePerSession,
+} from "@/lib/analyticsEvents";
+import { browserIsInternal } from "@/lib/internalTraffic";
 import { ShopSoftSpinner } from "@/components/shop/ShopSoftSpinner";
 import {
   catalogCartItemKey,
@@ -192,7 +199,9 @@ export function ShopCheckout({
   paymentFailed: boolean;
 }) {
   const locale = useLocale();
+  const posthog = usePostHog();
   const cart = useCatalogCart();
+  const checkoutTracked = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const submitGuard = useRef({ busy: false });
   const resolvedKeyRef = useRef("");
@@ -209,6 +218,22 @@ export function ShopCheckout({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resume || lines.length === 0 || checkoutTracked.current) return;
+    const quantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+    const amount = lines.reduce(
+      (sum, line) => sum + catalogCartLineAmount(line.unitPrice, line.quantity),
+      0,
+    );
+    const sent = captureOncePerSession(
+      posthog,
+      ANALYTICS_EVENTS.checkoutStarted,
+      "catalog",
+      { channel: "catalog", quantity, amount },
+    );
+    if (sent) checkoutTracked.current = true;
+  }, [lines, posthog, resume]);
 
   useEffect(() => {
     if (resume) return;
@@ -278,10 +303,22 @@ export function ShopCheckout({
       const data = (await response.json().catch(() => ({}))) as {
         error?: string;
         paymentUrl?: string;
+        attemptId?: string;
+        orderId?: string;
       };
       if (!response.ok || !data.paymentUrl) {
         setRetryError(displayApiError(locale, data.error, "checkout.error.restartPayment"));
         return;
+      }
+      try {
+        captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
+          channel: "catalog",
+          amount: resume.amount,
+          currency: "ILS",
+          attempt_id: data.attemptId || data.orderId || resume.orderId,
+        });
+      } catch {
+        // Analytics must not block the Cardcom redirect.
       }
       redirected = true;
       window.location.assign(data.paymentUrl);
@@ -347,6 +384,7 @@ export function ShopCheckout({
           deliveryStreet: fields.deliveryStreet.trim(),
           deliveryHouseNumber: fields.deliveryHouseNumber.trim(),
           apartmentOrNotes: fields.apartmentOrNotes.trim(),
+          isInternal: browserIsInternal(),
         }),
       });
       const data = (await response.json().catch(() => ({}))) as {
@@ -376,6 +414,20 @@ export function ShopCheckout({
           attemptId,
           items: catalogCheckoutSnapshotItems(fresh),
         });
+      }
+      const amount = fresh.reduce(
+        (sum, line) => sum + catalogCartLineAmount(line.unitPrice, line.quantity),
+        0,
+      );
+      try {
+        captureAnalyticsEvent(posthog, ANALYTICS_EVENTS.paymentStarted, {
+          channel: "catalog",
+          amount,
+          currency: "ILS",
+          ...(attemptId ? { attempt_id: attemptId } : {}),
+        });
+      } catch {
+        // Analytics must not block the Cardcom redirect.
       }
       redirected = true;
       window.location.assign(data.paymentUrl);
@@ -505,8 +557,7 @@ export function ShopCheckout({
           currency={currency}
           total={formatCatalogPrice(merchandise, currency, locale)}
           lines={lines.map((line) => {
-            const potColor = localizedPlantText(locale, line.potColor, line.potColorHe);
-            const potLabel = [localizedPlantText(locale, line.potName, line.potNameHe), line.potSizeLabel, potColor]
+            const potLabel = [localizedPlantText(locale, line.potName, line.potNameHe), line.potColor]
               .filter(Boolean)
               .join(" ");
             const lineTotal = catalogCartLineAmount(line.unitPrice, line.quantity);

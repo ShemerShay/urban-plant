@@ -20,11 +20,24 @@ type VariantRow = {
 
 function variantLabel(variant: VariantRow, fallback: string): string {
   const size = variant.sizeLabel?.trim();
-  const cm = variant.nurseryPotDiameterCm;
-  if (size && cm != null) return `${size} (${cm} cm)`;
   if (size) return size;
-  if (cm != null) return `${cm} cm`;
+  if (variant.nurseryPotDiameterCm != null) return `${variant.nurseryPotDiameterCm} cm`;
   return fallback;
+}
+
+const ADMIN_QUANTITY_NOTE = "Admin quantity";
+
+function parseSignedInteger(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) return null;
+  const n = Number(trimmed);
+  return Number.isInteger(n) ? n : null;
+}
+
+function parseNonNegativeInteger(value: string): number | null {
+  const n = parseSignedInteger(value);
+  if (n == null || n < 0) return null;
+  return n;
 }
 
 function PlantSizeSelect({
@@ -72,21 +85,15 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const [sizeLabel, setSizeLabel] = useState("");
-  const [diameter, setDiameter] = useState("");
+  const [createQuantity, setCreateQuantity] = useState("0");
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editSize, setEditSize] = useState("");
-  const [editDiameter, setEditDiameter] = useState("");
+  const [editQuantity, setEditQuantity] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  const [adjustId, setAdjustId] = useState<string | null>(null);
-  const [adjustDelta, setAdjustDelta] = useState("");
-  const [adjustNote, setAdjustNote] = useState("");
-  const [adjustError, setAdjustError] = useState<string | null>(null);
-  const [isAdjusting, setIsAdjusting] = useState(false);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -129,14 +136,17 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
   function startEdit(variant: VariantRow) {
     setEditingId(variant.id);
     setEditSize(variant.sizeLabel ?? "");
-    setEditDiameter(
-      variant.nurseryPotDiameterCm != null ? String(variant.nurseryPotDiameterCm) : "",
-    );
+    setEditQuantity(String(variant.quantity));
     setEditError(null);
-    setAdjustId(null);
   }
 
   async function handleCreate() {
+    const quantity = parseNonNegativeInteger(createQuantity);
+    if (!isPlantSizeLabel(sizeLabel)) return;
+    if (quantity == null) {
+      setCreateError(t(locale, "admin.plants.variants.invalidQuantity"));
+      return;
+    }
     setIsCreating(true);
     setCreateError(null);
     try {
@@ -144,8 +154,8 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(sizeLabel.trim() ? { sizeLabel: sizeLabel.trim() } : {}),
-          ...(diameter.trim() ? { nurseryPotDiameterCm: Number(diameter) } : {}),
+          sizeLabel: sizeLabel.trim(),
+          quantity,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
@@ -154,7 +164,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         return;
       }
       setSizeLabel("");
-      setDiameter("");
+      setCreateQuantity("0");
       await loadVariants();
     } catch {
       setCreateError(t(locale, "common.networkError"));
@@ -163,22 +173,45 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
     }
   }
 
-  async function handleSaveEdit(variantId: string) {
+  async function handleSaveEdit(variant: VariantRow) {
+    const quantity = parseNonNegativeInteger(editQuantity);
+    if (quantity == null) {
+      setEditError(t(locale, "admin.plants.variants.invalidQuantity"));
+      return;
+    }
+    const sizeChanged = isPlantSizeLabel(editSize) && editSize !== (variant.sizeLabel ?? "");
+    const delta = quantity - variant.quantity;
+    if (!sizeChanged && delta === 0) {
+      setEditingId(null);
+      return;
+    }
+
     setIsSaving(true);
     setEditError(null);
     try {
-      const res = await fetch(routes.api.plantVariant(plant.id, variantId), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(isPlantSizeLabel(editSize) ? { sizeLabel: editSize } : {}),
-          nurseryPotDiameterCm: editDiameter.trim() ? Number(editDiameter) : null,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
-      if (!res.ok) {
-        setEditError(displayApiError(locale, data.error, "admin.plants.variants.saveFailed"));
-        return;
+      if (delta !== 0) {
+        const res = await fetch(routes.api.plantVariantInventory(plant.id, variant.id), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ delta, note: ADMIN_QUANTITY_NOTE }),
+        });
+        const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
+        if (!res.ok) {
+          setEditError(displayApiError(locale, data.error, "admin.plants.variants.saveFailed"));
+          return;
+        }
+      }
+      if (sizeChanged) {
+        const res = await fetch(routes.api.plantVariant(plant.id, variant.id), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sizeLabel: editSize }),
+        });
+        const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
+        if (!res.ok) {
+          setEditError(displayApiError(locale, data.error, "admin.plants.variants.saveFailed"));
+          return;
+        }
       }
       setEditingId(null);
       await loadVariants();
@@ -186,32 +219,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
       setEditError(t(locale, "common.networkError"));
     } finally {
       setIsSaving(false);
-    }
-  }
-
-  async function handleAdjust(variantId: string) {
-    setIsAdjusting(true);
-    setAdjustError(null);
-    const delta = Number(adjustDelta);
-    try {
-      const res = await fetch(routes.api.plantVariantInventory(plant.id, variantId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ delta, note: adjustNote }),
-      });
-      const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
-      if (!res.ok) {
-        setAdjustError(displayApiError(locale, data.error, "admin.plants.variants.adjustFailed"));
-        return;
-      }
-      setAdjustId(null);
-      setAdjustDelta("");
-      setAdjustNote("");
-      await loadVariants();
-    } catch {
-      setAdjustError(t(locale, "common.networkError"));
-    } finally {
-      setIsAdjusting(false);
     }
   }
 
@@ -278,14 +285,14 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                     </div>
                   )}
                   <label>
-                    <span className={labelClassName}>{t(locale, "admin.plants.variants.diameter")}</span>
+                    <span className={labelClassName}>{t(locale, "admin.plants.variants.quantity")}</span>
                     <input
                       className={inputClassName}
                       type="number"
                       min={0}
-                      step={0.1}
-                      value={editDiameter}
-                      onChange={(e) => setEditDiameter(e.target.value)}
+                      step={1}
+                      value={editQuantity}
+                      onChange={(e) => setEditQuantity(e.target.value)}
                     />
                   </label>
                 </div>
@@ -304,60 +311,12 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                 <p className="mt-2 text-sm text-red-700">{editError}</p>
               ) : null}
 
-              {adjustId === variant.id ? (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.plants.variants.delta")}</span>
-                    <input
-                      className={inputClassName}
-                      type="number"
-                      step={1}
-                      value={adjustDelta}
-                      onChange={(e) => setAdjustDelta(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <span className={labelClassName}>{t(locale, "admin.plants.variants.note")}</span>
-                    <input
-                      className={inputClassName}
-                      value={adjustNote}
-                      onChange={(e) => setAdjustNote(e.target.value)}
-                      maxLength={200}
-                    />
-                  </label>
-                  {adjustError ? <p className="text-sm text-red-700 sm:col-span-2">{adjustError}</p> : null}
-                  <div className="flex flex-wrap gap-2 sm:col-span-2">
-                    <button
-                      type="button"
-                      onClick={() => void handleAdjust(variant.id)}
-                      disabled={isAdjusting}
-                      className="rounded-xl bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-                    >
-                      {isAdjusting
-                        ? t(locale, "admin.shared.saving")
-                        : t(locale, "admin.plants.variants.applyAdjust")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAdjustId(null);
-                        setAdjustError(null);
-                      }}
-                      disabled={isAdjusting}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800"
-                    >
-                      {t(locale, "admin.shared.cancel")}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
               <div className="mt-3 flex flex-wrap gap-2">
                 {editingId === variant.id ? (
                   <>
                     <button
                       type="button"
-                      onClick={() => void handleSaveEdit(variant.id)}
+                      onClick={() => void handleSaveEdit(variant)}
                       disabled={isSaving}
                       className="rounded-xl bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
                     >
@@ -380,19 +339,6 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                       className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800"
                     >
                       {t(locale, "admin.plants.variants.edit")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAdjustId(variant.id);
-                        setAdjustDelta("");
-                        setAdjustNote("");
-                        setAdjustError(null);
-                        setEditingId(null);
-                      }}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800"
-                    >
-                      {t(locale, "admin.plants.variants.adjust")}
                     </button>
                     <button
                       type="button"
@@ -426,14 +372,14 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
             allowEmpty
           />
           <label>
-            <span className={labelClassName}>{t(locale, "admin.plants.variants.diameter")}</span>
+            <span className={labelClassName}>{t(locale, "admin.plants.variants.quantity")}</span>
             <input
               className={inputClassName}
               type="number"
               min={0}
-              step={0.1}
-              value={diameter}
-              onChange={(e) => setDiameter(e.target.value)}
+              step={1}
+              value={createQuantity}
+              onChange={(e) => setCreateQuantity(e.target.value)}
             />
           </label>
         </div>

@@ -21,6 +21,7 @@ export type AnalyticsCommerceProps = {
   plant_variant_id?: string;
   sellable_variant_id?: string;
   pot_color_id?: string;
+  pot_id?: string;
   plant_name?: string;
   quantity?: number;
   inventory_type?: string;
@@ -33,6 +34,8 @@ export type AnalyticsCommerceProps = {
   fulfillment_method?: string;
   attempt_id?: string;
   order_id?: string;
+  channel?: "catalog" | "partner";
+  currency?: "ILS";
 };
 
 export type AnalyticsCaptureOptions = {
@@ -114,7 +117,11 @@ export function captureOncePerSession(
   } catch {
     // sessionStorage unavailable — still capture; caller should also guard with a ref if needed.
   }
-  posthog.capture(event, cleanAnalyticsProps(props), options);
+  try {
+    posthog.capture(event, cleanAnalyticsProps(props), options);
+  } catch {
+    // Analytics must never block cart, checkout, or payment.
+  }
   return true;
 }
 
@@ -126,5 +133,9 @@ export function captureAnalyticsEvent(
 ): void {
   if (!shouldCaptureBusinessAnalytics()) return;
   if (!isPostHogReady(posthog)) return;
-  posthog.capture(event, cleanAnalyticsProps(props));
+  try {
+    posthog.capture(event, cleanAnalyticsProps(props));
+  } catch {
+    // Analytics must never block cart, checkout, or payment.
+  }
 }

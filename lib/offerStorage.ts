@@ -74,9 +74,9 @@ export type OfferRow = {
   variant_plant_name?: string | null;
   plant_size_id?: string | null;
   plant_size_label?: string | null;
-  pot_size_id?: string | null;
+  pot_id?: string | null;
   pot_name?: string | null;
-  pot_size_label?: string | null;
+  pot_diameter_cm?: string | number | null;
   availabilities?: unknown;
   consumer_price: string | number;
   status: string;
@@ -103,9 +103,13 @@ function mapSellableVariant(row: OfferRow): OfferSellableVariant | null {
     plantName: row.variant_plant_name?.trim() || "",
     plantSizeId,
     plantSizeLabel: row.plant_size_label?.trim() || "",
-    potSizeId: mapUuid(row.pot_size_id),
+    potId: mapUuid(row.pot_id),
     potName: row.pot_name?.trim() || null,
-    potSizeLabel: row.pot_size_label?.trim() || null,
+    potDiameterCm: (() => {
+      if (row.pot_diameter_cm == null || row.pot_diameter_cm === "") return null;
+      const n = typeof row.pot_diameter_cm === "number" ? row.pot_diameter_cm : Number(row.pot_diameter_cm);
+      return Number.isFinite(n) ? n : null;
+    })(),
   };
 }
 
@@ -305,9 +309,9 @@ async function queryOffers(filter?: {
       variant_plant.name AS variant_plant_name,
       sv.plant_variant_id AS plant_size_id,
       pv.size_label AS plant_size_label,
-      sv.pot_size_id AS pot_size_id,
+      sv.pot_id AS pot_id,
       pot.name AS pot_name,
-      ps.size_label AS pot_size_label,
+      pot.diameter_cm AS pot_diameter_cm,
       COALESCE(
         (
           SELECT jsonb_agg(
@@ -327,8 +331,7 @@ async function queryOffers(filter?: {
     LEFT JOIN sellable_variants sv ON sv.id = o.sellable_variant_id
     LEFT JOIN plant_variants pv ON pv.id = sv.plant_variant_id
     LEFT JOIN plants variant_plant ON variant_plant.id = pv.plant_id
-    LEFT JOIN pot_sizes ps ON ps.id = sv.pot_size_id
-    LEFT JOIN pots pot ON pot.id = ps.pot_id
+    LEFT JOIN pots pot ON pot.id = sv.pot_id
     WHERE (${inventoryType}::text IS NULL OR product.inventory_type = ${inventoryType})
       AND (${id}::text IS NULL OR o.id = ${id})
     ORDER BY o.created_at ASC
@@ -392,7 +395,7 @@ function offerPriceStatusUpdate(offer: {
         pk.name AS pocket_name,
         p.current_offer_id AS offer_id,
         o.sellable_variant_id,
-        p.pot_color_id,
+        p.pot_id,
         u.consumer_price
       FROM price_upd u
       INNER JOIN pos_spots p ON p.current_offer_id = u.id
@@ -423,7 +426,7 @@ function offerPriceStatusUpdate(offer: {
         offer_id,
         consumer_price,
         sellable_variant_id,
-        pot_color_id
+        pot_id
       )
       SELECT
         gen_random_uuid(),
@@ -435,7 +438,7 @@ function offerPriceStatusUpdate(offer: {
         a.offer_id,
         a.consumer_price,
         a.sellable_variant_id,
-        a.pot_color_id
+        a.pot_id
       FROM affected a
       INNER JOIN closed_segments cs ON cs.placement_cycle_id = a.cycle_id
       WHERE (

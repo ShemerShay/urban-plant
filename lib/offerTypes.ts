@@ -19,9 +19,9 @@ export interface OfferSellableVariant {
   plantName: string;
   plantSizeId: string;
   plantSizeLabel: string;
-  potSizeId: string | null;
+  potId: string | null;
   potName: string | null;
-  potSizeLabel: string | null;
+  potDiameterCm: number | null;
 }
 
 export interface Offer {

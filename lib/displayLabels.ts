@@ -166,6 +166,25 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not load plants": "admin.plants.loadFailed",
   "Network error while loading plants": "admin.plants.loadNetworkError",
   "Could not create plant": "admin.plants.createFailed",
+  "Cannot delete this size: used by a Sellable Variant":
+    "admin.plants.variants.deleteBlockedSellable",
+  "Cannot delete this size: has inventory/history":
+    "admin.plants.variants.deleteBlockedInventory",
+  "Cannot delete this size: used by POS/placement": "admin.plants.variants.deleteBlockedPos",
+  "Cannot delete this size: referenced by a historical order":
+    "admin.plants.variants.deleteBlockedOrder",
+  "This size is in use and cannot be deleted": "admin.plants.variants.deleteBlockedInUse",
+  "This plant size already has that pot": "admin.plants.sellableVariants.duplicate",
+  "Choose an active pot": "admin.plants.sellableVariants.inactivePot",
+  "This variant is used by an active offer. Create a new variant for a different configuration.":
+    "admin.plants.sellableVariants.activeOfferLocked",
+  "Plant size cannot be changed": "admin.plants.sellableVariants.plantSizeLocked",
+  "Pot color is not part of this variant": "admin.plants.sellableVariants.potColorRejected",
+  "Quantity must be a whole number of 0 or more": "admin.plants.variants.invalidQuantity",
+  "Inventory quantity cannot go below 0": "admin.plants.variants.belowZero",
+  "Inventory delta cannot be 0": "admin.plants.variants.deltaZero",
+  "Inventory delta must be a non-zero integer": "admin.plants.variants.invalidDelta",
+  "delta must be a non-zero integer": "admin.plants.variants.invalidDelta",
   "Could not save offer": "admin.offers.saveFailed",
   "Could not load offers": "admin.offers.loadFailed",
   "Network error while loading offers": "admin.offers.loadNetworkError",

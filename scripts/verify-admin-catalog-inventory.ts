@@ -41,12 +41,54 @@ function assertAdminApiGuarded(): void {
   assert.match(variantId, /isAdminRequest/);
   const inventory = read("app/api/plants/[plantId]/variants/[variantId]/inventory/route.ts");
   assert.match(inventory, /isAdminRequest/);
-  assert.match(inventory, /note is required/);
+  assert.doesNotMatch(inventory, /note is required/);
   const plantPatch = read("app/api/plants/[plantId]/route.ts");
   assert.match(plantPatch, /isAdminRequest/);
   assert.match(plantPatch, /resolveCatalogPublishedInput/);
   const plantPost = read("app/api/plants/route.ts");
   assert.match(plantPost, /isAdminRequest/);
+
+  const panel = read("components/admin/AdminPlantVariantsPanel.tsx");
+  assert.match(panel, /ADMIN_QUANTITY_NOTE/);
+  assert.match(panel, /editQuantity/);
+  assert.match(panel, /plantVariantInventory/);
+  assert.match(panel, /admin\.plants\.variants\.edit/);
+  assert.match(panel, /admin\.plants\.variants\.delete/);
+  assert.doesNotMatch(panel, /handleAdjust/);
+  assert.doesNotMatch(panel, /admin\.plants\.variants\.adjust/);
+  assert.doesNotMatch(panel, /setAdjustId/);
+  const saveEdit = panel.slice(
+    panel.indexOf("async function handleSaveEdit"),
+    panel.indexOf("async function confirmDelete"),
+  );
+  assert.match(saveEdit, /plantVariantInventory/);
+  assert.doesNotMatch(saveEdit, /nurseryPotDiameterCm/);
+  const handleCreate = panel.slice(
+    panel.indexOf("async function handleCreate"),
+    panel.indexOf("async function handleSaveEdit"),
+  );
+  assert.match(handleCreate, /createQuantity/);
+  assert.match(handleCreate, /quantity/);
+  assert.doesNotMatch(handleCreate, /nurseryPotDiameterCm/);
+  assert.doesNotMatch(handleCreate, /setDiameter/);
+  assert.doesNotMatch(handleCreate, /plantVariantInventory/);
+  const addForm = panel.slice(panel.indexOf("admin.plants.variants.new"));
+  assert.match(addForm, /createQuantity/);
+  assert.match(addForm, /admin\.plants\.variants\.quantity/);
+  assert.doesNotMatch(addForm, /admin\.plants\.variants\.diameter/);
+  assert.doesNotMatch(addForm, /nurseryPot/);
+  assert.doesNotMatch(addForm, /Nursery pot/);
+  assert.doesNotMatch(panel, /admin\.plants\.variants\.diameter/);
+  assert.doesNotMatch(panel, /admin\.plants\.variants\.adjust/);
+  const variantsRoute = read("app/api/plants/[plantId]/variants/route.ts");
+  assert.match(variantsRoute, /createPlantSizeWithOpeningQuantity/);
+  assert.match(variantsRoute, /parsePlantSizeOpeningQuantity/);
+  assert.doesNotMatch(variantsRoute, /nurseryPotDiameterCm/);
+  const variantStorage = read("lib/plantVariantStorage.ts");
+  assert.match(variantStorage, /applyInventoryDelta/);
+  assert.match(variantStorage, /PLANT_SIZE_ADMIN_QUANTITY_NOTE/);
+  assert.match(variantStorage, /input\.quantity === 0/);
+
   console.log("verify-admin-catalog-inventory: catalog mutation APIs require admin session");
 }
 
@@ -68,6 +110,7 @@ async function main(): Promise<void> {
   } = await import("../lib/plantStorage");
   const {
     PlantVariantWriteError,
+    createPlantSizeWithOpeningQuantity,
     createPlantVariant,
     deletePlantVariant,
     readPlantVariantsWithQuantity,
@@ -169,6 +212,7 @@ async function main(): Promise<void> {
   const offerId = `${tag}-offer`;
   let variantA = "";
   let variantB = "";
+  let variantS = "";
 
   const cyclesBefore = await sql`SELECT COUNT(*)::int AS n FROM placement_cycles`;
   const segmentsBefore = await sql`SELECT COUNT(*)::int AS n FROM placement_segments`;
@@ -235,6 +279,52 @@ async function main(): Promise<void> {
     });
     variantB = second.id;
 
+    let badOpeningQuantity = false;
+    try {
+      await createPlantSizeWithOpeningQuantity({
+        plantId: testPlantId,
+        sizeLabel: "S",
+        quantity: -1,
+      });
+    } catch (error) {
+      badOpeningQuantity = true;
+      assert.ok(error instanceof PlantVariantWriteError);
+      assert.equal(error.code, "invalid_quantity");
+    }
+    assert.equal(badOpeningQuantity, true);
+
+    const zeroOpen = await createPlantSizeWithOpeningQuantity({
+      plantId: testPlantId,
+      sizeLabel: "S",
+      quantity: 0,
+    });
+    variantS = zeroOpen.variant.id;
+    assert.equal(zeroOpen.quantity, 0);
+    assert.equal(zeroOpen.variant.nurseryPotDiameterCm, undefined);
+    assert.equal(zeroOpen.variant.sizeLabel, "S");
+    assert.equal(await getInventoryQuantity(zeroOpen.variant.id), 0);
+    assert.equal((await readInventoryHistory(zeroOpen.variant.id)).length, 0);
+    const zeroInventoryRows = await sql`
+      SELECT variant_id FROM inventory WHERE variant_id = ${zeroOpen.variant.id}::uuid
+    `;
+    assert.equal((zeroInventoryRows as unknown[]).length, 0);
+    await deletePlantVariant({ plantId: testPlantId, variantId: zeroOpen.variant.id });
+    variantS = "";
+
+    const opened = await createPlantSizeWithOpeningQuantity({
+      plantId: testPlantId,
+      sizeLabel: "S",
+      quantity: 9,
+    });
+    variantS = opened.variant.id;
+    assert.equal(opened.quantity, 9);
+    assert.equal(opened.variant.nurseryPotDiameterCm, undefined);
+    assert.equal(await getInventoryQuantity(variantS), 9);
+    const openingHistory = await readInventoryHistory(variantS);
+    assert.equal(openingHistory.length, 1);
+    assert.equal(openingHistory[0]?.delta, 9);
+    assert.equal(openingHistory[0]?.note, "Admin quantity");
+
     let duplicate = false;
     try {
       await createPlantVariant({
@@ -290,11 +380,25 @@ async function main(): Promise<void> {
       note: `${tag} send`,
     });
     assert.equal(minus.quantity, 2);
+    const plusNine = await applyInventoryDelta({
+      variantId: variantA,
+      delta: 9,
+    });
+    assert.equal(plusNine.quantity, 11);
+    const minusNine = await applyInventoryDelta({
+      variantId: variantA,
+      delta: -9,
+      note: `${tag} restore`,
+    });
+    assert.equal(minusNine.quantity, 2);
     const history = await readInventoryHistory(variantA);
-    assert.equal(history.length, 2);
+    assert.equal(history.length, 4);
     assert.equal(history[0]?.delta, 3);
     assert.equal(history[0]?.note, `${tag} receive`);
     assert.equal(history[1]?.delta, -1);
+    assert.equal(history[2]?.delta, 9);
+    assert.equal(history[2]?.note, null);
+    assert.equal(history[3]?.delta, -9);
 
     let belowZero = false;
     try {
@@ -303,10 +407,11 @@ async function main(): Promise<void> {
       belowZero = true;
       assert.ok(error instanceof InventoryChangeError);
       assert.equal(error.code, "insufficient_quantity");
+      assert.equal(error.message, "Inventory quantity cannot go below 0");
     }
     assert.equal(belowZero, true);
     assert.equal(await getInventoryQuantity(variantA), 2);
-    assert.equal((await readInventoryHistory(variantA)).length, 2);
+    assert.equal((await readInventoryHistory(variantA)).length, 4);
 
     const blockingSellable = randomUUID();
     await sql`
@@ -320,6 +425,7 @@ async function main(): Promise<void> {
       inUse = true;
       assert.ok(error instanceof PlantVariantWriteError);
       assert.equal(error.code, "in_use");
+      assert.equal(error.message, "Cannot delete this size: used by a Sellable Variant");
     }
     assert.equal(inUse, true);
 
@@ -344,6 +450,12 @@ async function main(): Promise<void> {
       await sql`DELETE FROM inventory_history WHERE variant_id = ${variantB}::uuid`;
       await sql`DELETE FROM inventory WHERE variant_id = ${variantB}::uuid`;
       await sql`DELETE FROM plant_variants WHERE id = ${variantB}::uuid`;
+    }
+    if (variantS) {
+      await sql`DELETE FROM sellable_variants WHERE plant_variant_id = ${variantS}::uuid`;
+      await sql`DELETE FROM inventory_history WHERE variant_id = ${variantS}::uuid`;
+      await sql`DELETE FROM inventory WHERE variant_id = ${variantS}::uuid`;
+      await sql`DELETE FROM plant_variants WHERE id = ${variantS}::uuid`;
     }
     await deletePlant(testPlantId);
   }

@@ -19,7 +19,7 @@ import {
   snapshotCatalogPaymentPlantCosts,
   type CatalogPaymentSnapshot,
 } from "./catalogCheckoutSnapshot";
-import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
+import { saleTimeSnapshotFields, type FulfillmentMethod, type OrderSnapshot, type SavedOrder } from "./orderTypes";
 import type {
   PaymentAttemptChannel,
   PaymentAttemptStatus,
@@ -75,6 +75,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       : {}),
     ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
+    ...saleTimeSnapshotFields(o),
   };
 }
 
@@ -134,6 +135,7 @@ type PaymentAttemptRow = {
   failure_reason: string | null;
   finalized_order_id: string | null;
   cardcom_transaction_id: string | number | bigint | null;
+  is_internal: boolean;
   created_at: string | Date;
   updated_at: string | Date;
 };
@@ -181,6 +183,7 @@ function mapPaymentAttemptRow(row: PaymentAttemptRow): SavedPaymentAttempt {
     ...(parseOptionalBigInt(row.cardcom_transaction_id) !== undefined
       ? { cardcomTransactionId: parseOptionalBigInt(row.cardcom_transaction_id) }
       : {}),
+    isInternal: row.is_internal === true,
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     updatedAt: toIsoString(row.updated_at) ?? new Date().toISOString(),
   };
@@ -211,6 +214,7 @@ const PAYMENT_ATTEMPT_ROW_SQL = sql`
   failure_reason,
   finalized_order_id,
   cardcom_transaction_id,
+  is_internal,
   created_at,
   updated_at
 `;
@@ -428,6 +432,7 @@ export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promis
       failure_reason,
       finalized_order_id,
       cardcom_transaction_id,
+      is_internal,
       created_at,
       updated_at
     )
@@ -456,6 +461,7 @@ export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promis
       ${attempt.failureReason ?? null},
       ${attempt.finalizedOrderId ?? null}::uuid,
       ${attempt.cardcomTransactionId ?? null},
+      ${attempt.isInternal === true},
       ${attempt.createdAt}::timestamptz,
       ${attempt.updatedAt}::timestamptz
     )
@@ -866,6 +872,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         a.cardcom_env,
         a.payment_resume_token,
         a.created_at,
+        a.is_internal,
         COALESCE(
           a.snapshot->>'partnerLocationId',
           NULL
@@ -905,7 +912,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         payment_hold_started_at = NULL,
         payment_hold_attempt_id = NULL,
         plant_variant_id = NULL,
-        pot_color_id = NULL
+        pot_id = NULL
       FROM plant_lock l
       WHERE p.id = l.id
         AND p.status = 'available'
@@ -938,6 +945,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         commission_rate,
         picked_up_at,
         snapshot,
+        is_internal,
         created_at,
         cardcom_transaction_id,
         purchase_email_status
@@ -968,6 +976,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         NULL,
         ${pickedUpAt}::timestamptz,
         e.snapshot,
+        e.is_internal,
         now(),
         ${cardcomTransactionId}::bigint,
         'pending'

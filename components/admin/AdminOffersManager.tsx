@@ -30,7 +30,7 @@ type VariantChoice = {
   plantName: string;
   plantSizeLabel: string;
   potName: string | null;
-  potSizeLabel: string | null;
+  potDiameterCm: number | null;
 };
 
 type VariantsApiResponse = {
@@ -64,11 +64,12 @@ const inputClassName =
 const labelClassName = "text-xs font-medium text-slate-500";
 
 function variantLabel(
-  variant: Pick<OfferSellableVariant, "plantName" | "plantSizeLabel" | "potName" | "potSizeLabel">,
+  variant: Pick<OfferSellableVariant, "plantName" | "plantSizeLabel" | "potName" | "potDiameterCm">,
   noPot: string,
 ): string {
+  const diameter = variant.potDiameterCm != null ? `${variant.potDiameterCm} cm` : "";
   const pot = variant.potName
-    ? `${variant.potName} ${variant.potSizeLabel ?? ""}`.trim()
+    ? [variant.potName, diameter].filter(Boolean).join(" ")
     : noPot;
   return `${variant.plantName} · ${variant.plantSizeLabel} · ${pot}`;
 }

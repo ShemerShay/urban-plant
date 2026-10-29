@@ -65,7 +65,7 @@ type SegmentRow = {
   consumer_price: string | number;
   pos_spot_id: string;
   sellable_variant_id: string | null;
-  pot_color_id: string | null;
+  pot_id: string | null;
 };
 
 function priceOf(row: SegmentRow): number {
@@ -116,11 +116,12 @@ async function main(): Promise<void> {
     "offer_id",
     "consumer_price",
     "sellable_variant_id",
-    "pot_color_id",
+    "pot_id",
   ]) {
     assert.equal(colNames.has(name), true, `missing column ${name}`);
   }
-  assert.equal(colNames.has("end_reason"), false);
+    assert.equal(colNames.has("pot_color_id"), false);
+    assert.equal(colNames.has("end_reason"), false);
   assert.equal(colNames.has("pos_spot_id"), false);
   assert.equal(colNames.has("plant_variant_id"), false);
 
@@ -190,7 +191,7 @@ async function main(): Promise<void> {
         s.offer_id,
         s.consumer_price,
         s.sellable_variant_id,
-        s.pot_color_id,
+        s.pot_id,
         c.pos_spot_id
       FROM placement_segments s
       INNER JOIN placement_cycles c ON c.id = s.placement_cycle_id
@@ -232,11 +233,11 @@ async function main(): Promise<void> {
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: source,
-      introducesNewPotColor: occupancy.introducesNewPotColor,
+      introducesNewPot: occupancy.introducesNewPotColor,
       id: existing.id,
       existing,
       variantId: occupancy.plantVariantId,
-      potColorId: occupancy.potColorId,
+      potId: occupancy.potId,
       patch: {
         partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -260,18 +261,16 @@ async function main(): Promise<void> {
       occupancyIntent: occupancyIntent ?? null,
       requestedOfferId:
         "currentOfferId" in extra ? (extra.currentOfferId as string | null) : undefined,
-      requestedPotColorId:
-        "potColorId" in extra ? (extra.potColorId as string | null) : undefined,
       sameVariantReplace,
     });
     return writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: "already_at_partner",
-      introducesNewPotColor: occupancy.introducesNewPotColor,
+      introducesNewPot: occupancy.introducesNewPotColor,
       id,
       existing,
       variantId: occupancy.plantVariantId,
-      potColorId: occupancy.potColorId,
+      potId: occupancy.potId,
       patch: {
         partnerLocationId,
         posNumber: existing.posNumber ?? "1",
@@ -313,7 +312,7 @@ async function main(): Promise<void> {
     assert.equal(rows[0].offer_id, offerA);
     assert.equal(priceOf(rows[0]), 40);
     assert.equal(rows[0].sellable_variant_id, fixture.sellableS);
-    assert.equal(rows[0].pot_color_id, null);
+    assert.equal(rows[0].pot_id, null);
     assert.equal(rows[0].pocket_id, null);
     assert.equal(rows[0].pocket_name, null);
     const firstSegmentId = rows[0].id;
@@ -383,7 +382,7 @@ async function main(): Promise<void> {
     assert.equal(openSegments(rows).length, 1);
     assert.equal(openSegments(rows)[0].offer_id, offerA2);
     assert.equal(openSegments(rows)[0].sellable_variant_id, fixture.sellableS);
-    assert.equal(openSegments(rows)[0].pot_color_id, null);
+    assert.equal(openSegments(rows)[0].pot_id, null);
     assert.equal(priceOf(openSegments(rows)[0]), 41);
     assert.equal(openSegments(rows)[0].pocket_id, pocketA.id);
     assert.equal(openSegments(rows)[0].pocket_name, `${tag}-shelf-west`);
@@ -520,39 +519,37 @@ async function main(): Promise<void> {
     await placeOn(colorSpot, variantA, offerA);
     await patchSpot(colorSpot.id, {
       currentOfferId: fixture.offerPot,
-      potColorId: fixture.colorA,
     });
     const colorRows = await segmentsFor(colorSpot.id);
     assert.equal(colorRows.length, 2);
     assert.equal(colorRows[0].sellable_variant_id, fixture.sellableS);
-    assert.equal(colorRows[0].pot_color_id, null);
+    assert.equal(colorRows[0].pot_id, null);
     assert.ok(colorRows[0].ended_at);
     assert.equal(openSegments(colorRows).length, 1);
     assert.equal(openSegments(colorRows)[0].offer_id, fixture.offerPot);
     assert.equal(openSegments(colorRows)[0].sellable_variant_id, fixture.sellableSPot);
-    assert.equal(openSegments(colorRows)[0].pot_color_id, fixture.colorA);
+    assert.equal(openSegments(colorRows)[0].pot_id, fixture.potId);
     await patchSpot(colorSpot.id, {
-      currentOfferId: fixture.offerPot,
-      potColorId: fixture.colorB,
+      currentOfferId: fixture.offerPotB,
     });
     const recolored = await segmentsFor(colorSpot.id);
     assert.equal(recolored.length, 3);
-    assert.equal(openSegments(recolored)[0].pot_color_id, fixture.colorB);
-    assert.equal(openSegments(recolored)[0].sellable_variant_id, fixture.sellableSPot);
+    assert.equal(openSegments(recolored)[0].pot_id, fixture.potBId);
+    assert.equal(openSegments(recolored)[0].sellable_variant_id, fixture.sellableSPotB);
     const colorCycleId = openSegments(recolored)[0].placement_cycle_id;
     const plantQtyBeforePrice = await getInventoryQuantity(variantA);
-    const colorQtyBeforePrice = await getPotInventoryQuantity(fixture.colorB);
-    await updateOffer(fixture.offerPot, { consumerPrice: 91 });
+    const colorQtyBeforePrice = await getPotInventoryQuantity(fixture.potBId);
+    await updateOffer(fixture.offerPotB, { consumerPrice: 91 });
     const priced = await segmentsFor(colorSpot.id);
     assert.equal(priced.length, 4);
     assert.equal(openSegments(priced).length, 1);
     assert.equal(priceOf(openSegments(priced)[0]), 91);
-    assert.equal(openSegments(priced)[0].sellable_variant_id, fixture.sellableSPot);
-    assert.equal(openSegments(priced)[0].pot_color_id, fixture.colorB);
-    assert.equal(openSegments(priced)[0].offer_id, fixture.offerPot);
+    assert.equal(openSegments(priced)[0].sellable_variant_id, fixture.sellableSPotB);
+    assert.equal(openSegments(priced)[0].pot_id, fixture.potBId);
+    assert.equal(openSegments(priced)[0].offer_id, fixture.offerPotB);
     assert.equal(openSegments(priced)[0].placement_cycle_id, colorCycleId);
     assert.equal(await getInventoryQuantity(variantA), plantQtyBeforePrice);
-    assert.equal(await getPotInventoryQuantity(fixture.colorB), colorQtyBeforePrice);
+    assert.equal(await getPotInventoryQuantity(fixture.potBId), colorQtyBeforePrice);
 
     const sharedA = await appendPosSpot(emptySpot(`seg-shared-a-${tag}`, "9104"));
     const sharedB = await appendPosSpot(emptySpot(`seg-shared-b-${tag}`, "9105"));
@@ -585,7 +582,7 @@ async function main(): Promise<void> {
     assert.equal(priceOf(openSegments(sharedBRows)[0]), 48);
     assert.equal(openSegments(sharedARows)[0].offer_id, offerShared);
     assert.equal(openSegments(sharedARows)[0].sellable_variant_id, fixture.sellableS);
-    assert.equal(openSegments(sharedARows)[0].pot_color_id, null);
+    assert.equal(openSegments(sharedARows)[0].pot_id, null);
     assert.equal(sharedARows[0].placement_cycle_id, openSegments(sharedARows)[0].placement_cycle_id);
     assert.equal((await segmentsFor(otherSpot.id)).length, otherBefore.length);
     assert.equal(priceOf(openSegments(await segmentsFor(otherSpot.id))[0]), 55);

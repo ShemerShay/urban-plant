@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminRequest } from "@/lib/adminAuth";
-import { readPotsWithSizes } from "@/lib/potSizeStorage";
-import { PotWriteError, createPot, potWriteHttp } from "@/lib/potStorage";
+import { PotWriteError, createPot, potWriteHttp, readPots } from "@/lib/potStorage";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -10,7 +9,7 @@ function unauthorized() {
 
 export async function GET(request: NextRequest) {
   if (!isAdminRequest(request)) return unauthorized();
-  const pots = await readPotsWithSizes();
+  const pots = await readPots();
   return NextResponse.json({ pots });
 }
 
