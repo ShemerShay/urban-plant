@@ -123,16 +123,6 @@ export const routes = {
       `/api/plants/${encodeURIComponent(plantId.trim())}/sellable-variants/${encodeURIComponent(sellableVariantId.trim())}`,
     pots: () => "/api/pots",
     pot: (potId: string) => `/api/pots/${encodeURIComponent(potId.trim())}`,
-    potSizes: (potId: string) =>
-      `/api/pots/${encodeURIComponent(potId.trim())}/sizes`,
-    potSize: (potId: string, sizeId: string) =>
-      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}`,
-    potColors: (potId: string, sizeId: string) =>
-      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}/colors`,
-    potColor: (potId: string, sizeId: string, colorId: string) =>
-      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}/colors/${encodeURIComponent(colorId.trim())}`,
-    potColorInventory: (potId: string, sizeId: string, colorId: string) =>
-      `/api/pots/${encodeURIComponent(potId.trim())}/sizes/${encodeURIComponent(sizeId.trim())}/colors/${encodeURIComponent(colorId.trim())}/inventory`,
     sellableVariantList: () => "/api/sellable-variants",
     offers: () => "/api/offers",
     offer: (offerId: string) => `/api/offers/${encodeURIComponent(offerId.trim())}`,

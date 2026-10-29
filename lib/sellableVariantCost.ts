@@ -7,7 +7,7 @@ export type DerivedSupplierCost = {
   supplierCost: number | null;
   plantSupplierCost: number | null;
   potSupplierCost: number | null;
-  /** True when a Pot Size is part of the Variant and that size has no supplier cost. */
+  /** True when a Catalog Pot is part of the Variant and that pot has no supplier cost. */
   missingPotSupplierCost: boolean;
 };
 
@@ -22,11 +22,11 @@ function finiteCost(value: number | null): number | null {
 
 export function deriveSellableVariantSupplierCost(input: {
   plantSupplierCost: number | null;
-  potSizeId: string | null;
+  potId: string | null;
   potSupplierCost: number | null;
 }): DerivedSupplierCost {
   const plantSupplierCost = finiteCost(input.plantSupplierCost);
-  if (input.potSizeId == null) {
+  if (input.potId == null) {
     return {
       supplierCost: plantSupplierCost,
       plantSupplierCost,

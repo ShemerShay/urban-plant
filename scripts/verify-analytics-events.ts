@@ -60,7 +60,10 @@ assert.ok(
 
 const checkoutForm = read("components/checkout/CheckoutForm.tsx");
 assert.match(checkoutForm, /ANALYTICS_EVENTS\.paymentStarted/);
+assert.match(checkoutForm, /currency: "ILS"/);
+assert.match(checkoutForm, /isInternal: browserIsInternal\(\)/);
 assert.match(checkoutForm, /window\.location\.assign/);
+assert.doesNotMatch(checkoutForm, /captureOncePerSession/);
 assert.ok(
   checkoutForm.indexOf("captureAnalyticsEvent") <
     checkoutForm.indexOf("window.location.assign(data.paymentUrl)"),
@@ -71,6 +74,25 @@ const successPage = read("app/success/page.tsx");
 assert.match(successPage, /TrackPurchaseCompleted/);
 assert.match(successPage, /isVerifiedPaidOrderStatus/);
 assert.match(successPage, /trackVerifiedPurchase/);
+assert.match(successPage, /channel === "catalog"/);
+assert.match(successPage, /currency="ILS"/);
+
+const shopCheckout = read("components/shop/ShopCheckout.tsx");
+assert.match(shopCheckout, /ANALYTICS_EVENTS\.checkoutStarted/);
+assert.match(shopCheckout, /ANALYTICS_EVENTS\.paymentStarted/);
+assert.match(shopCheckout, /channel: "catalog"/);
+assert.match(shopCheckout, /currency: "ILS"/);
+assert.match(shopCheckout, /captureOncePerSession/);
+assert.ok(
+  shopCheckout.indexOf("captureAnalyticsEvent") <
+    shopCheckout.indexOf("window.location.assign(data.paymentUrl)"),
+  "catalog payment_started must be attempted before redirect",
+);
+assert.match(shopCheckout, /isInternal: browserIsInternal\(\)/);
+
+const flowerHandoffEvents = read("components/checkout/FlowerPosScanRedirect.tsx");
+assert.doesNotMatch(flowerHandoffEvents, /checkoutStarted/);
+assert.doesNotMatch(flowerHandoffEvents, /paymentStarted/);
 
 const purchaseTrack = read("components/analytics/TrackPurchaseCompleted.tsx");
 assert.match(purchaseTrack, /order_id/);
@@ -78,8 +100,11 @@ assert.match(purchaseTrack, /purchaseCompleted/);
 assert.match(purchaseTrack, /inventory_type/);
 
 const provider = read("components/PostHogProvider.tsx");
-assert.match(provider, /up_internal/);
-assert.match(provider, /up_ph_internal/);
+const internalTraffic = read("lib/internalTraffic.ts");
+assert.match(internalTraffic, /up_internal/);
+assert.match(internalTraffic, /up_ph_internal/);
+assert.match(provider, /INTERNAL_QUERY_PARAM/);
+assert.match(provider, /INTERNAL_COOKIE_NAME/);
 assert.match(provider, /is_internal:\s*true/);
 assert.match(provider, /posthog\.register/);
 

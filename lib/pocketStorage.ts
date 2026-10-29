@@ -156,7 +156,7 @@ export async function deletePocket(id: string): Promise<{
       UPDATE pos_spots p
       SET
         plant_variant_id = NULL,
-        pot_color_id = NULL,
+        pot_id = NULL,
         current_offer_id = CASE
           WHEN p.status = 'sold' THEN p.current_offer_id
           WHEN EXISTS (

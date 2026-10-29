@@ -93,6 +93,7 @@ async function assertSchemaAndConstraints(): Promise<void> {
     "failure_reason",
     "finalized_order_id",
     "cardcom_transaction_id",
+    "is_internal",
     "created_at",
     "updated_at",
   ];

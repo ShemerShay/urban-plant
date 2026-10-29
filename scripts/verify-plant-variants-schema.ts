@@ -34,6 +34,20 @@ function assertCheckoutUnchanged(): void {
   assert.doesNotMatch(read("lib/plantValidation.ts"), /averageSize/);
   assert.match(plants, /supplierPrice: number/);
 
+  const storage = read("lib/plantVariantStorage.ts");
+  assert.match(storage, /PLANT_SIZE_DELETE_BLOCKED_SELLABLE/);
+  assert.match(storage, /PLANT_SIZE_DELETE_BLOCKED_INVENTORY/);
+  assert.match(storage, /PLANT_SIZE_DELETE_BLOCKED_POS/);
+  assert.match(storage, /PLANT_SIZE_DELETE_BLOCKED_ORDER/);
+  assert.match(storage, /FROM order_items/);
+  assert.match(storage, /FROM sellable_variants/);
+
+  const labels = read("lib/displayLabels.ts");
+  assert.match(labels, /Cannot delete this size: used by a Sellable Variant/);
+  assert.match(labels, /Cannot delete this size: has inventory\/history/);
+  assert.match(labels, /Cannot delete this size: used by POS\/placement/);
+  assert.match(labels, /Cannot delete this size: referenced by a historical order/);
+
   console.log("verify-plant-variants-schema: checkout/payment still use offer product_id + consumer_price");
 }
 

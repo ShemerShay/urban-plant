@@ -21,6 +21,7 @@ export function TrackPosScan({
   partner_name,
   pocket_id,
   pocket_name,
+  channel,
 }: AnalyticsCommerceProps) {
   const posthog = usePostHog();
   const firedRef = useRef(false);
@@ -39,6 +40,7 @@ export function TrackPosScan({
       partner_name,
       pocket_id,
       pocket_name,
+      channel,
     });
     if (sent) firedRef.current = true;
   }, [
@@ -53,6 +55,7 @@ export function TrackPosScan({
     partner_name,
     pocket_id,
     pocket_name,
+    channel,
   ]);
 
   return null;

@@ -10,7 +10,6 @@ export type CatalogCheckoutPaymentLine = {
   plantSizeId: string;
   sellableVariantId: string;
   offerId: string;
-  potColorId: string | null;
   quantity: number;
   unitPrice: number;
 };
@@ -67,7 +66,6 @@ export function catalogCheckoutPaymentLines(
       plantSizeId: line.plantSizeId,
       sellableVariantId: line.sellableVariantId,
       offerId: line.offerId,
-      potColorId: line.potColorId,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
     });
@@ -89,7 +87,7 @@ export function catalogCheckoutLinesMatch(
       line.plantSizeId === other.plantSizeId &&
       line.sellableVariantId === other.sellableVariantId &&
       line.offerId === other.offerId &&
-      line.potColorId === other.potColorId &&
+      line.potId === other.potId &&
       line.quantity === other.quantity &&
       moneyEqual(line.unitPrice, other.unitPrice)
     );
@@ -137,7 +135,7 @@ export function catalogCheckoutSnapshotItems(
   lines: Array<
     Pick<
       CatalogCartItem,
-      "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "potColorId" | "quantity"
+      "plantId" | "plantSizeId" | "sellableVariantId" | "offerId" | "quantity"
     >
   >,
 ): CatalogCartItem[] {
@@ -146,7 +144,6 @@ export function catalogCheckoutSnapshotItems(
     plantSizeId: line.plantSizeId,
     sellableVariantId: line.sellableVariantId,
     offerId: line.offerId,
-    potColorId: line.potColorId,
     quantity: line.quantity,
   }));
 }

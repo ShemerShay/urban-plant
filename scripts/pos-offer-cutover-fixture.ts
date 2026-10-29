@@ -22,12 +22,12 @@ export type PosCutoverFixture = {
   offerLegacy: string;
   offerFlower: string;
   potId: string;
-  potSizeId: string;
-  colorA: string;
-  colorB: string;
+  potBId: string;
   sellableS: string;
   sellableSPot: string;
+  sellableSPotB: string;
   sellableL: string;
+  offerPotB: string;
 };
 
 export async function createPosCutoverFixture(input: {
@@ -61,40 +61,41 @@ export async function createPosCutoverFixture(input: {
 
   const { createPlant, deletePlant } = await import("../lib/plantStorage");
   const { createPlantVariant } = await import("../lib/plantVariantStorage");
-  const { createPot, deletePot } = await import("../lib/potStorage");
-  const { createPotSize, createPotColor } = await import("../lib/potSizeStorage");
+  const { createPot, deletePot, updatePot } = await import("../lib/potStorage");
+  const { setPotCentralQuantity } = await import("../lib/potInventoryStorage");
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
 
   const plant = await createPlant(parsed.plant);
   const sizeS = await createPlantVariant({ plantId: plant.id, sizeLabel: "S" });
   const sizeL = await createPlantVariant({ plantId: plant.id, sizeLabel: "L" });
-  const pot = await createPot({ name: `${tag} pot` });
-  const potSize = await createPotSize({ potId: pot.id, sizeLabel: "M", supplierPrice: 12 });
-  const colorA = await createPotColor({
-    potId: pot.id,
-    sizeId: potSize.id,
-    color: `${tag}-terra`,
+  const potA = await updatePot({
+    potId: (await createPot({ name: `${tag} pot a` })).id,
+    supplierPrice: 12,
   });
-  const colorB = await createPotColor({
-    potId: pot.id,
-    sizeId: potSize.id,
-    color: `${tag}-white`,
+  const potB = await updatePot({
+    potId: (await createPot({ name: `${tag} pot b` })).id,
+    supplierPrice: 8,
   });
   const sellableS = await createSellableVariant({
     plantId: plant.id,
     plantSizeId: sizeS.id,
-    potSizeId: null,
+    potId: null,
   });
   const sellableSPot = await createSellableVariant({
     plantId: plant.id,
     plantSizeId: sizeS.id,
-    potSizeId: potSize.id,
+    potId: potA.id,
+  });
+  const sellableSPotB = await createSellableVariant({
+    plantId: plant.id,
+    plantSizeId: sizeS.id,
+    potId: potB.id,
   });
   const sellableL = await createSellableVariant({
     plantId: plant.id,
     plantSizeId: sizeL.id,
-    potSizeId: null,
+    potId: null,
   });
 
   const locationAvailabilities = [
@@ -146,6 +147,15 @@ export async function createPosCutoverFixture(input: {
     status: "active",
     availabilities: [{ scope: "partner_location", partnerLocationId }],
   });
+  const offerPotB = await createOrReusePlantOffer({
+    sellableVariantId: sellableSPotB.sellableVariantId,
+    consumerPrice: 90,
+    status: "active",
+    availabilities: [{ scope: "partner_location", partnerLocationId }],
+  });
+
+  await setPotCentralQuantity({ potId: potA.id, quantity: 5 });
+  await setPotCentralQuantity({ potId: potB.id, quantity: 5 });
 
   const offerLegacy = `occ-legacy-${tag}`;
   const offerFlower = `occ-flower-${tag}`;
@@ -167,14 +177,14 @@ export async function createPosCutoverFixture(input: {
     offerL2: offerL2.offer.id,
     offerPot: offerPot.offer.id,
     offerPot2: offerPot2.offer.id,
+    offerPotB: offerPotB.offer.id,
     offerLegacy,
     offerFlower,
-    potId: pot.id,
-    potSizeId: potSize.id,
-    colorA: colorA.id,
-    colorB: colorB.id,
+    potId: potA.id,
+    potBId: potB.id,
     sellableS: sellableS.sellableVariantId,
     sellableSPot: sellableSPot.sellableVariantId,
+    sellableSPotB: sellableSPotB.sellableVariantId,
     sellableL: sellableL.sellableVariantId,
   };
 
@@ -189,6 +199,7 @@ export async function createPosCutoverFixture(input: {
         fixture.offerL2,
         fixture.offerPot,
         fixture.offerPot2,
+        fixture.offerPotB,
         fixture.offerLegacy,
         fixture.offerFlower,
       ];
@@ -199,14 +210,12 @@ export async function createPosCutoverFixture(input: {
         WHERE id IN (
           ${fixture.sellableS}::uuid,
           ${fixture.sellableSPot}::uuid,
+          ${fixture.sellableSPotB}::uuid,
           ${fixture.sellableL}::uuid
         )
       `;
-      await sql`DELETE FROM pot_inventory_history WHERE pot_color_id IN (${fixture.colorA}::uuid, ${fixture.colorB}::uuid)`;
-      await sql`DELETE FROM pot_inventory WHERE pot_color_id IN (${fixture.colorA}::uuid, ${fixture.colorB}::uuid)`;
-      await sql`DELETE FROM pot_colors WHERE id IN (${fixture.colorA}::uuid, ${fixture.colorB}::uuid)`;
-      await sql`DELETE FROM pot_sizes WHERE id = ${fixture.potSizeId}::uuid`;
       await deletePot(fixture.potId);
+      await deletePot(fixture.potBId);
       await sql`DELETE FROM inventory_history WHERE variant_id IN (${fixture.variantS}::uuid, ${fixture.variantL}::uuid)`;
       await sql`DELETE FROM inventory WHERE variant_id IN (${fixture.variantS}::uuid, ${fixture.variantL}::uuid)`;
       await sql`DELETE FROM plant_variants WHERE id IN (${fixture.variantS}::uuid, ${fixture.variantL}::uuid)`;

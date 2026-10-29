@@ -19,9 +19,7 @@ import { useCatalogCart, writeCatalogCart } from "@/lib/catalogCartStore";
 import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
 import type { CatalogShopCard } from "@/lib/catalogShop";
 import {
-  additionalInStockColorCount,
   catalogSizeChoices,
-  colorSetKey,
   defaultCatalogCardSizeId,
   resolveCardConfiguration,
 } from "@/lib/catalogShopSelection";
@@ -61,21 +59,14 @@ export function ShopPlantCard({
   const [selectedSizeId, setSelectedSizeId] = useState(() =>
     defaultCatalogCardSizeId(plant.sizes, sizeFilter),
   );
-  const [colorMemory, setColorMemory] = useState<{ colorId: string | null; setKey: string } | null>(
-    null,
-  );
   const [justAdded, setJustAdded] = useState(false);
 
   const name = localizedPlantText(locale, plant.name, plant.nameHe);
   const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId);
-  const resolved = selectedSize ? resolveCardConfiguration(selectedSize, colorMemory) : null;
-  const resolvedVariant = resolved
-    ? selectedSize?.variants.find((variant) => variant.id === resolved.sellableVariantId)
-    : undefined;
-  const extraColors =
-    resolvedVariant && resolved
-      ? additionalInStockColorCount(resolvedVariant, resolved.potColorId)
-      : 0;
+  const resolved = selectedSize ? resolveCardConfiguration(selectedSize) : null;
+  const resolvedVariant = selectedSize?.variants.find(
+    (variant) => variant.id === resolved?.sellableVariantId,
+  );
   const price = resolved ? formatCatalogPrice(resolved.unitPrice, plant.currency, locale) : null;
   const cartQty =
     resolved == null
@@ -88,7 +79,6 @@ export function ShopPlantCard({
               plantSizeId: resolved.plantSizeId,
               sellableVariantId: resolved.sellableVariantId,
               offerId: resolved.offerId,
-              potColorId: resolved.potColorId,
             }),
         )?.quantity ?? 0);
   const canAdd = resolved != null && cartQty < resolved.availableQuantity;
@@ -101,7 +91,6 @@ export function ShopPlantCard({
 
   function selectSize(id: string) {
     setSelectedSizeId(id);
-    setColorMemory(null);
   }
 
   async function addToCart() {
@@ -113,7 +102,6 @@ export function ShopPlantCard({
         plantSizeId: resolved.plantSizeId,
         sellableVariantId: resolved.sellableVariantId,
         offerId: resolved.offerId,
-        potColorId: resolved.potColorId,
       },
       resolved.availableQuantity,
     );
@@ -124,14 +112,12 @@ export function ShopPlantCard({
       plant_variant_id: resolved.plantSizeId,
       sellable_variant_id: resolved.sellableVariantId,
       offer_id: resolved.offerId,
-      ...(resolved.potColorId ? { pot_color_id: resolved.potColorId } : {}),
+      ...(resolved.potId ? { pot_id: resolved.potId } : {}),
       quantity: 1,
       amount: catalogCartLineAmount(resolved.unitPrice, 1),
+      channel: "catalog",
     });
     setJustAdded(true);
-    if (resolvedVariant) {
-      setColorMemory({ colorId: resolved.potColorId, setKey: colorSetKey(resolvedVariant) });
-    }
   }
 
   return (
@@ -187,7 +173,6 @@ export function ShopPlantCard({
               sizes="20px"
             />
           </span>
-          {extraColors > 0 ? <span className="text-caption">+{extraColors}</span> : null}
           <GalleryCue />
         </Link>
       ) : null}

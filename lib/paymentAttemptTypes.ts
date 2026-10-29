@@ -74,6 +74,8 @@ export interface SavedPaymentAttempt {
   failureReason?: string;
   finalizedOrderId?: string;
   cardcomTransactionId?: number;
+  /** Staff browser. Omitted on write means false. */
+  isInternal?: boolean;
   createdAt: string;
   updatedAt: string;
 }

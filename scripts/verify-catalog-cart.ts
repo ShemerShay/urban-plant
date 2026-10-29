@@ -20,7 +20,11 @@ function assertCartWiring(): void {
   const cartLib = read("lib/catalogCart.ts");
   assert.match(cartLib, /up_catalog_cart/);
   assert.match(cartLib, /catalogCartTotalQuantity/);
-  assert.match(cartLib, /plantId \+ plantSizeId \+ sellableVariantId \+ offerId \+ potColorId|catalogCartItemKey/);
+  assert.match(
+    cartLib,
+    /\$\{item\.plantId\}::\$\{item\.plantSizeId\}::\$\{item\.sellableVariantId\}::\$\{item\.offerId\}/,
+  );
+  assert.doesNotMatch(cartLib, /potColorId/);
   assert.doesNotMatch(cartLib, /applyInventoryDelta/);
   assert.doesNotMatch(cartLib, /startCardcom/);
   assert.doesNotMatch(cartLib, /catalog_stock_holds/);
@@ -138,11 +142,10 @@ async function assertCartHelpers(): Promise<void> {
     plantSizeId: "size-1",
     sellableVariantId: "sv-1",
     offerId: "offer-1",
-    potColorId: null as string | null,
   };
-  const withColor = { ...noPot, potColorId: "color-a" };
+  const withPot = { ...noPot, sellableVariantId: "sv-pot", offerId: "offer-pot" };
   const otherSize = { ...noPot, plantSizeId: "size-2", sellableVariantId: "sv-2" };
-  assert.notEqual(cart.catalogCartItemKey(withColor), cart.catalogCartItemKey(noPot));
+  assert.notEqual(cart.catalogCartItemKey(withPot), cart.catalogCartItemKey(noPot));
   assert.notEqual(cart.catalogCartItemKey(noPot), cart.catalogCartItemKey(otherSize));
 
   const merged = cart.parseCatalogCart(
@@ -168,7 +171,7 @@ async function assertCartHelpers(): Promise<void> {
   assert.equal(next.added, false);
   assert.equal(next.cart.items[0]?.quantity, 2);
 
-  const mixed = cart.addCatalogCartItem(next.cart, withColor, 2);
+  const mixed = cart.addCatalogCartItem(next.cart, withPot, 2);
   assert.equal(mixed.added, true);
   assert.equal(mixed.cart.items.length, 2);
   assert.equal(cart.catalogCartTotalQuantity(mixed.cart), 3);
@@ -176,16 +179,16 @@ async function assertCartHelpers(): Promise<void> {
   const bumped = cart.updateCatalogCartQuantity(mixed.cart, noPot, 1, 2);
   assert.equal(bumped.v, 2);
   if (bumped.v !== 2) throw new Error("expected v2");
-  assert.equal(bumped.items.find((item) => item.potColorId == null)?.quantity, 1);
+  assert.equal(bumped.items.find((item) => item.sellableVariantId === "sv-1")?.quantity, 1);
   const blocked = cart.updateCatalogCartQuantity(bumped, noPot, 9, 2);
   assert.equal(blocked.v, 2);
   if (blocked.v !== 2) throw new Error("expected v2");
-  assert.equal(blocked.items.find((item) => item.potColorId == null)?.quantity, 2);
-  const removed = cart.removeCatalogCartItem(blocked, withColor);
+  assert.equal(blocked.items.find((item) => item.sellableVariantId === "sv-1")?.quantity, 2);
+  const removed = cart.removeCatalogCartItem(blocked, withPot);
   assert.equal(removed.v, 2);
   if (removed.v !== 2) throw new Error("expected v2");
   assert.equal(removed.items.length, 1);
-  assert.equal(removed.items[0]?.potColorId, null);
+  assert.equal(removed.items[0]?.sellableVariantId, "sv-1");
 
   const request = cart.parseCatalogCartRequest({
     v: 2,
@@ -214,7 +217,6 @@ async function main(): Promise<void> {
   const { applyInventoryDelta, getInventoryQuantity } = await import("../lib/inventoryStorage");
   const { readCatalogShopDetail, resolveCatalogCartLines } = await import("../lib/catalogShop");
   const { createPot, updatePot } = await import("../lib/potStorage");
-  const { createPotSize, createPotColor } = await import("../lib/potSizeStorage");
   const { applyPotInventoryDelta } = await import("../lib/potInventoryStorage");
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
@@ -234,11 +236,11 @@ async function main(): Promise<void> {
   const potIds: string[] = [];
   const attemptIds: string[] = [];
 
-  async function seedOffer(plantSizeId: string, price: number, potSizeId: string | null) {
+  async function seedOffer(plantSizeId: string, price: number, potId: string | null) {
     const variant = await createSellableVariant({
       plantId: testPlantId,
       plantSizeId,
-      potSizeId,
+      potId,
     });
     sellableIds.push(variant.sellableVariantId);
     const created = await createOrReusePlantOffer({
@@ -271,20 +273,6 @@ async function main(): Promise<void> {
     }
     await deletePlant(testPlantId);
     if (potIds.length > 0) {
-      await sql`DELETE FROM pot_inventory_history WHERE pot_color_id IN (
-        SELECT c.id FROM pot_colors c
-        JOIN pot_sizes s ON s.id = c.pot_size_id
-        WHERE s.pot_id = ANY(${potIds}::uuid[])
-      )`;
-      await sql`DELETE FROM pot_inventory WHERE pot_color_id IN (
-        SELECT c.id FROM pot_colors c
-        JOIN pot_sizes s ON s.id = c.pot_size_id
-        WHERE s.pot_id = ANY(${potIds}::uuid[])
-      )`;
-      await sql`DELETE FROM pot_colors WHERE pot_size_id IN (
-        SELECT id FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])
-      )`;
-      await sql`DELETE FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])`;
       await sql`DELETE FROM pots WHERE id = ANY(${potIds}::uuid[])`;
     }
   }
@@ -323,40 +311,24 @@ async function main(): Promise<void> {
       image: "/plant-library/catalog-cart-pot.jpg",
     });
     potIds.push(clay.id);
-    const potSize = await createPotSize({ potId: clay.id, sizeLabel: "M", supplierPrice: 10 });
-    const black = await createPotColor({
-      potId: clay.id,
-      sizeId: potSize.id,
-      color: "Black",
-      colorHe: "שחור",
-    });
-    const otherSize = await createPotSize({ potId: clay.id, sizeLabel: "S", supplierPrice: 8 });
-    const white = await createPotColor({
-      potId: clay.id,
-      sizeId: otherSize.id,
-      color: "White",
-      colorHe: "לבן",
-    });
+    await sql`UPDATE pots SET color = 'Black' WHERE id = ${clay.id}::uuid`;
     await applyPotInventoryDelta({
       potId: clay.id,
-      sizeId: potSize.id,
-      potColorId: black.id,
       delta: 2,
-      note: `${tag} color`,
+      note: `${tag} pot`,
     });
     const mediumOffer = await seedOffer(medium.id, 90, null);
     const smallOffer = await seedOffer(small.id, 40, null);
-    const potOffer = await seedOffer(medium.id, 125, potSize.id);
+    const potOffer = await seedOffer(medium.id, 125, clay.id);
 
     const line = (
       offer: { sellableVariantId: string; offerId: string },
-      patch: { quantity?: number; potColorId?: string | null; plantSizeId?: string } = {},
+      patch: { quantity?: number; plantSizeId?: string } = {},
     ) => ({
       plantId: testPlantId,
       plantSizeId: patch.plantSizeId ?? medium.id,
       sellableVariantId: offer.sellableVariantId,
       offerId: offer.offerId,
-      potColorId: patch.potColorId ?? null,
       quantity: patch.quantity ?? 1,
     });
 
@@ -403,7 +375,7 @@ async function main(): Promise<void> {
     `;
     await sql`
       INSERT INTO catalog_stock_holds (
-        attempt_id, plant_variant_id, pot_color_id, quantity, status, expires_at
+        attempt_id, plant_variant_id, pot_id, quantity, status, expires_at
       ) VALUES (
         ${holdAttemptId}::uuid,
         ${medium.id}::uuid,
@@ -429,7 +401,7 @@ async function main(): Promise<void> {
     await sql`DELETE FROM catalog_stock_holds WHERE attempt_id = ${holdAttemptId}::uuid`;
     await sql`DELETE FROM payment_attempts WHERE id = ${holdAttemptId}::uuid`;
     attemptIds.pop();
-    assert.equal(clamped[0]?.potColorId, null);
+    assert.equal(clamped[0]?.potId, null);
     assert.equal(clamped[0]?.name, tag);
 
     const oos = await resolveCatalogCartLines([
@@ -443,29 +415,24 @@ async function main(): Promise<void> {
         plantSizeId: unpriced.id,
         sellableVariantId: randomUUID(),
         offerId: "missing-offer",
-        potColorId: null,
         quantity: 1,
       },
     ]);
     assert.equal(missingPrice.length, 0);
 
-    const withPot = await resolveCatalogCartLines([
-      line(potOffer, { potColorId: black.id }),
-    ]);
-    assert.equal(withPot.length, 1);
-    assert.equal(withPot[0]?.potColorId, black.id);
-    assert.equal(withPot[0]?.unitPrice, 125);
-    assert.equal(withPot[0]?.potColor, "Black");
+    const withPotLines = await resolveCatalogCartLines([line(potOffer)]);
+    assert.equal(withPotLines.length, 1);
+    assert.equal(withPotLines[0]?.potId, clay.id);
+    assert.equal(withPotLines[0]?.unitPrice, 125);
+    assert.equal(withPotLines[0]?.potColor, "Black");
     const pictured = (await readCatalogShopDetail(testPlantId))?.sizes
       .find((entry) => entry.id === medium.id)
       ?.variants.find((entry) => entry.id === potOffer.sellableVariantId);
     assert.equal(pictured?.potImage, "/plant-library/catalog-cart-pot.jpg");
     await updatePot({ potId: clay.id, image: null });
-    const withoutImage = await resolveCatalogCartLines([
-      line(potOffer, { potColorId: black.id }),
-    ]);
+    const withoutImage = await resolveCatalogCartLines([line(potOffer)]);
     assert.equal(withoutImage.length, 1);
-    assert.equal(withoutImage[0]?.potColorId, black.id);
+    assert.equal(withoutImage[0]?.potId, clay.id);
     assert.equal(withoutImage[0]?.unitPrice, 125);
     assert.equal(withoutImage[0]?.offerId, potOffer.offerId);
     const cleared = (await readCatalogShopDetail(testPlantId))?.sizes
@@ -475,19 +442,14 @@ async function main(): Promise<void> {
     assert.equal(cleared.potImage, undefined);
     assert.equal(cleared.offerId, potOffer.offerId);
 
-    const wrongColor = await resolveCatalogCartLines([
-      line(potOffer, { potColorId: white.id }),
-    ]);
-    assert.equal(wrongColor.length, 0);
-
     const mixedLines = await resolveCatalogCartLines([
       line(mediumOffer),
-      line(potOffer, { potColorId: black.id }),
+      line(potOffer),
       line(smallOffer, { plantSizeId: small.id }),
     ]);
     assert.equal(mixedLines.length, 2);
-    assert.equal(mixedLines[0]?.potColorId, null);
-    assert.equal(mixedLines[1]?.potColorId, black.id);
+    assert.equal(mixedLines[0]?.potId, null);
+    assert.equal(mixedLines[1]?.potId, clay.id);
 
     const historyAfter = await sql`
       SELECT count(*)::int AS n FROM inventory_history WHERE variant_id = ${medium.id}::uuid

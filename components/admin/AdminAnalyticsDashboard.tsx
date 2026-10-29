@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+﻿import type { ReactNode } from "react";
 
 import { AdminAnalyticsFilters } from "@/components/admin/AdminAnalyticsFilters";
+import { analyticsQueryUrl, type AnalyticsArea } from "@/lib/analytics/analyticsQuery";
 import type { BusinessAnalyticsSnapshot } from "@/lib/analytics/businessAnalytics";
 import { formatInstantInBusinessTimeZone } from "@/lib/dateFilter";
 import type { Locale } from "@/lib/locale";
@@ -18,6 +19,15 @@ function formatNumber(n: number | null, locale: Locale): string {
 function formatPercent(n: number | null): string {
   if (n === null) return "—";
   return `${n}%`;
+}
+
+function formatMoney(n: number | null, locale: Locale): string {
+  if (n === null) return "—";
+  return new Intl.NumberFormat(intlLocale(locale), {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 2,
+  }).format(n);
 }
 
 function parseUtcPeriodInstant(period: string): Date | null {
@@ -110,7 +120,7 @@ function NamedCountTable({
   countLabel,
   locale,
 }: {
-  rows: { name: string; count: number }[];
+  rows: { name: string; count: number; href?: string }[];
   countLabel: string;
   locale: Locale;
 }) {
@@ -118,9 +128,15 @@ function NamedCountTable({
   return (
     <ul className="space-y-3">
       {rows.map((row) => (
-        <li key={`${row.name}-${row.count}`}>
+        <li key={`${row.href ?? row.name}-${row.count}`}>
           <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="min-w-0 truncate font-medium text-slate-800">{row.name}</span>
+            {row.href ? (
+              <a href={row.href} className="min-w-0 truncate font-medium text-emerald-900 underline-offset-2 hover:underline">
+                {row.name}
+              </a>
+            ) : (
+              <span className="min-w-0 truncate font-medium text-slate-800">{row.name}</span>
+            )}
             <span className="shrink-0 tabular-nums text-slate-600">
               {formatNumber(row.count, locale)} {countLabel}
             </span>
@@ -169,12 +185,22 @@ function ScansOverTimeChart({
   );
 }
 
+const AREAS: AnalyticsArea[] = ["overall", "logistics", "financial"];
+
+const AREA_LABEL = {
+  overall: "admin.analytics.area.overall",
+  logistics: "admin.analytics.area.logistics",
+  financial: "admin.analytics.area.financial",
+} as const;
+
 export function AdminAnalyticsDashboard({
   data,
   locale,
+  partners,
 }: {
   data: BusinessAnalyticsSnapshot;
   locale: Locale;
+  partners: { id: string; name: string }[];
 }) {
   const emptyMessage = t(locale, "admin.analytics.empty");
   const scansLabel = t(locale, "admin.analytics.colScans");
@@ -203,22 +229,111 @@ export function AdminAnalyticsDashboard({
       <AdminAnalyticsFilters
         inventoryType={data.inventoryType}
         dateFilter={data.dateFilter}
+        partnerId={data.partnerId}
+        area={data.area}
+        partners={partners}
       />
 
+      <nav className="mb-6 flex gap-2" aria-label={t(locale, "admin.analytics.title")}>
+        {AREAS.map((area) => {
+          const selected = data.area === area;
+          return (
+            <a
+              key={area}
+              href={analyticsQueryUrl({
+                inventoryType: data.inventoryType,
+                dateFilter: data.dateFilter,
+                partnerId: data.partnerId,
+                area,
+              })}
+              aria-current={selected ? "page" : undefined}
+              className={
+                selected
+                  ? "rounded-full bg-emerald-800 px-4 py-2 text-sm font-semibold text-white"
+                  : "rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-900 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
+              }
+            >
+              {t(locale, AREA_LABEL[area])}
+            </a>
+          );
+        })}
+      </nav>
+
+      {data.posthogError || data.neonError ? (
+        <p className="mb-4 text-sm leading-relaxed text-slate-600" role="status">
+          {t(locale, "admin.analytics.sourceError")}
+        </p>
+      ) : null}
+
+      {data.area === "overall" ? (
+        <OverallSection
+          data={data}
+          locale={locale}
+          emptyMessage={emptyMessage}
+          purchasesLabel={purchasesLabel}
+          showInventorySplit={showInventorySplit}
+        />
+      ) : null}
+      {data.area === "logistics" ? (
+        <LogisticsSection
+          data={data}
+          locale={locale}
+          emptyMessage={emptyMessage}
+          scansLabel={scansLabel}
+        />
+      ) : null}
+      {data.area === "financial" ? (
+        <FinancialSection data={data} locale={locale} emptyMessage={emptyMessage} />
+      ) : null}
+    </main>
+  );
+}
+
+function OverallSection({
+  data,
+  locale,
+  emptyMessage,
+  purchasesLabel,
+  showInventorySplit,
+}: {
+  data: BusinessAnalyticsSnapshot;
+  locale: Locale;
+  emptyMessage: string;
+  purchasesLabel: string;
+  showInventorySplit: boolean;
+}) {
+  const partnerScope = data.partnerId != null;
+  return (
+    <div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard
-          label={t(locale, "admin.analytics.totalScans")}
-          value={formatNumber(data.totalScans, locale)}
-        />
-        <KpiCard
-          label={t(locale, "admin.analytics.uniqueScanners")}
-          value={formatNumber(data.uniqueScanners, locale)}
-          hint={t(locale, "admin.analytics.uniqueDevices")}
-        />
         <KpiCard
           label={t(locale, "admin.analytics.purchases")}
           value={formatNumber(data.purchases, locale)}
         />
+        <KpiCard
+          label={t(locale, "admin.analytics.revenue")}
+          value={formatMoney(data.revenue, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.units")}
+          value={formatNumber(data.units, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.averageOrderValue")}
+          value={formatMoney(data.averageOrderValue, locale)}
+        />
+        {partnerScope ? null : (
+          <>
+            <KpiCard
+              label={t(locale, "admin.analytics.purchasesCatalog")}
+              value={formatNumber(data.purchasesCatalog, locale)}
+            />
+            <KpiCard
+              label={t(locale, "admin.analytics.purchasesPartner")}
+              value={formatNumber(data.purchasesPartner, locale)}
+            />
+          </>
+        )}
         {showInventorySplit ? (
           <>
             <KpiCard
@@ -245,7 +360,133 @@ export function AdminAnalyticsDashboard({
           })}
         </p>
       ) : null}
+      <div className="mt-6 space-y-4">
+        <SectionCard
+          title={t(locale, "admin.analytics.ordersOverTime")}
+          empty={data.ordersOverTime.length === 0}
+          emptyMessage={emptyMessage}
+        >
+          <ul className="space-y-2">
+            {data.ordersOverTime.map((point) => (
+              <li key={point.period} className="flex justify-between text-sm text-slate-700">
+                <span>{point.period}</span>
+                <span className="tabular-nums">{formatNumber(point.count, locale)}</span>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+        <SectionCard
+          title={t(locale, "admin.analytics.topProductsPurchases")}
+          empty={data.topPlantsByPurchases.length === 0}
+          emptyMessage={emptyMessage}
+        >
+          <NamedCountTable
+            rows={data.topPlantsByPurchases}
+            countLabel={purchasesLabel}
+            locale={locale}
+          />
+        </SectionCard>
+        {partnerScope ? null : (
+          <SectionCard
+            title={t(locale, "admin.analytics.purchasesByPartner")}
+            empty={data.purchasesByPartner.length === 0}
+            emptyMessage={emptyMessage}
+          >
+            <NamedCountTable
+              rows={data.purchasesByPartner.map((row) => ({
+                name: row.name,
+                count: row.count,
+                href: analyticsQueryUrl({
+                  inventoryType: data.inventoryType,
+                  dateFilter: data.dateFilter,
+                  partnerId: row.id,
+                  area: "overall",
+                }),
+              }))}
+              countLabel={purchasesLabel}
+              locale={locale}
+            />
+          </SectionCard>
+        )}
+      </div>
+    </div>
+  );
+}
 
+function LogisticsSection({
+  data,
+  locale,
+  emptyMessage,
+  scansLabel,
+}: {
+  data: BusinessAnalyticsSnapshot;
+  locale: Locale;
+  emptyMessage: string;
+  scansLabel: string;
+}) {
+  const partnerScope = data.partnerId != null;
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          label={t(locale, "admin.analytics.totalScans")}
+          value={formatNumber(data.totalScans, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.uniqueScanners")}
+          value={formatNumber(data.uniqueScanners, locale)}
+          hint={t(locale, "admin.analytics.uniqueDevices")}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.checkoutStarted")}
+          value={formatNumber(data.checkoutStarted, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.paymentStarted")}
+          value={formatNumber(data.paymentStarted, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.scanToCheckout")}
+          value={formatPercent(data.scanToCheckoutPercent)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.units")}
+          value={formatNumber(data.units, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.failedAttempts")}
+          value={formatNumber(data.failedAttempts, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.expiredAttempts")}
+          value={formatNumber(data.expiredAttempts, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.needsReconciliation")}
+          value={formatNumber(data.needsReconciliation, locale)}
+        />
+        {partnerScope || data.inventoryType === "flowers" ? null : (
+          <KpiCard
+            label={t(locale, "admin.analytics.catalogVisitors")}
+            value={formatNumber(data.catalogVisitors, locale)}
+            hint={t(locale, "admin.analytics.catalogSessions", {
+              count: formatNumber(data.catalogSessions, locale),
+            })}
+          />
+        )}
+        {partnerScope ? null : (
+          <>
+            <KpiCard
+              label={t(locale, "admin.analytics.catalogCheckoutStarted")}
+              value={formatNumber(data.catalogCheckoutStarted, locale)}
+            />
+            <KpiCard
+              label={t(locale, "admin.analytics.catalogPaymentStarted")}
+              value={formatNumber(data.catalogPaymentStarted, locale)}
+            />
+          </>
+        )}
+      </div>
       <div className="mt-6 space-y-4">
         <SectionCard
           title={t(locale, "admin.analytics.scansOverTime")}
@@ -262,54 +503,32 @@ export function AdminAnalyticsDashboard({
             locale={locale}
           />
         </SectionCard>
-
         <div className="grid gap-4 md:grid-cols-2">
           <SectionCard
             title={t(locale, "admin.analytics.topProductsScans")}
             empty={data.topPlantsByScans.length === 0}
             emptyMessage={emptyMessage}
           >
-            <NamedCountTable
-              rows={data.topPlantsByScans}
-              countLabel={scansLabel}
-              locale={locale}
-            />
+            <NamedCountTable rows={data.topPlantsByScans} countLabel={scansLabel} locale={locale} />
           </SectionCard>
-          <SectionCard
-            title={t(locale, "admin.analytics.topProductsPurchases")}
-            empty={data.topPlantsByPurchases.length === 0}
-            emptyMessage={emptyMessage}
-          >
-            <NamedCountTable
-              rows={data.topPlantsByPurchases}
-              countLabel={purchasesLabel}
-              locale={locale}
-            />
-          </SectionCard>
-          <SectionCard
-            title={t(locale, "admin.analytics.scansByPartner")}
-            empty={data.scansByPartner.length === 0}
-            emptyMessage={emptyMessage}
-          >
-            <NamedCountTable
-              rows={data.scansByPartner}
-              countLabel={scansLabel}
-              locale={locale}
-            />
-          </SectionCard>
-          <SectionCard
-            title={t(locale, "admin.analytics.purchasesByPartner")}
-            empty={data.purchasesByPartner.length === 0}
-            emptyMessage={emptyMessage}
-          >
-            <NamedCountTable
-              rows={data.purchasesByPartner}
-              countLabel={purchasesLabel}
-              locale={locale}
-            />
-          </SectionCard>
+          {partnerScope ? (
+            <SectionCard
+              title={t(locale, "admin.analytics.scansByLocation")}
+              empty={data.scansByLocation.length === 0}
+              emptyMessage={emptyMessage}
+            >
+              <NamedCountTable rows={data.scansByLocation} countLabel={scansLabel} locale={locale} />
+            </SectionCard>
+          ) : (
+            <SectionCard
+              title={t(locale, "admin.analytics.scansByPartner")}
+              empty={data.scansByPartner.length === 0}
+              emptyMessage={emptyMessage}
+            >
+              <NamedCountTable rows={data.scansByPartner} countLabel={scansLabel} locale={locale} />
+            </SectionCard>
+          )}
         </div>
-
         <SectionCard
           title={t(locale, "admin.analytics.scansByPocket")}
           empty={data.scansByPocket.length === 0}
@@ -317,7 +536,92 @@ export function AdminAnalyticsDashboard({
         >
           <NamedCountTable rows={data.scansByPocket} countLabel={scansLabel} locale={locale} />
         </SectionCard>
+        {partnerScope ? (
+          <SectionCard
+            title={t(locale, "admin.analytics.purchasesByLocation")}
+            empty={data.purchasesByLocation.length === 0}
+            emptyMessage={emptyMessage}
+          >
+            <NamedCountTable
+              rows={data.purchasesByLocation}
+              countLabel={t(locale, "admin.analytics.colPurchases")}
+              locale={locale}
+            />
+          </SectionCard>
+        ) : null}
       </div>
-    </main>
+    </div>
+  );
+}
+
+function FinancialSection({
+  data,
+  locale,
+  emptyMessage,
+}: {
+  data: BusinessAnalyticsSnapshot;
+  locale: Locale;
+  emptyMessage: string;
+}) {
+  const partnerScope = data.partnerId != null;
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiCard
+          label={t(locale, "admin.analytics.revenue")}
+          value={formatMoney(data.revenue, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.purchases")}
+          value={formatNumber(data.purchases, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.averageOrderValue")}
+          value={formatMoney(data.averageOrderValue, locale)}
+        />
+        {partnerScope ? null : (
+          <>
+            <KpiCard
+              label={t(locale, "admin.analytics.revenueCatalog")}
+              value={formatMoney(data.revenueCatalog, locale)}
+            />
+            <KpiCard
+              label={t(locale, "admin.analytics.revenuePartner")}
+              value={formatMoney(data.revenuePartner, locale)}
+            />
+          </>
+        )}
+      </div>
+      {partnerScope ? null : (
+      <div className="mt-6 space-y-4">
+          <SectionCard
+            title={t(locale, "admin.analytics.revenueByPartner")}
+            empty={data.purchasesByPartner.length === 0}
+            emptyMessage={emptyMessage}
+          >
+            <ul className="space-y-3">
+              {data.purchasesByPartner.map((row) => (
+                <li key={row.id} className="flex items-baseline justify-between gap-3 text-sm">
+                  <a
+                    href={analyticsQueryUrl({
+                      inventoryType: data.inventoryType,
+                      dateFilter: data.dateFilter,
+                      partnerId: row.id,
+                      area: "financial",
+                    })}
+                    className="min-w-0 truncate font-medium text-emerald-900 underline-offset-2 hover:underline"
+                  >
+                    {row.name}
+                  </a>
+                  <span className="shrink-0 tabular-nums text-slate-600">
+                    {formatMoney(row.revenue, locale)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </SectionCard>
+      </div>
+      )}
+    </div>
   );
 }

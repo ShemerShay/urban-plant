@@ -20,8 +20,6 @@ function assertOccupiedColorStaysSelectable(): void {
   const source = read("lib/inventorySource.ts");
   assert.match(source, /export function selectablePosPotColors/);
   assert.match(source, /color\.quantity > 0 \|\| color\.id === occupied/);
-  const admin = read("components/admin/AdminPartnerDetail.tsx");
-  assert.match(admin, /selectablePosPotColors/);
 }
 
 function assertNoInventoryWrites(): void {
@@ -242,25 +240,25 @@ async function main(): Promise<void> {
 
     const selectableAtZero = selectablePosPotColors(
       [
-        { id: fixture.colorA, quantity: 0 },
-        { id: fixture.colorB, quantity: 2 },
+        { id: fixture.potId, quantity: 0 },
+        { id: fixture.potBId, quantity: 2 },
       ],
-      { inventorySource: "central", occupiedColorId: fixture.colorA },
+      { inventorySource: "central", occupiedColorId: fixture.potId },
     );
     assert.deepEqual(
       selectableAtZero.map((color) => color.id),
-      [fixture.colorA, fixture.colorB],
+      [fixture.potId, fixture.potBId],
     );
     const selectableNewCentral = selectablePosPotColors(
       [
-        { id: fixture.colorA, quantity: 0 },
-        { id: fixture.colorB, quantity: 2 },
+        { id: fixture.potId, quantity: 0 },
+        { id: fixture.potBId, quantity: 2 },
       ],
       { inventorySource: "central", occupiedColorId: "" },
     );
     assert.deepEqual(
       selectableNewCentral.map((color) => color.id),
-      [fixture.colorB],
+      [fixture.potBId],
     );
 
     const pocket = await createPocket({
@@ -657,25 +655,24 @@ async function main(): Promise<void> {
       createdAt: new Date().toISOString(),
     });
     keepColorSpotId = keepColorSpot.id;
+    const potQtyBefore = await getPotInventoryQuantity(fixture.potId);
     const placedKeep = await applyPatch(keepColorSpot.id, keepColorSpot, {
       occupancyIntent: "place",
       requestedOfferId: fixture.offerPot,
-      requestedPotColorId: fixture.colorA,
     });
-    assert.equal(placedKeep.updated.potColorId, fixture.colorA);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), 0);
+    assert.equal(placedKeep.updated.potId, fixture.potId);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), potQtyBefore);
     const keepExisting = await getPosSpotById(keepColorSpot.id);
     assert.ok(keepExisting);
     const sameColorOffer = await applyPatch(keepColorSpot.id, keepExisting, {
       occupancyIntent: "update",
       requestedOfferId: fixture.offerPot2,
-      requestedPotColorId: fixture.colorA,
     });
     assert.equal(sameColorOffer.occupancy.action, "update");
     assert.equal(sameColorOffer.occupancy.introducesNewPotColor, false);
-    assert.equal(sameColorOffer.updated.potColorId, fixture.colorA);
+    assert.equal(sameColorOffer.updated.potId, fixture.potId);
     assert.equal(sameColorOffer.updated.currentOfferId, fixture.offerPot2);
-    assert.equal(await getPotInventoryQuantity(fixture.colorA), 0);
+    assert.equal(await getPotInventoryQuantity(fixture.potId), potQtyBefore);
     assert.equal(
       adminSaveNeedsInventorySource({
         selectedIsPlant: true,

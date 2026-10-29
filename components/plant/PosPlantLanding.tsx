@@ -75,6 +75,7 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
         partner_name={partnerName || undefined}
         pocket_id={posSpot.pocketId}
         pocket_name={pocket?.name}
+        channel="partner"
       />
       <RememberCustomerPath />
       <PlantPageHeader knownPartner={knownPartner?.name ?? ""} />

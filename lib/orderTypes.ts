@@ -30,6 +30,34 @@ export interface OrderSnapshot {
   posSpotDescription?: string;
   spotSlug?: string;
   fulfillmentType: FulfillmentMethod;
+  /** Frozen at Partner payment prep so later analytics do not read the live plant. */
+  inventoryType?: "plants" | "flowers";
+  /** Plant size id on the POS at payment prep. Omitted when the spot has none. */
+  plantVariantId?: string;
+  /** Plant size label copied at payment prep. */
+  sizeLabel?: string;
+}
+
+export function saleTimeSnapshotFields(
+  source: Record<string, unknown>,
+): Pick<OrderSnapshot, "inventoryType" | "plantVariantId" | "sizeLabel"> {
+  const inventoryType =
+    source.inventoryType === "plants" || source.inventoryType === "flowers"
+      ? source.inventoryType
+      : undefined;
+  const plantVariantId =
+    typeof source.plantVariantId === "string" && source.plantVariantId.trim()
+      ? source.plantVariantId.trim()
+      : undefined;
+  const sizeLabel =
+    typeof source.sizeLabel === "string" && source.sizeLabel.trim()
+      ? source.sizeLabel.trim()
+      : undefined;
+  return {
+    ...(inventoryType ? { inventoryType } : {}),
+    ...(plantVariantId ? { plantVariantId } : {}),
+    ...(sizeLabel ? { sizeLabel } : {}),
+  };
 }
 
 /** Persisted order shape for prototype JSON storage */

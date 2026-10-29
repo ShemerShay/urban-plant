@@ -119,7 +119,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
   const resourceRows = await sql`
     SELECT DISTINCT
       NULLIF(line->>'plantVariantId', '') AS plant_variant_id,
-      NULLIF(line->>'potColorId', '') AS pot_color_id
+      NULLIF(line->>'potId', '') AS pot_id
     FROM payment_attempts a
     CROSS JOIN LATERAL jsonb_array_elements(
       COALESCE(a.catalog_snapshot->'lines', '[]'::jsonb)
@@ -136,8 +136,8 @@ export async function finalizeCatalogVerifiedPayment(input: {
   ].sort();
   const colorIds = [
     ...new Set(
-      (resourceRows as { pot_color_id: string | null }[])
-        .map((row) => row.pot_color_id)
+      (resourceRows as { pot_id: string | null }[])
+        .map((row) => row.pot_id)
         .filter((id): id is string => Boolean(id)),
     ),
   ].sort();
@@ -163,10 +163,10 @@ export async function finalizeCatalogVerifiedPayment(input: {
   const potInventoryLock =
     colorIds.length > 0
       ? sql`
-          SELECT pot_color_id
+          SELECT pot_id
           FROM pot_inventory
-          WHERE pot_color_id = ANY(${colorIds}::uuid[])
-          ORDER BY pot_color_id
+          WHERE pot_id = ANY(${colorIds}::uuid[])
+          ORDER BY pot_id
           FOR UPDATE
         `
       : sql`SELECT 1 WHERE false`;
@@ -207,7 +207,8 @@ export async function finalizeCatalogVerifiedPayment(input: {
             a.phone,
             a.address,
             a.apartment_or_notes,
-            a.amount
+            a.amount,
+            a.is_internal
           FROM payment_attempts a
           WHERE a.id = ${attemptId}::uuid
             AND a.channel = 'catalog'
@@ -223,6 +224,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
             (line->>'plantVariantId')::uuid AS plant_variant_id,
             (line->>'sellableVariantId')::uuid AS sellable_variant_id,
             line->>'offerId' AS offer_id,
+            NULLIF(line->>'potId', '')::uuid AS pot_id,
             NULLIF(line->>'potSizeId', '')::uuid AS pot_size_id,
             NULLIF(line->>'potColorId', '')::uuid AS pot_color_id,
             (line->>'quantity')::int AS quantity,
@@ -254,15 +256,15 @@ export async function finalizeCatalogVerifiedPayment(input: {
           FROM lines
           GROUP BY plant_variant_id
         ),
-        color_agg AS (
-          SELECT pot_color_id, SUM(quantity)::int AS quantity
+        pot_agg AS (
+          SELECT pot_id, SUM(quantity)::int AS quantity
           FROM lines
-          WHERE pot_color_id IS NOT NULL
-          GROUP BY pot_color_id
+          WHERE pot_id IS NOT NULL
+          GROUP BY pot_id
         ),
         hold_match AS (
           SELECT
-            (SELECT COUNT(*)::int FROM plant_agg) + (SELECT COUNT(*)::int FROM color_agg) AS resource_count,
+            (SELECT COUNT(*)::int FROM plant_agg) + (SELECT COUNT(*)::int FROM pot_agg) AS resource_count,
             (
               SELECT COUNT(*)::int
               FROM catalog_stock_holds h
@@ -276,11 +278,11 @@ export async function finalizeCatalogVerifiedPayment(input: {
                 AND h.status = 'active'
                 AND h.expires_at > now()
                 AND h.quantity = a.quantity
-                AND h.pot_color_id IS NULL
+                AND h.pot_id IS NULL
             ) + (
               SELECT COUNT(*)::int
               FROM catalog_stock_holds h
-              INNER JOIN color_agg c ON c.pot_color_id = h.pot_color_id
+              INNER JOIN pot_agg c ON c.pot_id = h.pot_id
               WHERE h.attempt_id = ${attemptId}::uuid
                 AND h.status = 'active'
                 AND h.expires_at > now()
@@ -302,8 +304,8 @@ export async function finalizeCatalogVerifiedPayment(input: {
             ), false)
             AND COALESCE((
               SELECT bool_and(COALESCE(pi.quantity, 0) >= c.quantity)
-              FROM color_agg c
-              LEFT JOIN pot_inventory pi ON pi.pot_color_id = c.pot_color_id
+              FROM pot_agg c
+              LEFT JOIN pot_inventory pi ON pi.pot_id = c.pot_id
             ), true)
           ) AS ok
         ),
@@ -350,6 +352,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
             commission_rate,
             picked_up_at,
             snapshot,
+            is_internal,
             created_at,
             cardcom_transaction_id,
             purchase_email_status
@@ -380,6 +383,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
             NULL,
             NULL::timestamptz,
             NULL::jsonb,
+            l.is_internal,
             now(),
             ${cardcomTransactionId}::bigint,
             'pending'
@@ -396,6 +400,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
             plant_variant_id,
             sellable_variant_id,
             offer_id,
+            pot_id,
             pot_size_id,
             pot_color_id,
             quantity,
@@ -421,6 +426,7 @@ export async function finalizeCatalogVerifiedPayment(input: {
             ln.plant_variant_id,
             ln.sellable_variant_id,
             ln.offer_id,
+            ln.pot_id,
             ln.pot_size_id,
             ln.pot_color_id,
             ln.quantity,
@@ -465,15 +471,15 @@ export async function finalizeCatalogVerifiedPayment(input: {
           SET
             quantity = pi.quantity - c.quantity,
             updated_at = now()
-          FROM color_agg c
-          WHERE pi.pot_color_id = c.pot_color_id
+          FROM pot_agg c
+          WHERE pi.pot_id = c.pot_id
             AND pi.quantity >= c.quantity
             AND EXISTS (SELECT 1 FROM order_ins)
-          RETURNING pi.pot_color_id, c.quantity AS qty
+          RETURNING pi.pot_id, c.quantity AS qty
         ),
         pot_hist AS (
-          INSERT INTO pot_inventory_history (pot_color_id, delta, note)
-          SELECT u.pot_color_id, -u.qty, 'catalog sale ' || o.order_id::text
+          INSERT INTO pot_inventory_history (pot_id, delta, note)
+          SELECT u.pot_id, -u.qty, 'catalog sale ' || o.order_id::text
           FROM pot_upd u
           CROSS JOIN order_ins o
           RETURNING id
@@ -491,12 +497,12 @@ export async function finalizeCatalogVerifiedPayment(input: {
                 FROM plant_agg a
                 WHERE a.plant_variant_id = h.plant_variant_id
                   AND a.quantity = h.quantity
-                  AND h.pot_color_id IS NULL
+                  AND h.pot_id IS NULL
               )
               OR EXISTS (
                 SELECT 1
-                FROM color_agg c
-                WHERE c.pot_color_id = h.pot_color_id
+                FROM pot_agg c
+                WHERE c.pot_id = h.pot_id
                   AND c.quantity = h.quantity
                   AND h.plant_variant_id IS NULL
               )
@@ -537,10 +543,10 @@ export async function finalizeCatalogVerifiedPayment(input: {
               AND (SELECT COUNT(*) FROM item_ins) = (SELECT COUNT(*) FROM lines)
               AND (SELECT COUNT(*) FROM inv_upd) = (SELECT COUNT(*) FROM plant_agg)
               AND (SELECT COUNT(*) FROM hist) = (SELECT COUNT(*) FROM plant_agg)
-              AND (SELECT COUNT(*) FROM pot_upd) = (SELECT COUNT(*) FROM color_agg)
-              AND (SELECT COUNT(*) FROM pot_hist) = (SELECT COUNT(*) FROM color_agg)
+              AND (SELECT COUNT(*) FROM pot_upd) = (SELECT COUNT(*) FROM pot_agg)
+              AND (SELECT COUNT(*) FROM pot_hist) = (SELECT COUNT(*) FROM pot_agg)
               AND (SELECT COUNT(*) FROM consumed) =
-                (SELECT COUNT(*) FROM plant_agg) + (SELECT COUNT(*) FROM color_agg)
+                (SELECT COUNT(*) FROM plant_agg) + (SELECT COUNT(*) FROM pot_agg)
             THEN 1
             ELSE 0
           END AS ok

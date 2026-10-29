@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { isAdminRequest } from "@/lib/adminAuth";
-import { PotWriteError, deletePot, potWriteHttp, updatePot } from "@/lib/potStorage";
+import { PotInventoryChangeError, setPotCentralQuantity } from "@/lib/potInventoryStorage";
+import {
+  PotWriteError,
+  deletePot,
+  getPotById,
+  parsePotQuantity,
+  potWriteHttp,
+  updatePot,
+} from "@/lib/potStorage";
 
 interface RouteParams {
   params: Promise<{ potId: string }>;
@@ -33,12 +41,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         ? { nameHe: record.nameHe ?? record.name_he }
         : {}),
       ...(record.image !== undefined ? { image: record.image } : {}),
+      ...(record.supplierPrice !== undefined || record.supplier_price !== undefined
+        ? { supplierPrice: record.supplierPrice ?? record.supplier_price }
+        : {}),
     });
-    return NextResponse.json({ pot });
+    if (record.quantity !== undefined) {
+      await setPotCentralQuantity({
+        potId: pot.id,
+        quantity: parsePotQuantity(record.quantity),
+      });
+    }
+    const saved = (await getPotById(pot.id)) ?? pot;
+    return NextResponse.json({ pot: saved });
   } catch (error) {
     if (error instanceof PotWriteError) {
       const mapped = potWriteHttp(error);
       return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    }
+    if (error instanceof PotInventoryChangeError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : "Could not save pot";
     return NextResponse.json({ error: message }, { status: 500 });

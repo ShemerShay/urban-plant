@@ -5,7 +5,7 @@ import {
   SellableVariantWriteError,
   createSellableVariant,
   readSellableVariantsForPlant,
-  sellableVariantWriteHttp,
+  sellableVariantErrorResponse,
 } from "@/lib/sellableVariantStorage";
 
 interface RouteParams {
@@ -18,8 +18,8 @@ function unauthorized() {
 
 function mapped(error: unknown, fallback: string) {
   if (error instanceof SellableVariantWriteError) {
-    const http = sellableVariantWriteHttp(error);
-    return NextResponse.json({ error: http.error }, { status: http.status });
+    const http = sellableVariantErrorResponse(error);
+    return NextResponse.json(http.body, { status: http.status });
   }
   const message = error instanceof Error ? error.message : fallback;
   return NextResponse.json({ error: message }, { status: 500 });
@@ -51,14 +51,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
   const record = body as Record<string, unknown>;
-  if (!("potSizeId" in record)) {
-    return NextResponse.json({ error: "potSizeId is required" }, { status: 400 });
+  if (!("potId" in record) && !("pot_id" in record)) {
+    return NextResponse.json({ error: "potId is required" }, { status: 400 });
   }
   try {
     const sellableVariant = await createSellableVariant({
       plantId,
       plantSizeId: record.plantSizeId,
-      potSizeId: record.potSizeId,
+      potId: "potId" in record ? record.potId : record.pot_id,
     });
     return NextResponse.json({ sellableVariant }, { status: 201 });
   } catch (error) {

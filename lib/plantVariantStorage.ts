@@ -8,7 +8,7 @@
  */
 
 import { sql } from "@/lib/db";
-import { getInventoryQuantities } from "@/lib/inventoryStorage";
+import { applyInventoryDelta, getInventoryQuantities } from "@/lib/inventoryStorage";
 import { isPlantSizeLabel } from "@/lib/plantSizes";
 import { getPlantByIdAsync } from "@/lib/plantStorage";
 
@@ -29,9 +29,16 @@ export type PlantVariantWriteCode =
   | "flower_plant"
   | "identity_required"
   | "invalid_size_label"
+  | "invalid_quantity"
   | "duplicate_size_label"
   | "plant_id_immutable"
   | "in_use";
+
+/** History note for Admin quantity edits and opening stock. */
+export const PLANT_SIZE_ADMIN_QUANTITY_NOTE = "Admin quantity";
+
+export const PLANT_SIZE_QUANTITY_INVALID =
+  "Quantity must be a whole number of 0 or more";
 
 export class PlantVariantWriteError extends Error {
   readonly code: PlantVariantWriteCode;
@@ -224,6 +231,49 @@ function isForeignKeyViolation(error: unknown): boolean {
   return /foreign key|violates foreign key constraint/i.test(message);
 }
 
+export const PLANT_SIZE_DELETE_BLOCKED_ORDER =
+  "Cannot delete this size: referenced by a historical order";
+export const PLANT_SIZE_DELETE_BLOCKED_POS =
+  "Cannot delete this size: used by POS/placement";
+export const PLANT_SIZE_DELETE_BLOCKED_SELLABLE =
+  "Cannot delete this size: used by a Sellable Variant";
+export const PLANT_SIZE_DELETE_BLOCKED_INVENTORY =
+  "Cannot delete this size: has inventory/history";
+export const PLANT_SIZE_DELETE_BLOCKED_IN_USE =
+  "This size is in use and cannot be deleted";
+
+async function plantSizeDeleteBlockMessage(variantId: string): Promise<string | null> {
+  const rows = await sql`
+    SELECT
+      (SELECT count(*)::int FROM order_items WHERE plant_variant_id = ${variantId}::uuid) AS order_items,
+      (SELECT count(*)::int FROM pos_spots WHERE plant_variant_id = ${variantId}::uuid) AS pos_spots,
+      (SELECT count(*)::int FROM placement_cycles WHERE plant_variant_id = ${variantId}::uuid) AS placement_cycles,
+      (SELECT count(*)::int FROM sellable_variants WHERE plant_variant_id = ${variantId}::uuid) AS sellable_variants,
+      (SELECT count(*)::int FROM inventory WHERE variant_id = ${variantId}::uuid) AS inventory,
+      (SELECT count(*)::int FROM inventory_history WHERE variant_id = ${variantId}::uuid) AS inventory_history,
+      (SELECT count(*)::int FROM catalog_stock_holds WHERE plant_variant_id = ${variantId}::uuid) AS catalog_holds
+  `;
+  const counts = (
+    rows as {
+      order_items: number;
+      pos_spots: number;
+      placement_cycles: number;
+      sellable_variants: number;
+      inventory: number;
+      inventory_history: number;
+      catalog_holds: number;
+    }[]
+  )[0];
+  if (!counts) return null;
+  if (counts.order_items > 0) return PLANT_SIZE_DELETE_BLOCKED_ORDER;
+  if (counts.pos_spots > 0 || counts.placement_cycles > 0) return PLANT_SIZE_DELETE_BLOCKED_POS;
+  if (counts.sellable_variants > 0) return PLANT_SIZE_DELETE_BLOCKED_SELLABLE;
+  if (counts.inventory > 0 || counts.inventory_history > 0 || counts.catalog_holds > 0) {
+    return PLANT_SIZE_DELETE_BLOCKED_INVENTORY;
+  }
+  return null;
+}
+
 export async function createPlantVariant(input: {
   plantId: string;
   sizeLabel?: unknown;
@@ -252,6 +302,49 @@ export async function createPlantVariant(input: {
   const row = (rows as PlantVariantRow[])[0];
   if (!row) throw new Error("Could not create variant");
   return mapPlantVariantRow(row);
+}
+
+/** Missing quantity is 0. A present value must be a whole number of 0 or more. */
+export function parsePlantSizeOpeningQuantity(value: unknown): number {
+  if (value === undefined || value === null || value === "") return 0;
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  throw new PlantVariantWriteError("invalid_quantity", PLANT_SIZE_QUANTITY_INVALID);
+}
+
+/**
+ * Create a plant size, then initialize central stock when quantity is above 0.
+ * Quantity 0 leaves no inventory row and no history.
+ * Opening stock goes through applyInventoryDelta so history stays append-only.
+ * This path does not set nursery pot diameter.
+ */
+export async function createPlantSizeWithOpeningQuantity(input: {
+  plantId: string;
+  sizeLabel?: unknown;
+  quantity: number;
+}): Promise<{ variant: PlantVariant; quantity: number }> {
+  if (!Number.isInteger(input.quantity) || input.quantity < 0) {
+    throw new PlantVariantWriteError("invalid_quantity", PLANT_SIZE_QUANTITY_INVALID);
+  }
+  const variant = await createPlantVariant({
+    plantId: input.plantId,
+    sizeLabel: input.sizeLabel,
+  });
+  if (input.quantity === 0) return { variant, quantity: 0 };
+  try {
+    const balance = await applyInventoryDelta({
+      variantId: variant.id,
+      delta: input.quantity,
+      note: PLANT_SIZE_ADMIN_QUANTITY_NOTE,
+    });
+    return { variant, quantity: balance.quantity };
+  } catch (error) {
+    try {
+      await deletePlantVariant({ plantId: variant.plantId, variantId: variant.id });
+    } catch {
+      // The inventory error is the one to surface. Cleanup can fail if a row was committed.
+    }
+    throw error;
+  }
 }
 
 export async function updatePlantVariant(input: {
@@ -317,6 +410,11 @@ export async function deletePlantVariant(input: {
     throw new PlantVariantWriteError("not_found", "Variant not found");
   }
 
+  const blocked = await plantSizeDeleteBlockMessage(variantId);
+  if (blocked) {
+    throw new PlantVariantWriteError("in_use", blocked);
+  }
+
   try {
     const rows = await sql`
       DELETE FROM plant_variants
@@ -329,10 +427,7 @@ export async function deletePlantVariant(input: {
   } catch (error) {
     if (error instanceof PlantVariantWriteError) throw error;
     if (isForeignKeyViolation(error)) {
-      throw new PlantVariantWriteError(
-        "in_use",
-        "This variant is in use and cannot be deleted",
-      );
+      throw new PlantVariantWriteError("in_use", PLANT_SIZE_DELETE_BLOCKED_IN_USE);
     }
     throw error;
   }

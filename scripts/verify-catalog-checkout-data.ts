@@ -229,8 +229,6 @@ async function main(): Promise<void> {
   const variantA = randomUUID();
   const variantB = randomUUID();
   const potId = randomUUID();
-  const potSizeId = randomUUID();
-  const potColorId = randomUUID();
   const attemptIds: string[] = [];
   const orderIds: string[] = [];
 
@@ -298,16 +296,8 @@ async function main(): Promise<void> {
         (${variantB}::uuid, ${pricedPlantId}, ${`B-${tag}`})
     `;
     await sql`
-      INSERT INTO pots (id, name, name_he)
-      VALUES (${potId}::uuid, ${`Pot ${tag}`}, 'עציץ')
-    `;
-    await sql`
-      INSERT INTO pot_sizes (id, pot_id, size_label, supplier_price)
-      VALUES (${potSizeId}::uuid, ${potId}::uuid, 'M', 0)
-    `;
-    await sql`
-      INSERT INTO pot_colors (id, pot_size_id, color, color_he)
-      VALUES (${potColorId}::uuid, ${potSizeId}::uuid, ${`clay-${tag}`}, 'חרס')
+      INSERT INTO pots (id, name, name_he, color, supplier_price)
+      VALUES (${potId}::uuid, ${`Pot ${tag}`}, 'עציץ', ${`clay-${tag}`}, 0)
     `;
     await sql`
       INSERT INTO inventory (variant_id, quantity, updated_at)
@@ -379,6 +369,7 @@ async function main(): Promise<void> {
           plantVariantId: variantA,
           sellableVariantId: variantA,
           offerId: `offer-a-${tag}`,
+          potId: null,
           potSizeId: null,
           potColorId: null,
           quantity: 2,
@@ -403,8 +394,9 @@ async function main(): Promise<void> {
           plantVariantId: variantA,
           sellableVariantId: variantA,
           offerId: `offer-pot-${tag}`,
-          potSizeId,
-          potColorId,
+          potId,
+          potSizeId: null,
+          potColorId: null,
           quantity: 1,
           unitPrice: 55,
           lineTotal: 55,
@@ -474,6 +466,7 @@ async function main(): Promise<void> {
             plantVariantId: variantB,
             sellableVariantId: variantB,
             offerId: `offer-b-${tag}`,
+            potId: null,
             potSizeId: null,
             potColorId: null,
             quantity: 1,
@@ -682,7 +675,7 @@ async function main(): Promise<void> {
     try {
       await acquireCatalogStockHolds({
         attemptId: consumeId,
-        lines: [{ plantVariantId: potColorId, quantity: 1 }],
+        lines: [{ plantVariantId: randomUUID(), quantity: 1 }],
       });
     } catch (error) {
       potRejected = error instanceof CatalogStockHoldError && error.code === "variant_not_found";
@@ -804,7 +797,7 @@ async function main(): Promise<void> {
     await sql`DELETE FROM plants WHERE id IN (${pricedPlantId}, ${zeroPlantId})`;
     const afterDelete = await getOrderItemsByOrderId(orderId);
     assert.equal(afterDelete.length, 3);
-    const potLine = afterDelete.find((line) => line.potColorId === potColorId);
+    const potLine = afterDelete.find((line) => line.potId === potId);
     const noPotLine = afterDelete.find((line) => line.lineNo === 1);
     const zeroCostLine = afterDelete.find((line) => line.lineNo === 8);
     assert.equal(potLine?.potUnitCost, 0);

@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   const { buildPurchaseEmailHtml } = await import("../lib/purchaseEmail");
   const { getPaymentAttemptById } = await import("../lib/paymentAttemptStorage");
   const { startCatalogCardcomPayment } = await import("../lib/catalogPaymentPrep");
-  const { createPotSize, createPotColor } = await import("../lib/potSizeStorage");
+  const { updatePot } = await import("../lib/potStorage");
   const { applyPotInventoryDelta } = await import("../lib/potInventoryStorage");
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
@@ -397,7 +397,6 @@ async function main(): Promise<void> {
       plantSizeId: string;
       sellableVariantId: string;
       offerId: string;
-      potColorId: string | null;
       quantity: number;
       unitPrice: number;
     }[],
@@ -474,28 +473,21 @@ async function main(): Promise<void> {
         (${variantB}::uuid, 10, now()),
         (${variantC}::uuid, 6, now())
     `;
-    const potSize = await createPotSize({ potId, sizeLabel: "M", supplierPrice: 12 });
-    const colorM = await createPotColor({
-      potId,
-      sizeId: potSize.id,
-      color: `clay-${tag}`,
-      colorHe: "חרס",
-    });
+    await updatePot({ potId, supplierPrice: 12 });
+    await sql`UPDATE pots SET color = ${`clay-${tag}`} WHERE id = ${potId}::uuid`;
     await applyPotInventoryDelta({
       potId,
-      sizeId: potSize.id,
-      potColorId: colorM.id,
       delta: 8,
-      note: `${tag} color`,
+      note: `${tag} pot`,
     });
-    const noPotA = await createSellableVariant({ plantId, plantSizeId: variantA, potSizeId: null });
+    const noPotA = await createSellableVariant({ plantId, plantSizeId: variantA, potId: null });
     const withPotA = await createSellableVariant({
       plantId,
       plantSizeId: variantA,
-      potSizeId: potSize.id,
+      potId,
     });
-    const noPotB = await createSellableVariant({ plantId, plantSizeId: variantB, potSizeId: null });
-    const noPotC = await createSellableVariant({ plantId: plantId2, plantSizeId: variantC, potSizeId: null });
+    const noPotB = await createSellableVariant({ plantId, plantSizeId: variantB, potId: null });
+    const noPotC = await createSellableVariant({ plantId: plantId2, plantSizeId: variantC, potId: null });
     const offerA = await createOrReusePlantOffer({
       sellableVariantId: noPotA.sellableVariantId,
       consumerPrice: 40,
@@ -522,7 +514,6 @@ async function main(): Promise<void> {
       plantSizeId: variantA,
       sellableVariantId: noPotA.sellableVariantId,
       offerId: offerA.offer.id,
-      potColorId: null as string | null,
       quantity: 1,
       unitPrice: 40,
     };
@@ -531,7 +522,6 @@ async function main(): Promise<void> {
       plantSizeId: variantA,
       sellableVariantId: withPotA.sellableVariantId,
       offerId: offerPot.offer.id,
-      potColorId: colorM.id,
       quantity: 2,
       unitPrice: 55,
     };
@@ -540,7 +530,6 @@ async function main(): Promise<void> {
       plantSizeId: variantB,
       sellableVariantId: noPotB.sellableVariantId,
       offerId: offerB.offer.id,
-      potColorId: null as string | null,
       quantity: 1,
       unitPrice: 55,
     };
@@ -734,9 +723,12 @@ async function main(): Promise<void> {
       const items = await getOrderItemsByOrderId(attempt.finalizedOrderId);
       assert.equal(items.length, 2);
     assert.equal(items[0]?.unitPrice, 40);
+    assert.equal(items[0]?.potId, null);
     assert.equal(items[0]?.potColorId, null);
     assert.equal(items[1]?.unitPrice, 55);
-    assert.equal(items[1]?.potColorId, colorM.id);
+    assert.equal(items[1]?.potId, potId);
+    assert.equal(items[1]?.potSizeId, null);
+    assert.equal(items[1]?.potColorId, null);
       assert.equal(items[1]?.lineTotal, 110);
       assert.equal(items[0]?.plantUnitCost, 18.5);
       const expectedLabel = catalogCustomerProductLabel(items);
@@ -885,7 +877,6 @@ async function main(): Promise<void> {
         plantSizeId: variantC,
         sellableVariantId: noPotC.sellableVariantId,
         offerId: offerC.offer.id,
-        potColorId: null as string | null,
         quantity: 1,
         unitPrice: 55,
       };
@@ -997,7 +988,6 @@ async function main(): Promise<void> {
           plantSizeId: variantC,
           sellableVariantId: noPotC.sellableVariantId,
           offerId: offerC.offer.id,
-          potColorId: null,
           quantity: 1,
           unitPrice: 55,
         }],
@@ -1249,12 +1239,8 @@ async function main(): Promise<void> {
     await sql`DELETE FROM orders WHERE product_id IN (${plantId}, ${plantId2})`;
     await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)`;
     await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)`;
-    await sql`DELETE FROM pot_inventory_history WHERE pot_color_id IN (
-      SELECT c.id FROM pot_colors c JOIN pot_sizes s ON s.id = c.pot_size_id WHERE s.pot_id = ${potId}::uuid
-    )`;
-    await sql`DELETE FROM pot_inventory WHERE pot_color_id IN (
-      SELECT c.id FROM pot_colors c JOIN pot_sizes s ON s.id = c.pot_size_id WHERE s.pot_id = ${potId}::uuid
-    )`;
+    await sql`DELETE FROM pot_inventory_history WHERE pot_id = ${potId}::uuid`;
+    await sql`DELETE FROM pot_inventory WHERE pot_id = ${potId}::uuid`;
     await sql`DELETE FROM offer_availabilities WHERE offer_id IN (
       SELECT o.id FROM offers o
       JOIN sellable_variants sv ON sv.id = o.sellable_variant_id
@@ -1265,8 +1251,7 @@ async function main(): Promise<void> {
       WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)
     )`;
     await sql`DELETE FROM sellable_variants WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)`;
-    await sql`DELETE FROM pot_colors WHERE pot_size_id IN (SELECT id FROM pot_sizes WHERE pot_id = ${potId}::uuid)`;
-    await sql`DELETE FROM pot_sizes WHERE pot_id = ${potId}::uuid`;
+    await sql`DELETE FROM catalog_stock_holds WHERE pot_id = ${potId}::uuid OR plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantC}::uuid)`;
     await sql`DELETE FROM pots WHERE id = ${potId}::uuid`;
     await sql`DELETE FROM plant_variants WHERE plant_id IN (${plantId}, ${plantId2})`;
     await sql`DELETE FROM plants WHERE id IN (${plantId}, ${plantId2})`;

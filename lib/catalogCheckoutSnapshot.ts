@@ -11,10 +11,13 @@ import { sql } from "@/lib/db";
 import { parseNumeric } from "@/lib/storageUtils";
 
 export const PLANT_UNIT_COST_SOURCE = "plants.supplier_price@sale" as const;
-export const POT_UNIT_COST_SOURCE = "pot_sizes.supplier_price@sale" as const;
+export const POT_UNIT_COST_SOURCE = "pots.supplier_price@sale" as const;
+export const LEGACY_POT_UNIT_COST_SOURCE = "pot_sizes.supplier_price@sale" as const;
 
 export type PlantUnitCostSource = typeof PLANT_UNIT_COST_SOURCE;
-export type PotUnitCostSource = typeof POT_UNIT_COST_SOURCE;
+export type PotUnitCostSource =
+  | typeof POT_UNIT_COST_SOURCE
+  | typeof LEGACY_POT_UNIT_COST_SOURCE;
 
 export type CatalogCurrency = "ILS" | "USD" | "EUR";
 
@@ -30,6 +33,7 @@ export type CatalogPaymentSnapshotLine = {
   plantVariantId: string;
   sellableVariantId: string;
   offerId: string;
+  potId: string | null;
   potSizeId: string | null;
   potColorId: string | null;
   quantity: number;
@@ -142,6 +146,7 @@ function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
   const plantVariantId = parseRequiredText(row.plantVariantId);
   const sellableVariantId = parseRequiredText(row.sellableVariantId);
   const offerId = parseRequiredText(row.offerId);
+  const potId = parseOptionalText(row.potId);
   const potSizeId = parseOptionalText(row.potSizeId);
   const potColorId = parseOptionalText(row.potColorId);
   const quantity = parsePositiveInt(row.quantity);
@@ -165,6 +170,7 @@ function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
     !plantVariantId ||
     !sellableVariantId ||
     !offerId ||
+    potId === undefined ||
     potSizeId === undefined ||
     potColorId === undefined ||
     quantity == null ||
@@ -190,9 +196,15 @@ function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
   const hasPotCost = potUnitCost != null;
   const hasPotSource = potSource != null;
   if (hasPotCost !== hasPotSource) return null;
-  if (hasPotSource && potSource !== POT_UNIT_COST_SOURCE) return null;
+  if (
+    hasPotSource &&
+    potSource !== POT_UNIT_COST_SOURCE &&
+    potSource !== LEGACY_POT_UNIT_COST_SOURCE
+  ) {
+    return null;
+  }
   if ((potSizeId == null) !== (potColorId == null)) return null;
-  if (potSizeId == null && (potName != null || potUnitCost != null)) return null;
+  if (potId == null && potSizeId == null && (potName != null || potUnitCost != null)) return null;
   if (moneyCents(catalogLineTotal(unitPrice, quantity)) !== moneyCents(lineTotal)) return null;
   return {
     lineNo,
@@ -200,6 +212,7 @@ function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
     plantVariantId,
     sellableVariantId,
     offerId,
+    potId,
     potSizeId,
     potColorId,
     quantity,
@@ -216,7 +229,7 @@ function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
     plantUnitCost,
     plantUnitCostSource: hasPlantCost ? PLANT_UNIT_COST_SOURCE : null,
     potUnitCost,
-    potUnitCostSource: hasPotCost ? POT_UNIT_COST_SOURCE : null,
+    potUnitCostSource: hasPotCost ? (potSource as PotUnitCostSource) : null,
   };
 }
 
@@ -261,9 +274,9 @@ export async function snapshotPlantUnitCosts(
 }
 
 export async function snapshotPotUnitCosts(
-  potSizeIds: Array<string | null>,
+  potIds: Array<string | null>,
 ): Promise<Map<string, { potUnitCost: number | null; potUnitCostSource: PotUnitCostSource | null }>> {
-  const ids = [...new Set(potSizeIds.filter((id): id is string => Boolean(id?.trim())))];
+  const ids = [...new Set(potIds.filter((id): id is string => Boolean(id?.trim())))];
   const costs = new Map<
     string,
     { potUnitCost: number | null; potUnitCostSource: PotUnitCostSource | null }
@@ -271,7 +284,7 @@ export async function snapshotPotUnitCosts(
   if (ids.length === 0) return costs;
   const rows = await sql`
     SELECT id::text AS id, supplier_price
-    FROM pot_sizes
+    FROM pots
     WHERE id = ANY(${ids}::uuid[])
   `;
   for (const row of rows as { id: string; supplier_price: string | number | null }[]) {
@@ -285,20 +298,20 @@ export async function snapshotCatalogPaymentPlantCosts(
   snapshot: CatalogPaymentSnapshot,
 ): Promise<CatalogPaymentSnapshot> {
   const plantCosts = await snapshotPlantUnitCosts(snapshot.lines.map((line) => line.plantId));
-  const potCosts = await snapshotPotUnitCosts(snapshot.lines.map((line) => line.potSizeId));
+  const potCosts = await snapshotPotUnitCosts(snapshot.lines.map((line) => line.potId));
   return {
     sourcePartnerId: snapshot.sourcePartnerId,
     lines: snapshot.lines.map((line) => {
       const plant = plantCosts.get(line.plantId) ?? plantUnitCostFromSupplierPrice(null);
-      const pot = line.potSizeId
-        ? (potCosts.get(line.potSizeId) ?? potUnitCostFromSupplierPrice(null))
+      const pot = line.potId
+        ? (potCosts.get(line.potId) ?? potUnitCostFromSupplierPrice(null))
         : potUnitCostFromSupplierPrice(null);
       return {
         ...line,
         plantUnitCost: plant.plantUnitCost,
         plantUnitCostSource: plant.plantUnitCostSource,
-        potUnitCost: line.potSizeId ? pot.potUnitCost : null,
-        potUnitCostSource: line.potSizeId ? pot.potUnitCostSource : null,
+        potUnitCost: line.potId ? pot.potUnitCost : null,
+        potUnitCostSource: line.potId ? pot.potUnitCostSource : null,
       };
     }),
   };

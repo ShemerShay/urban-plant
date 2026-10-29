@@ -39,7 +39,7 @@ function line(patch: Partial<CatalogCartResolvedLine> = {}): CatalogCartResolved
     plantSizeId: "size-1",
     sellableVariantId: "sv-1",
     offerId: "offer-1",
-    potColorId: null,
+    potId: null,
     quantity: 1,
     availableQuantity: 4,
     name: "Fern",
@@ -161,10 +161,14 @@ function assertWiring(): void {
     "components/shop/ShopPaymentReturnNotice.tsx",
     "components/payment/PaymentVerificationClient.tsx",
     "app/checkout/shop/page.tsx",
-    "lib/messages.ts",
   ]) {
     assert.doesNotMatch(read(rel), /reconciliation/i, rel);
   }
+  const customerMessages = read("lib/messages.ts")
+    .split(/\r?\n/)
+    .filter((line) => !line.includes('"admin.analytics.'))
+    .join("\n");
+  assert.doesNotMatch(customerMessages, /reconciliation/i, "lib/messages.ts");
 
   const prep = read("lib/catalogPaymentPrep.ts");
   assert.match(prep, /failedRedirectUrl: absoluteAppUrl\(origin, `\/shop\?/);
@@ -181,9 +185,14 @@ function assertDecisions(): void {
   assert.equal(catalogCheckoutLinesMatch(shown, same), true);
   assert.equal(catalogCheckoutLinesMatch(shown, repriced), false);
 
-  const withColor = [line({ potColorId: "color-1", unitPrice: 55 })];
-  assert.equal(catalogCheckoutPaymentLines(withColor)?.[0]?.unitPrice, 55);
-  assert.equal(catalogCheckoutPaymentLines(withColor)?.[0]?.potColorId, "color-1");
+  const withPot = [line({ potId: "pot-1", unitPrice: 55 })];
+  const payment = catalogCheckoutPaymentLines(withPot);
+  assert.equal(payment?.[0]?.unitPrice, 55);
+  assert.equal(payment?.[0] != null && "potColorId" in payment[0], false);
+  assert.equal(
+    catalogCheckoutLinesMatch(withPot, [line({ potId: "pot-2", unitPrice: 55 })]),
+    false,
+  );
   assert.equal(catalogCheckoutPaymentLines([line({ unitPrice: 0 })]), null);
 
   assert.deepEqual(catalogCheckoutPaymentFailure("cart_changed"), {
@@ -238,7 +247,6 @@ function assertDecisions(): void {
     plantSizeId: "size-1",
     sellableVariantId: "sv-1",
     offerId: "offer-1",
-    potColorId: null as string | null,
     quantity: 3,
   };
   const other = {
@@ -246,7 +254,6 @@ function assertDecisions(): void {
     plantSizeId: "size-2",
     sellableVariantId: "sv-2",
     offerId: "offer-2",
-    potColorId: "color-2",
     quantity: 1,
   };
   const cart = { v: 2 as const, items: [item, other] };

@@ -1,11 +1,13 @@
 /**
- * Pot Size, Pot Color, and central pot inventory.
- * Pot admin and inventory. Customer Catalog reads Pot Colors.
+ * Catalog Pot SKU and central pot inventory.
+ * One pot is the physical SKU. Quantity lives on pot_inventory.
+ * Size and color tables are gone.
  *
  * Run: npx tsx scripts/verify-pot-sizes-colors.ts
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -16,83 +18,59 @@ function read(rel: string): string {
 }
 
 function assertWiring(): void {
-  const migration = read("db/migrations/046_pot_sizes_colors.sql");
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS pot_sizes/);
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS pot_colors/);
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS pot_inventory/);
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS pot_inventory_history/);
-  assert.match(migration, /size_label IN \('S', 'M', 'L'\)/);
-  assert.match(migration, /supplier_price IS NULL OR supplier_price > 0/);
-  assert.match(migration, /NULL::numeric\(10, 2\)/);
-  assert.match(migration, /INSERT INTO pot_colors \(id/);
-  assert.match(migration, /pv\.id/);
-  assert.match(migration, /lower\(btrim\(pv\.color\)\)/);
-  assert.match(migration, /pot_colors_size_color_folded_key/);
-  assert.equal(existsSync(join(root, "app/api/pots/[potId]/variants/route.ts")), false);
-  assert.doesNotMatch(migration, /catalog_price/);
-  assert.doesNotMatch(migration, /DROP TABLE/);
-  assert.doesNotMatch(migration, /sellable_variant/);
-  assert.doesNotMatch(migration, /offer_availabilities/);
+  const migration = read("db/migrations/056_catalog_pot_sku.sql");
+  assert.match(migration, /DROP TABLE IF EXISTS pot_colors/);
+  assert.match(migration, /DROP TABLE IF EXISTS pot_sizes/);
+  assert.match(migration, /pots_supplier_price_non_negative/);
+  assert.match(migration, /supplier_price IS NULL OR supplier_price >= 0/);
+  assert.match(migration, /UNIQUE NULLS NOT DISTINCT \(plant_variant_id, pot_id\)/);
+  assert.match(migration, /REFERENCES pots \(id\) ON DELETE CASCADE/);
+  assert.match(migration, /pot_inventory_history_delta_nonzero/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION assert_pot_central_quantity_available/);
+  assert.match(migration, /This pot is out of stock/);
+  assert.doesNotMatch(migration, /CREATE TABLE IF NOT EXISTS pot_sizes/);
+  assert.doesNotMatch(migration, /CREATE TABLE IF NOT EXISTS pot_colors/);
+  assert.doesNotMatch(migration, /INSERT INTO pot_colors/);
 
   const shop = read("lib/catalogShop.ts");
-  assert.doesNotMatch(shop, /pot_variants/);
-  assert.match(shop, /FROM pot_colors/);
+  assert.match(shop, /FROM pots/);
   assert.match(shop, /pot_inventory/);
-  assert.throws(() => read("lib/catalogLegacyCart.ts"));
-  assert.doesNotMatch(read("lib/catalogCart.ts"), /potVariantId/);
+  assert.doesNotMatch(shop, /pot_colors/);
+  assert.doesNotMatch(shop, /pot_sizes/);
   const holds = read("lib/catalogStockHolds.ts");
-  assert.match(holds, /pot_colors/);
+  assert.match(holds, /FROM pots/);
   assert.match(holds, /pot_inventory/);
-  const cutover = read("db/migrations/049_catalog_offer_cutover.sql");
-  assert.match(cutover, /supplier_price IS NULL OR supplier_price >= 0/);
-  for (const rel of [
-    "lib/catalogCart.ts",
-    "lib/catalogCheckoutFlow.ts",
-    "lib/offerStorage.ts",
-    "lib/posSpotStorage.ts",
-    "lib/plantVariantStorage.ts",
-    "lib/inventoryStorage.ts",
-  ]) {
-    const source = read(rel);
-    assert.doesNotMatch(source, /pot_colors/, rel);
-    assert.doesNotMatch(source, /pot_inventory/, rel);
-  }
+  assert.doesNotMatch(holds, /pot_colors/);
+  assert.doesNotMatch(read("lib/catalogCart.ts"), /potVariantId|potColorId/);
 
   const admin = read("components/admin/AdminPotsManager.tsx");
   assert.match(admin, /admin\.pots\.supplierCost/);
-  assert.match(admin, /admin\.pots\.addSize/);
-  assert.match(admin, /admin\.pots\.addColor/);
-  assert.match(admin, /admin\.pots\.photoRequired/);
-  const messages = read("lib/messages.ts");
-  assert.match(messages, /Add a photo to show this pot in the Catalog card\./);
-  assert.match(messages, /הוסיפו תמונה כדי להציג את הכד בכרטיס הקטלוג\./);
-  assert.doesNotMatch(messages, /Photo required before this pot can be sold/);
-  assert.doesNotMatch(messages, /נדרשת תמונה לפני שהעציץ יכול להימכר/);
-  assert.doesNotMatch(messages, /A pot without a photo is not sold/);
-  assert.doesNotMatch(messages, /עציץ בלי תמונה לא נמכר/);
+  assert.match(admin, /admin\.pots\.quantity/);
   assert.match(admin, /PlantImagePicker/);
   assert.match(admin, /single/);
   assert.match(admin, /image: image\.trim\(\) \|\| null/);
   assert.match(admin, /image: editImage\.trim\(\) \|\| null/);
+  assert.match(admin, /src=\{pot\.image\}/);
+  assert.match(admin, /admin\.pots\.photoRequired/);
   assert.match(admin, /urls\[urls\.length - 1\]/);
-  assert.match(admin, /potColorInventory/);
-  assert.doesNotMatch(admin, /catalogPrice/);
-  assert.doesNotMatch(admin, /potVariants/);
-  assert.doesNotMatch(admin, /addVariant/);
+  assert.doesNotMatch(admin, /addSize|addColor|potColorInventory|catalogPrice|potVariants/);
+  assert.match(read("db/migrations/041_pots.sql"), /image\s+text/);
+  assert.match(read("lib/potStorage.ts"), /p\.image/);
+  assert.doesNotMatch(migration, /DROP COLUMN[^;]*image/);
+  assert.match(read("app/api/pots/route.ts"), /readPots\(\)/);
+  assert.equal(existsSync(join(root, "lib/potSizeStorage.ts")), false);
+  assert.equal(existsSync(join(root, "lib/potSizes.ts")), false);
+  const routeHelpers = read("lib/routes.ts");
+  assert.doesNotMatch(routeHelpers, /potSizes:|potSize:|potColors:|potColor:|potColorInventory:/);
+  const messages = read("lib/messages.ts");
+  assert.doesNotMatch(messages, /admin\.pots\.addSize|admin\.pots\.addColor|admin\.pots\.noSizes|shop\.potColors/);
+  assert.doesNotMatch(messages, /admin\.partners\.detail\.potColor/);
 
-  for (const rel of [
-    "app/api/pots/route.ts",
-    "app/api/pots/[potId]/route.ts",
-    "app/api/pots/[potId]/sizes/route.ts",
-    "app/api/pots/[potId]/sizes/[sizeId]/route.ts",
-    "app/api/pots/[potId]/sizes/[sizeId]/colors/route.ts",
-    "app/api/pots/[potId]/sizes/[sizeId]/colors/[colorId]/route.ts",
-    "app/api/pots/[potId]/sizes/[sizeId]/colors/[colorId]/inventory/route.ts",
-  ]) {
+  for (const rel of ["app/api/pots/route.ts", "app/api/pots/[potId]/route.ts"]) {
     assert.match(read(rel), /isAdminRequest/, rel);
   }
 
-  console.log("verify-pot-sizes-colors: wiring keeps selling on pot sizes and colors");
+  console.log("verify-pot-sizes-colors: wiring uses Catalog Pots, not size or color tables");
 }
 
 async function main(): Promise<void> {
@@ -102,34 +80,50 @@ async function main(): Promise<void> {
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
   const host = new URL(process.env.DATABASE_URL ?? "").hostname;
-  if (host.includes("twilight-truth")) {
-    throw new Error("Refusing to verify against production");
+  if (!host.startsWith("ep-snowy-credit-alavcarh")) {
+    throw new Error("Refusing to verify against a database that is not the dev branch");
   }
 
   const { sql } = await import("../lib/db");
-  const { createPot, deletePot, PotWriteError, updatePot } = await import("../lib/potStorage");
+  const { parsePlantBody } = await import("../lib/plantValidation");
+  const { createPlant, deletePlant } = await import("../lib/plantStorage");
+  const { createPlantVariant } = await import("../lib/plantVariantStorage");
+  const { applyInventoryDelta, getInventoryQuantity } = await import("../lib/inventoryStorage");
+  const { createPot, deletePot, PotWriteError, readPots, updatePot } = await import("../lib/potStorage");
   const {
-    createPotColor,
-    createPotSize,
-    deletePotColor,
-    deletePotSize,
-    readPotsWithSizes,
-    updatePotColor,
-    updatePotSize,
-  } = await import("../lib/potSizeStorage");
-  const {
+    POT_ADMIN_QUANTITY_NOTE,
+    POT_OUT_OF_STOCK_MESSAGE,
+    PotInventoryChangeError,
     applyPotInventoryDelta,
     getPotInventoryQuantity,
-    PotInventoryChangeError,
     readPotInventoryHistory,
+    setPotCentralQuantity,
   } = await import("../lib/potInventoryStorage");
+  const { createSellableVariant } = await import("../lib/sellableVariantStorage");
+  const { createOrReusePlantOffer } = await import("../lib/offerStorage");
+  const { resolveOccupancyForPosCreate } = await import("../lib/posOccupancy");
+  const { writePosCreate } = await import("../lib/posCentralStock");
+  const { insertOrderItems } = await import("../lib/orderItemStorage");
+  const { POT_UNIT_COST_SOURCE } = await import("../lib/catalogCheckoutSnapshot");
+
+  const tables = await sql`
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name IN ('pot_sizes', 'pot_colors', 'pot_inventory', 'pot_inventory_history', 'pots')
+  `;
+  const tableNames = new Set((tables as { table_name: string }[]).map((row) => row.table_name));
+  assert.equal(tableNames.has("pot_sizes"), false);
+  assert.equal(tableNames.has("pot_colors"), false);
+  assert.equal(tableNames.has("pots"), true);
+  assert.equal(tableNames.has("pot_inventory"), true);
+  assert.equal(tableNames.has("pot_inventory_history"), true);
 
   const columns = await sql`
     SELECT table_name, column_name, is_nullable
     FROM information_schema.columns
     WHERE table_schema = 'public'
-      AND table_name IN ('pot_sizes', 'pot_colors', 'pot_inventory', 'pot_inventory_history')
-    ORDER BY table_name, column_name
+      AND table_name IN ('pots', 'pot_inventory', 'pot_inventory_history')
   `;
   const present = new Set(
     (columns as { table_name: string; column_name: string }[]).map(
@@ -137,368 +131,361 @@ async function main(): Promise<void> {
     ),
   );
   for (const column of [
-    "pot_sizes.id",
-    "pot_sizes.pot_id",
-    "pot_sizes.size_label",
-    "pot_sizes.supplier_price",
-    "pot_sizes.created_at",
-    "pot_sizes.updated_at",
-    "pot_colors.id",
-    "pot_colors.pot_size_id",
-    "pot_colors.color",
-    "pot_colors.color_he",
-    "pot_colors.created_at",
-    "pot_inventory.pot_color_id",
+    "pots.supplier_price",
+    "pots.image",
+    "pot_inventory.pot_id",
     "pot_inventory.quantity",
+    "pot_inventory_history.pot_id",
     "pot_inventory_history.delta",
     "pot_inventory_history.note",
   ]) {
     assert.equal(present.has(column), true, column);
   }
-  assert.equal(present.has("pot_sizes.catalog_price"), false);
-  assert.equal(present.has("pot_colors.catalog_price"), false);
-  assert.equal(present.has("pot_colors.supplier_price"), false);
-  const supplierNullable = (columns as { table_name: string; column_name: string; is_nullable: string }[]).find(
-    (row) => row.table_name === "pot_sizes" && row.column_name === "supplier_price",
-  );
+  assert.equal(present.has("pot_inventory.pot_color_id"), false);
+  assert.equal(present.has("pot_inventory_history.pot_color_id"), false);
+  const supplierNullable = (
+    columns as { table_name: string; column_name: string; is_nullable: string }[]
+  ).find((row) => row.table_name === "pots" && row.column_name === "supplier_price");
   assert.equal(supplierNullable?.is_nullable, "YES");
-  const legacyTable = await sql`SELECT to_regclass('public.pot_variants') AS name`;
-  assert.equal((legacyTable as { name: string | null }[])[0]?.name, null);
 
-  const tag = `pot-size-${Date.now()}`;
-  let behaviorPotId = "";
+  const { GET } = await import("../app/api/pots/route");
+  async function adminPotPayload(): Promise<{ id: string; image?: string }[]> {
+    const response = await GET({
+      cookies: {
+        get: (name: string) => (name === "admin_auth" ? { value: "1" } : undefined),
+      },
+    } as never);
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { pots?: { id: string; image?: string }[] };
+    return body.pots ?? [];
+  }
+
+  const storedImages = await sql`
+    SELECT id::text AS id, image
+    FROM pots
+    WHERE image IS NOT NULL
+    ORDER BY id
+  `;
+  const storedRows = storedImages as { id: string; image: string }[];
+  assert.ok(storedRows.length > 0);
+  const listed = await readPots();
+  const initialPayload = await adminPotPayload();
+  for (const stored of storedRows) {
+    assert.equal(listed.find((row) => row.id === stored.id)?.image, stored.image, stored.id);
+    assert.equal(
+      initialPayload.find((row) => row.id === stored.id)?.image,
+      stored.image,
+      stored.id,
+    );
+  }
+
+  const tag = `catalog-pot-${Date.now()}`;
+  const potIds: string[] = [];
+  const plantIds: string[] = [];
+  const variantIds: string[] = [];
+  const sellableIds: string[] = [];
+  const offerIds: string[] = [];
+  const orderIds: string[] = [];
+  const spotIds: string[] = [];
 
   async function cleanup(): Promise<void> {
-    if (!behaviorPotId) return;
-    const ids = [behaviorPotId];
-    if (ids.length === 0) return;
-    await sql`
-      DELETE FROM pot_inventory_history
-      WHERE pot_color_id IN (
-        SELECT c.id
-        FROM pot_colors c
-        INNER JOIN pot_sizes s ON s.id = c.pot_size_id
-        WHERE s.pot_id = ANY(${ids}::uuid[])
-      )
-    `;
-    await sql`
-      DELETE FROM pot_inventory
-      WHERE pot_color_id IN (
-        SELECT c.id
-        FROM pot_colors c
-        INNER JOIN pot_sizes s ON s.id = c.pot_size_id
-        WHERE s.pot_id = ANY(${ids}::uuid[])
-      )
-    `;
-    await sql`DELETE FROM pots WHERE id = ANY(${ids}::uuid[])`;
+    if (spotIds.length > 0) {
+      await sql`
+        DELETE FROM placement_segments
+        WHERE placement_cycle_id IN (
+          SELECT id FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])
+        )
+      `;
+      await sql`DELETE FROM placement_cycles WHERE pos_spot_id = ANY(${spotIds}::uuid[])`;
+      await sql`DELETE FROM pos_spots WHERE id = ANY(${spotIds}::uuid[])`;
+    }
+    if (orderIds.length > 0) {
+      await sql`DELETE FROM order_items WHERE order_id = ANY(${orderIds}::uuid[])`;
+      await sql`DELETE FROM orders WHERE order_id = ANY(${orderIds}::uuid[])`;
+    }
+    if (offerIds.length > 0) {
+      await sql`DELETE FROM offer_availabilities WHERE offer_id = ANY(${offerIds})`;
+      await sql`DELETE FROM offers WHERE id = ANY(${offerIds})`;
+    }
+    if (sellableIds.length > 0) {
+      await sql`DELETE FROM sellable_variants WHERE id = ANY(${sellableIds}::uuid[])`;
+    }
+    if (variantIds.length > 0) {
+      await sql`DELETE FROM inventory_history WHERE variant_id = ANY(${variantIds}::uuid[])`;
+      await sql`DELETE FROM inventory WHERE variant_id = ANY(${variantIds}::uuid[])`;
+      await sql`DELETE FROM plant_variants WHERE id = ANY(${variantIds}::uuid[])`;
+    }
+    for (const plantId of plantIds) {
+      await deletePlant(plantId).catch(() => undefined);
+    }
+    for (const potId of potIds) {
+      await sql`DELETE FROM pot_inventory_history WHERE pot_id = ${potId}::uuid`;
+      await sql`DELETE FROM pot_inventory WHERE pot_id = ${potId}::uuid`;
+      await sql`DELETE FROM pots WHERE id = ${potId}::uuid`;
+    }
   }
 
   try {
     const behavior = await createPot({ name: `${tag} behavior`, nameHe: "התנהגות" });
-    behaviorPotId = behavior.id;
+    potIds.push(behavior.id);
+    assert.equal(behavior.supplierPrice, null);
+    assert.equal(behavior.quantity, 0);
     assert.equal(behavior.image, undefined);
     const uploaded = await updatePot({
       potId: behavior.id,
       image: "/plant-library/pot-photo-a.jpg",
+      supplierPrice: 0,
     });
     assert.equal(uploaded.image, "/plant-library/pot-photo-a.jpg");
-    const replaced = await updatePot({
-      potId: behavior.id,
-      image: "/plant-library/pot-photo-b.jpg",
-    });
-    assert.equal(replaced.image, "/plant-library/pot-photo-b.jpg");
-    const listed = (await readPotsWithSizes()).find((pot) => pot.id === behavior.id);
-    assert.equal(listed?.image, "/plant-library/pot-photo-b.jpg");
-    let invalidSize = false;
-    try {
-      await createPotSize({ potId: behavior.id, sizeLabel: "XL", supplierPrice: 10 });
-    } catch (error) {
-      invalidSize = true;
-      assert.ok(error instanceof PotWriteError);
-      assert.equal(error.code, "invalid_size_label");
-    }
-    assert.equal(invalidSize, true);
+    assert.equal(uploaded.supplierPrice, 0);
+    assert.equal(
+      (await readPots()).find((row) => row.id === behavior.id)?.image,
+      "/plant-library/pot-photo-a.jpg",
+    );
+    assert.equal(
+      (await adminPotPayload()).find((row) => row.id === behavior.id)?.image,
+      "/plant-library/pot-photo-a.jpg",
+    );
+    const priced = await updatePot({ potId: behavior.id, supplierPrice: 12.5 });
+    assert.equal(priced.supplierPrice, 12.5);
+    assert.equal(priced.image, "/plant-library/pot-photo-a.jpg");
+    const cleared = await updatePot({ potId: behavior.id, supplierPrice: null });
+    assert.equal(cleared.supplierPrice, null);
+    assert.equal(cleared.image, "/plant-library/pot-photo-a.jpg");
     let negativeCost = false;
     try {
-      await createPotSize({ potId: behavior.id, sizeLabel: "S", supplierPrice: -1 });
+      await updatePot({ potId: behavior.id, supplierPrice: -1 });
     } catch (error) {
       negativeCost = true;
       assert.ok(error instanceof PotWriteError);
       assert.equal(error.code, "invalid_supplier_price");
     }
     assert.equal(negativeCost, true);
-
-    const zero = await createPotSize({ potId: behavior.id, sizeLabel: "S", supplierPrice: 0 });
-    assert.equal(zero.supplierPrice, 0);
-    const small = await updatePotSize({
-      potId: behavior.id,
-      sizeId: zero.id,
-      supplierPrice: 12.5,
-    });
-    assert.equal(small.supplierPrice, 12.5);
-    const medium = await createPotSize({ potId: behavior.id, sizeLabel: "M" });
-    assert.equal(medium.supplierPrice, null);
-    const cleared = await updatePotSize({
-      potId: behavior.id,
-      sizeId: small.id,
-      supplierPrice: null,
-    });
-    assert.equal(cleared.supplierPrice, null);
-    const restored = await updatePotSize({
-      potId: behavior.id,
-      sizeId: small.id,
-      supplierPrice: 12.5,
-    });
+    const restored = await updatePot({ potId: behavior.id, supplierPrice: 12.5 });
     assert.equal(restored.supplierPrice, 12.5);
-    let duplicateSize = false;
-    try {
-      await createPotSize({ potId: behavior.id, sizeLabel: "S", supplierPrice: 4 });
-    } catch (error) {
-      duplicateSize = true;
-      assert.ok(error instanceof PotWriteError);
-      assert.equal(error.code, "duplicate");
-    }
-    assert.equal(duplicateSize, true);
-    let badPotId = false;
-    try {
-      await updatePotSize({ potId: "not-a-uuid", sizeId: small.id, supplierPrice: 3 });
-    } catch (error) {
-      badPotId = true;
-      assert.ok(error instanceof PotWriteError);
-      assert.equal(error.code, "not_found");
-    }
-    assert.equal(badPotId, true);
+    assert.equal(restored.image, "/plant-library/pot-photo-a.jpg");
 
-    const white = await createPotColor({
-      potId: behavior.id,
-      sizeId: small.id,
-      color: "White",
-      colorHe: "לבן",
-    });
-    const black = await createPotColor({
-      potId: behavior.id,
-      sizeId: small.id,
-      color: "Black",
-    });
-    assert.equal(white.quantity, 0);
-    assert.equal(black.quantity, 0);
-    assert.equal(await getPotInventoryQuantity(white.id), 0);
-    const mediumWhite = await createPotColor({
-      potId: behavior.id,
-      sizeId: medium.id,
-      color: "White",
-      colorHe: "לבן",
-    });
-    assert.notEqual(white.id, mediumWhite.id);
-
-    let foldedDuplicate = false;
-    try {
-      await createPotColor({ potId: behavior.id, sizeId: small.id, color: " WHITE " });
-    } catch (error) {
-      foldedDuplicate = true;
-      assert.ok(error instanceof PotWriteError);
-      assert.equal(error.code, "duplicate");
-    }
-    assert.equal(foldedDuplicate, true);
-    let wrongSize = false;
-    try {
-      await updatePotColor({
-        potId: behavior.id,
-        sizeId: medium.id,
-        colorId: white.id,
-        colorHe: "לא",
-      });
-    } catch (error) {
-      wrongSize = true;
-      assert.ok(error instanceof PotWriteError);
-      assert.equal(error.code, "not_found");
-    }
-    assert.equal(wrongSize, true);
-    const grey = await createPotColor({
-      potId: behavior.id,
-      sizeId: small.id,
-      color: "Grey",
-    });
-    let missingNegative = false;
-    try {
-      await applyPotInventoryDelta({
-        potId: behavior.id,
-        sizeId: small.id,
-        potColorId: grey.id,
-        delta: -1,
-        note: `${tag} empty`,
-      });
-    } catch (error) {
-      missingNegative = true;
-      assert.ok(error instanceof PotInventoryChangeError);
-      assert.equal(error.code, "insufficient_quantity");
-    }
-    assert.equal(missingNegative, true);
-    assert.equal(await getPotInventoryQuantity(grey.id), 0);
-    assert.equal((await readPotInventoryHistory(grey.id)).length, 0);
-    const greyStored = await sql`
-      SELECT count(*)::int AS count
-      FROM pot_inventory
-      WHERE pot_color_id = ${grey.id}::uuid
+    assert.equal(await getPotInventoryQuantity(behavior.id), 0);
+    assert.equal((await readPotInventoryHistory(behavior.id)).length, 0);
+    assert.equal(await setPotCentralQuantity({ potId: behavior.id, quantity: 0 }), 0);
+    assert.equal((await readPotInventoryHistory(behavior.id)).length, 0);
+    const missingRow = await sql`
+      SELECT count(*)::int AS count FROM pot_inventory WHERE pot_id = ${behavior.id}::uuid
     `;
-    assert.equal((greyStored as { count: number }[])[0]?.count, 0);
-    await deletePotColor({ potId: behavior.id, sizeId: small.id, colorId: grey.id });
+    assert.equal((missingRow as { count: number }[])[0]?.count, 0);
+
+    assert.equal(
+      await setPotCentralQuantity({ potId: behavior.id, quantity: 2 }),
+      2,
+    );
+    const adminHistory = await readPotInventoryHistory(behavior.id);
+    assert.deepEqual(
+      adminHistory.map((entry) => ({ delta: entry.delta, note: entry.note })),
+      [{ delta: 2, note: POT_ADMIN_QUANTITY_NOTE }],
+    );
+    assert.equal(await setPotCentralQuantity({ potId: behavior.id, quantity: 2 }), 2);
+    assert.equal((await readPotInventoryHistory(behavior.id)).length, 1);
+
     let zeroDelta = false;
     try {
-      await applyPotInventoryDelta({
-        potId: behavior.id,
-        sizeId: small.id,
-        potColorId: white.id,
-        delta: 0,
-        note: `${tag} zero`,
-      });
+      await applyPotInventoryDelta({ potId: behavior.id, delta: 0, note: `${tag} zero` });
     } catch (error) {
       zeroDelta = true;
       assert.ok(error instanceof PotInventoryChangeError);
       assert.equal(error.code, "delta_zero");
     }
     assert.equal(zeroDelta, true);
-    let wrongParentAdjust = false;
-    try {
-      await applyPotInventoryDelta({
-        potId: behavior.id,
-        sizeId: medium.id,
-        potColorId: white.id,
-        delta: 1,
-        note: `${tag} wrong size`,
-      });
-    } catch (error) {
-      wrongParentAdjust = true;
-      assert.ok(error instanceof PotInventoryChangeError);
-      assert.equal(error.code, "color_not_found");
-    }
-    assert.equal(wrongParentAdjust, true);
 
-    await applyPotInventoryDelta({
-      potId: behavior.id,
-      sizeId: small.id,
-      potColorId: white.id,
-      delta: 2,
-      note: `${tag} receive`,
-    });
-    await applyPotInventoryDelta({
-      potId: behavior.id,
-      sizeId: small.id,
-      potColorId: black.id,
-      delta: 1,
-      note: `${tag} receive black`,
-    });
-    assert.equal(await getPotInventoryQuantity(white.id), 2);
-    assert.equal(await getPotInventoryQuantity(black.id), 1);
-    assert.equal(await getPotInventoryQuantity(mediumWhite.id), 0);
-
-    await applyPotInventoryDelta({
-      potId: behavior.id,
-      sizeId: medium.id,
-      potColorId: mediumWhite.id,
-      delta: 4,
-      note: `${tag} medium white`,
-    });
-    assert.equal(await getPotInventoryQuantity(white.id), 2);
-    assert.equal(await getPotInventoryQuantity(mediumWhite.id), 4);
-
-    await applyPotInventoryDelta({
-      potId: behavior.id,
-      sizeId: small.id,
-      potColorId: white.id,
-      delta: -2,
-      note: `${tag} send`,
-    });
-    assert.equal(await getPotInventoryQuantity(white.id), 0);
+    await applyPotInventoryDelta({ potId: behavior.id, delta: -2, note: `${tag} send` });
+    assert.equal(await getPotInventoryQuantity(behavior.id), 0);
     let negative = false;
     try {
-      await applyPotInventoryDelta({
-        potId: behavior.id,
-        sizeId: small.id,
-        potColorId: white.id,
-        delta: -1,
-        note: `${tag} too far`,
-      });
+      await applyPotInventoryDelta({ potId: behavior.id, delta: -1, note: `${tag} too far` });
     } catch (error) {
       negative = true;
       assert.ok(error instanceof PotInventoryChangeError);
       assert.equal(error.code, "insufficient_quantity");
     }
     assert.equal(negative, true);
-    assert.equal(await getPotInventoryQuantity(white.id), 0);
-    assert.equal(await getPotInventoryQuantity(black.id), 1);
-    const history = await readPotInventoryHistory(white.id);
-    assert.deepEqual(
-      history.map((entry) => entry.delta),
-      [2, -2],
-    );
+    assert.equal(await getPotInventoryQuantity(behavior.id), 0);
 
-    const renamed = await updatePotColor({
-      potId: behavior.id,
-      sizeId: small.id,
-      colorId: black.id,
-      colorHe: "שחור",
+    const stockOnly = await createPot({ name: `${tag} stock only` });
+    potIds.push(stockOnly.id);
+    await setPotCentralQuantity({ potId: stockOnly.id, quantity: 4 });
+    await deletePot(stockOnly.id);
+    potIds.splice(potIds.indexOf(stockOnly.id), 1);
+    const stockGone = await sql`SELECT id FROM pots WHERE id = ${stockOnly.id}::uuid`;
+    assert.equal((stockGone as { id: string }[]).length, 0);
+
+    const locations = await sql`SELECT id FROM partner_locations ORDER BY id ASC LIMIT 1`;
+    const partnerLocationId = (locations as { id: string }[])[0]?.id;
+    assert.ok(partnerLocationId, "need a partner location");
+
+    const parsed = parsePlantBody(
+      {
+        id: randomUUID(),
+        name: `${tag} plant`,
+        subtitle: "Leaf",
+        description: "A plant",
+        supplierPrice: 40,
+        currency: "ILS",
+        images: ["https://example.com/p.jpg"],
+        labels: ["indoor"],
+        light: "Medium light",
+        water: "Weekly",
+        location: "Indoor",
+        petFriendly: false,
+        careInstructions: ["Water"],
+        inventoryType: "plants",
+      },
+      { requireId: true },
+    );
+    assert.equal(parsed.ok, true);
+    if (!parsed.ok) return;
+    const plant = await createPlant(parsed.plant);
+    plantIds.push(plant.id);
+    const size = await createPlantVariant({ plantId: plant.id, sizeLabel: "S" });
+    variantIds.push(size.id);
+    await applyInventoryDelta({ variantId: size.id, delta: 3, note: `${tag} plant` });
+
+    const placedPot = await createPot({ name: `${tag} placed` });
+    potIds.push(placedPot.id);
+    await updatePot({ potId: placedPot.id, supplierPrice: 4 });
+    const sellable = await createSellableVariant({
+      plantId: plant.id,
+      plantSizeId: size.id,
+      potId: placedPot.id,
     });
-    assert.equal(renamed.color, "Black");
-    assert.equal(renamed.colorHe, "שחור");
-    assert.equal(renamed.quantity, 1);
+    sellableIds.push(sellable.sellableVariantId);
 
-    let blockedColor = false;
+    const orderPot = await createPot({ name: `${tag} ordered` });
+    potIds.push(orderPot.id);
+    const orderId = randomUUID();
+    orderIds.push(orderId);
+    const now = new Date().toISOString();
+    await sql`
+      INSERT INTO orders (
+        order_id, product_id, product_name, price, full_name, phone,
+        address, apartment_or_notes, fulfillment_method, order_status, created_at,
+        channel, partner_id, source
+      )
+      VALUES (
+        ${orderId}::uuid, ${plant.id}, ${tag}, 40, 'Pot Verify',
+        '0500000000', 'Verify 1', '', 'delivery', 'sold', ${now}::timestamptz,
+        'catalog', NULL, 'online'
+      )
+    `;
+    await insertOrderItems(orderId, [
+      {
+        lineNo: 1,
+        plantId: plant.id,
+        plantVariantId: size.id,
+        sellableVariantId: sellable.sellableVariantId,
+        offerId: `${tag}-order-offer`,
+        potId: orderPot.id,
+        potSizeId: null,
+        potColorId: null,
+        quantity: 1,
+        unitPrice: 40,
+        lineTotal: 40,
+        currency: "ILS",
+        plantName: tag,
+        plantNameHe: null,
+        sizeLabel: "S",
+        potName: orderPot.name,
+        potSizeLabel: null,
+        potColor: null,
+        potColorHe: null,
+        plantUnitCost: 40,
+        plantUnitCostSource: "plants.supplier_price@sale",
+        potUnitCost: null,
+        potUnitCostSource: null,
+      },
+    ]);
+    await deletePot(orderPot.id);
+    potIds.splice(potIds.indexOf(orderPot.id), 1);
+    const orderLine = await sql`
+      SELECT pot_id::text AS pot_id, pot_size_id, pot_color_id
+      FROM order_items
+      WHERE order_id = ${orderId}::uuid
+    `;
+    assert.equal((orderLine as { pot_id: string }[])[0]?.pot_id, orderPot.id);
+    assert.equal((orderLine as { pot_size_id: string | null }[])[0]?.pot_size_id, null);
+    assert.equal((orderLine as { pot_color_id: string | null }[])[0]?.pot_color_id, null);
+
+    let blocked = false;
     try {
-      await deletePotColor({ potId: behavior.id, sizeId: small.id, colorId: white.id });
+      await deletePot(placedPot.id);
     } catch (error) {
-      blockedColor = true;
+      blocked = true;
       assert.ok(error instanceof PotWriteError);
       assert.equal(error.code, "in_use");
+      assert.match(error.message, /^This pot cannot be deleted because it is used by/);
     }
-    assert.equal(blockedColor, true);
-    let blockedSize = false;
-    try {
-      await deletePotSize({ potId: behavior.id, sizeId: small.id });
-    } catch (error) {
-      blockedSize = true;
-      assert.ok(error instanceof PotWriteError);
-      assert.equal(error.code, "in_use");
-    }
-    assert.equal(blockedSize, true);
-
-    const large = await createPotSize({ potId: behavior.id, sizeLabel: "L" });
-    const green = await createPotColor({
-      potId: behavior.id,
-      sizeId: large.id,
-      color: "Green",
-    });
-    await deletePotColor({ potId: behavior.id, sizeId: large.id, colorId: green.id });
-    await deletePotSize({ potId: behavior.id, sizeId: large.id });
-
-    const loaded = (await readPotsWithSizes()).find((pot) => pot.id === behavior.id);
-    assert.ok(loaded);
-    assert.deepEqual(
-      loaded.sizes.map((size) => size.sizeLabel),
-      ["S", "M"],
-    );
-    const loadedSmall = loaded.sizes.find((size) => size.id === small.id);
-    assert.equal(loadedSmall?.supplierPrice, 12.5);
-    assert.deepEqual(
-      loadedSmall?.colors.map((row) => ({ color: row.color, quantity: row.quantity })),
-      [
-        { color: "Black", quantity: 1 },
-        { color: "White", quantity: 0 },
-      ],
-    );
-    assert.equal(loaded.sizes.find((size) => size.id === medium.id)?.colors[0]?.quantity, 4);
-
-    let blockedPot = false;
-    try {
-      await deletePot(behavior.id);
-    } catch (error) {
-      blockedPot = true;
-      assert.ok(error instanceof PotWriteError);
-      assert.equal(error.code, "in_use");
-    }
-    assert.equal(blockedPot, true);
-    const potRemains = await sql`SELECT id FROM pots WHERE id = ${behavior.id}::uuid`;
+    assert.equal(blocked, true);
+    const potRemains = await sql`SELECT id FROM pots WHERE id = ${placedPot.id}::uuid`;
     assert.equal((potRemains as { id: string }[]).length, 1);
+
+    const offer = await createOrReusePlantOffer({
+      sellableVariantId: sellable.sellableVariantId,
+      consumerPrice: 48,
+      status: "active",
+      availabilities: [{ scope: "partner_location", partnerLocationId }],
+    });
+    offerIds.push(offer.offer.id);
+    await setPotCentralQuantity({ potId: placedPot.id, quantity: 0 });
+    const plantBefore = await getInventoryQuantity(size.id);
+    const plantHistoryBefore = await sql`
+      SELECT count(*)::int AS n FROM inventory_history WHERE variant_id = ${size.id}::uuid
+    `;
+    const slug = `pot-oos-${tag}`.slice(0, 48);
+    const occupancy = await resolveOccupancyForPosCreate({
+      offerId: offer.offer.id,
+      partnerLocationId,
+    });
+    assert.equal(occupancy.potId, placedPot.id);
+    let outOfStock = false;
+    try {
+      const created = await writePosCreate({
+        occupancyAction: occupancy.action,
+        inventorySource: "central",
+        posSpot: {
+          id: randomUUID(),
+          spotName: slug,
+          partnerLocationId,
+          posNumber: "1",
+          posName: slug,
+          spotSlug: slug,
+          status: "available",
+          checkStatus: false,
+          createdAt: new Date().toISOString(),
+          currentOfferId: occupancy.currentOfferId ?? offer.offer.id,
+          plantVariantId: occupancy.plantVariantId ?? size.id,
+          potId: occupancy.potId ?? placedPot.id,
+          offerPlacedAt: occupancy.offerPlacedAt ?? new Date().toISOString(),
+        },
+        variantId: occupancy.plantVariantId,
+        potId: occupancy.potId,
+      });
+      spotIds.push(created.id);
+    } catch (error) {
+      outOfStock = true;
+      assert.ok(error instanceof PotInventoryChangeError);
+      assert.equal(error.message, POT_OUT_OF_STOCK_MESSAGE);
+    }
+    assert.equal(outOfStock, true);
+    assert.equal(await getInventoryQuantity(size.id), plantBefore);
+    const plantHistoryAfter = await sql`
+      SELECT count(*)::int AS n FROM inventory_history WHERE variant_id = ${size.id}::uuid
+    `;
+    assert.equal(
+      (plantHistoryAfter as { n: number }[])[0]?.n,
+      (plantHistoryBefore as { n: number }[])[0]?.n,
+    );
+    const writtenSpot = await sql`SELECT id FROM pos_spots WHERE spot_slug = ${slug}`;
+    assert.equal((writtenSpot as { id: string }[]).length, 0);
+    assert.equal(await getPotInventoryQuantity(placedPot.id), 0);
+    assert.equal(POT_UNIT_COST_SOURCE, "pots.supplier_price@sale");
   } finally {
     await cleanup();
   }

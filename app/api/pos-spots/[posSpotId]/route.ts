@@ -9,7 +9,6 @@ import {
   MANUAL_OFFER_ID,
   MANUAL_PRODUCT_ID,
 } from "@/lib/offerTypes";
-import { readColorsForPotSizeIds } from "@/lib/potSizeStorage";
 import { getPocketById } from "@/lib/pocketStorage";
 import { updatePartnerLocationAddress } from "@/lib/partnerLocationStorage";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
@@ -87,11 +86,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (offer.inventoryType === "flowers") return true;
     return isPlantPosEligibleOffer(offer, posSpot.partnerLocationId);
   });
-  const potSizeIds = offers
-    .map((offer) => offer.sellableVariant?.potSizeId)
-    .filter((id): id is string => Boolean(id));
-  const potColors = await readColorsForPotSizeIds(potSizeIds);
-  return NextResponse.json({ posSpot, offers, locations, potColors });
+  return NextResponse.json({ posSpot, offers, locations, potColors: [] });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
@@ -127,11 +122,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     ? record.currentOfferId === null
       ? null
       : cleanString(record.currentOfferId) || null
-    : undefined;
-  const requestedPotColorId = "potColorId" in record
-    ? record.potColorId === null
-      ? null
-      : cleanString(record.potColorId) || null
     : undefined;
   const sameVariantReplace = record.sameVariantReplace === true;
   const hasPocketId = "pocketId" in record;
@@ -184,7 +174,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       partnerLocationId,
       occupancyIntent: occupancyIntentRaw,
       requestedOfferId,
-      requestedPotColorId,
       sameVariantReplace,
       requestedStatus: parsedStatus,
     });
@@ -250,11 +239,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const posSpot = await writePosUpdate({
       occupancyAction: occupancy.action,
       inventorySource: record.inventorySource,
-      introducesNewPotColor: occupancy.introducesNewPotColor,
+      introducesNewPot: occupancy.introducesNewPotColor,
       id,
       existing,
       variantId: occupancy.plantVariantId,
-      potColorId: occupancy.potColorId,
+      potId: occupancy.potId,
       patch: {
         partnerLocationId,
         posNumber,

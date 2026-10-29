@@ -22,8 +22,6 @@ import { formatCatalogPrice } from "@/lib/catalogPriceFormat";
 import type { CatalogShopDetail, CatalogShopVariant } from "@/lib/catalogShop";
 import {
   catalogSizeChoices,
-  defaultPotColorId,
-  inStockColors,
   resolveCardVariant,
   resolveExplicitConfiguration,
 } from "@/lib/catalogShopSelection";
@@ -35,9 +33,9 @@ const ctaFocusClass =
   "focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2";
 
 function variantChoiceLabel(variant: CatalogShopVariant, locale: Locale): string {
-  if (!variant.potSizeId) return t(locale, "shop.noPot");
+  if (!variant.potId) return t(locale, "shop.noPot");
   const name = localizedPlantText(locale, variant.potName, variant.potNameHe);
-  return [name, variant.potSizeLabel].filter(Boolean).join(" ") || t(locale, "shop.pots");
+  return name || t(locale, "shop.pots");
 }
 
 export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; locale: Locale }) {
@@ -48,10 +46,6 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   const [selectedVariantId, setSelectedVariantId] = useState(
     () => resolveCardVariant(sizeOptions[0] ?? { id: "", quantity: 0, variants: [] })?.id ?? "",
   );
-  const [selectedColorId, setSelectedColorId] = useState<string | null>(() => {
-    const variant = resolveCardVariant(sizeOptions[0] ?? { id: "", quantity: 0, variants: [] });
-    return variant ? defaultPotColorId(variant) : null;
-  });
   const [justAdded, setJustAdded] = useState(false);
 
   const name = localizedPlantText(locale, plant.name, plant.nameHe);
@@ -61,10 +55,9 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   const showCare = Boolean(plant.light && water);
   const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId);
   const selectedVariant = selectedSize?.variants.find((variant) => variant.id === selectedVariantId);
-  const colors = selectedVariant ? inStockColors(selectedVariant) : [];
   const resolved =
     selectedSize && selectedVariant
-      ? resolveExplicitConfiguration(selectedSize, selectedVariant.id, selectedColorId)
+      ? resolveExplicitConfiguration(selectedSize, selectedVariant.id)
       : null;
   const cartQty =
     resolved == null
@@ -77,7 +70,6 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
               plantSizeId: resolved.plantSizeId,
               sellableVariantId: resolved.sellableVariantId,
               offerId: resolved.offerId,
-              potColorId: resolved.potColorId,
             }),
         )?.quantity ?? 0);
   const canAdd = resolved != null && cartQty < resolved.availableQuantity;
@@ -93,13 +85,11 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
     const nextVariant = nextSize ? resolveCardVariant(nextSize) : null;
     setSelectedSizeId(id);
     setSelectedVariantId(nextVariant?.id ?? "");
-    setSelectedColorId(nextVariant ? defaultPotColorId(nextVariant) : null);
   }
 
   function selectVariant(id: string) {
     const nextVariant = selectedSize?.variants.find((variant) => variant.id === id);
     setSelectedVariantId(id);
-    setSelectedColorId(nextVariant ? defaultPotColorId(nextVariant) : null);
   }
 
   async function addToCart() {
@@ -111,7 +101,6 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
         plantSizeId: resolved.plantSizeId,
         sellableVariantId: resolved.sellableVariantId,
         offerId: resolved.offerId,
-        potColorId: resolved.potColorId,
       },
       resolved.availableQuantity,
     );
@@ -122,9 +111,10 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
       plant_variant_id: resolved.plantSizeId,
       sellable_variant_id: resolved.sellableVariantId,
       offer_id: resolved.offerId,
-      ...(resolved.potColorId ? { pot_color_id: resolved.potColorId } : {}),
+      ...(resolved.potId ? { pot_id: resolved.potId } : {}),
       quantity: 1,
       amount: catalogCartLineAmount(resolved.unitPrice, 1),
+      channel: "catalog",
     });
     setJustAdded(true);
   }
@@ -206,39 +196,6 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
                       >
                         {variantChoiceLabel(variant, locale)}
                       </button>
-                    );
-                  })}
-                </div>
-              </section>
-            ) : null}
-
-            {selectedVariant?.potSizeId && colors.length > 0 ? (
-              <section className="w-full">
-                <h2 id="shop-colors-heading" className="text-heading-sm font-medium text-foreground">
-                  {t(locale, "shop.potColors")}
-                </h2>
-                <div
-                  className="mt-4 flex flex-wrap items-center justify-center gap-2"
-                  role="radiogroup"
-                  aria-labelledby="shop-colors-heading"
-                >
-                  {colors.map((color) => {
-                    const selected = color.id === selectedColorId;
-                    const label = localizedPlantText(locale, color.color, color.colorHe);
-                    return (
-                      <button
-                        key={color.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        aria-label={label}
-                        title={label}
-                        onClick={() => setSelectedColorId(color.id)}
-                        className={`h-8 w-8 rounded-full border border-black/15 ${ctaFocusClass} ${
-                          selected ? "ring-2 ring-brand ring-offset-2" : ""
-                        }`}
-                        style={{ backgroundColor: color.color }}
-                      />
                     );
                   })}
                 </div>

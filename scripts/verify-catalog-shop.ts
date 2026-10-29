@@ -149,7 +149,8 @@ function assertShopWiring(): void {
 
   const potsApi = read("app/api/pots/route.ts");
   assert.match(potsApi, /isAdminRequest/);
-  assert.match(read("app/api/pots/[potId]/sizes/route.ts"), /isAdminRequest/);
+  assert.match(read("app/api/pots/[potId]/route.ts"), /isAdminRequest/);
+  assert.equal(existsSync(join(root, "app/api/pots/[potId]/sizes/route.ts")), false);
   assert.equal(existsSync(join(root, "app/api/pots/[potId]/variants/route.ts")), false);
 
   console.log("verify-catalog-shop: shop wiring leaves POS and plant variants unchanged");
@@ -191,10 +192,10 @@ async function main(): Promise<void> {
       variants: [
         {
           id: `${id}-v`,
-          potSizeId: null,
+          potId: null,
           offerId: `${id}-o`,
           unitPrice: 40,
-          colors: [],
+          potQuantity: 0,
         },
       ],
     };
@@ -213,30 +214,28 @@ async function main(): Promise<void> {
   assert.equal(defaultCatalogCardSizeId([sizeS, soldOutM, sizeL], "M"), "size-m-out");
   const potA = {
     id: "sv-b",
-    potSizeId: "ps-b",
+    potId: "pot-b",
     potName: "Beta",
     potImage: "/plant-library/beta.jpg",
-    potSizeLabel: "L",
     offerId: "o-b",
     unitPrice: 20,
-    colors: [{ id: "c-b", color: "Black", quantity: 2 }],
+    potQuantity: 2,
   };
   const potB = {
     id: "sv-a",
-    potSizeId: "ps-a",
+    potId: "pot-a",
     potName: "Alpha",
     potImage: "/plant-library/alpha.jpg",
-    potSizeLabel: "M",
     offerId: "o-a",
     unitPrice: 30,
-    colors: [{ id: "c-a", color: "White", quantity: 1 }],
+    potQuantity: 1,
   };
   const noPot = {
     id: "sv-none",
-    potSizeId: null,
+    potId: null,
     offerId: "o-none",
     unitPrice: 10,
-    colors: [],
+    potQuantity: 0,
   };
   const sized = { id: "size", quantity: 3, variants: [potA, potB, noPot] };
   assert.equal(resolveCardVariant(sized)?.id, "sv-a");
@@ -251,7 +250,6 @@ async function main(): Promise<void> {
     resolveExplicitConfiguration(
       { id: "size", quantity: 3, variants: [imagelessAlpha] },
       "sv-bare",
-      "c-a",
     )?.offerId,
     "o-a",
   );
@@ -316,7 +314,6 @@ async function main(): Promise<void> {
   const { applyInventoryDelta } = await import("../lib/inventoryStorage");
   const { readCatalogShopCards, readCatalogShopDetail } = await import("../lib/catalogShop");
   const { createPot, updatePot } = await import("../lib/potStorage");
-  const { createPotColor, createPotSize } = await import("../lib/potSizeStorage");
   const { applyPotInventoryDelta } = await import("../lib/potInventoryStorage");
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
@@ -340,7 +337,7 @@ async function main(): Promise<void> {
     const variant = await createSellableVariant({
       plantId: testPlantId,
       plantSizeId,
-      potSizeId: null,
+      potId: null,
     });
     sellableIds.push(variant.sellableVariantId);
     await createOrReusePlantOffer({
@@ -368,20 +365,6 @@ async function main(): Promise<void> {
     }
     await deletePlant(testPlantId);
     if (potIds.length > 0) {
-      await sql`DELETE FROM pot_inventory_history WHERE pot_color_id IN (
-        SELECT c.id FROM pot_colors c
-        JOIN pot_sizes s ON s.id = c.pot_size_id
-        WHERE s.pot_id = ANY(${potIds}::uuid[])
-      )`;
-      await sql`DELETE FROM pot_inventory WHERE pot_color_id IN (
-        SELECT c.id FROM pot_colors c
-        JOIN pot_sizes s ON s.id = c.pot_size_id
-        WHERE s.pot_id = ANY(${potIds}::uuid[])
-      )`;
-      await sql`DELETE FROM pot_colors WHERE pot_size_id IN (
-        SELECT id FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])
-      )`;
-      await sql`DELETE FROM pot_sizes WHERE pot_id = ANY(${potIds}::uuid[])`;
       await sql`DELETE FROM pots WHERE id = ANY(${potIds}::uuid[])`;
     }
   }
@@ -542,28 +525,20 @@ async function main(): Promise<void> {
       ["S", "M", "L"],
     );
     assert.equal(
-      cardSizes.every((size) => size.variants.every((variant) => variant.potSizeId == null)),
+      cardSizes.every((size) => size.variants.every((variant) => variant.potId == null)),
       true,
     );
 
-    const claySize = await createPotSize({ potId: clay.id, sizeLabel: "M", supplierPrice: 8 });
-    const clayColor = await createPotColor({
-      potId: clay.id,
-      sizeId: claySize.id,
-      color: "White",
-      colorHe: "לבן",
-    });
+    await updatePot({ potId: clay.id, supplierPrice: 8 });
     await applyPotInventoryDelta({
       potId: clay.id,
-      sizeId: claySize.id,
-      potColorId: clayColor.id,
       delta: 2,
       note: `${tag} clay`,
     });
     const claySellable = await createSellableVariant({
       plantId: testPlantId,
       plantSizeId: medium.id,
-      potSizeId: claySize.id,
+      potId: clay.id,
     });
     sellableIds.push(claySellable.sellableVariantId);
     const clayOffer = await createOrReusePlantOffer({
@@ -571,24 +546,16 @@ async function main(): Promise<void> {
       consumerPrice: 110,
       availabilities: [{ scope: "catalog" }],
     });
-    const stoneSize = await createPotSize({ potId: stone.id, sizeLabel: "M", supplierPrice: 6 });
-    const stoneColor = await createPotColor({
-      potId: stone.id,
-      sizeId: stoneSize.id,
-      color: "Terracotta",
-      colorHe: "טרקוטה",
-    });
+    await updatePot({ potId: stone.id, supplierPrice: 6 });
     await applyPotInventoryDelta({
       potId: stone.id,
-      sizeId: stoneSize.id,
-      potColorId: stoneColor.id,
       delta: 2,
       note: `${tag} stone`,
     });
     const stoneSellable = await createSellableVariant({
       plantId: testPlantId,
       plantSizeId: medium.id,
-      potSizeId: stoneSize.id,
+      potId: stone.id,
     });
     sellableIds.push(stoneSellable.sellableVariantId);
     const stoneOffer = await createOrReusePlantOffer({
@@ -627,7 +594,7 @@ async function main(): Promise<void> {
     assert.equal(resolveCardVariant(sizeM)?.id, claySellable.sellableVariantId);
     assert.equal(resolveCardVariant(sizeM)?.potImage, sourcePlant.images[0]);
     assert.equal(
-      resolveExplicitConfiguration(sizeM, stoneSellable.sellableVariantId, stoneColor.id)?.offerId,
+      resolveExplicitConfiguration(sizeM, stoneSellable.sellableVariantId)?.offerId,
       stoneOffer.offer.id,
     );
     await updatePot({ potId: clay.id, image: null });

@@ -128,7 +128,8 @@ function assertCustomerPathsUntouched(): void {
   }
   assert.doesNotMatch(read("lib/offerTypes.ts"), /variantId\?:/);
   assert.match(read("lib/posOccupancy.ts"), /isPlantPosEligibleOffer/);
-  assert.match(read("components/admin/AdminPartnerDetail.tsx"), /potColorId/);
+  assert.match(read("components/admin/AdminPartnerDetail.tsx"), /potId/);
+  assert.doesNotMatch(read("components/admin/AdminPartnerDetail.tsx"), /potColorId/);
   const offersApi = read("app/api/offers/route.ts");
   const getFn = offersApi.slice(
     offersApi.indexOf("export async function GET"),
@@ -170,8 +171,7 @@ async function main(): Promise<void> {
   const { parsePlantBody } = await import("../lib/plantValidation");
   const { createPlant, deletePlant } = await import("../lib/plantStorage");
   const { createPlantVariant } = await import("../lib/plantVariantStorage");
-  const { createPot, deletePot } = await import("../lib/potStorage");
-  const { createPotSize } = await import("../lib/potSizeStorage");
+  const { createPot, deletePot, updatePot } = await import("../lib/potStorage");
   const { createSellableVariant, deleteSellableVariant, SellableVariantWriteError } =
     await import("../lib/sellableVariantStorage");
   const { createPartner } = await import("../lib/partnerStorage");
@@ -291,12 +291,12 @@ async function main(): Promise<void> {
     const size = await createPlantVariant({ plantId, sizeLabel: "M" });
     const pot = await createPot({ name: `${tag} pot` });
     potId = pot.id;
-    const potSize = await createPotSize({ potId, sizeLabel: "M", supplierPrice: 12.5 });
-    const noPot = await createSellableVariant({ plantId, plantSizeId: size.id, potSizeId: null });
+    await updatePot({ potId, supplierPrice: 12.5 });
+    const noPot = await createSellableVariant({ plantId, plantSizeId: size.id, potId: null });
     const withPot = await createSellableVariant({
       plantId,
       plantSizeId: size.id,
-      potSizeId: potSize.id,
+      potId,
     });
     assert.equal(noPot.supplierCost, 40);
     assert.equal(withPot.supplierCost, 52.5);
@@ -780,7 +780,6 @@ async function main(): Promise<void> {
     if (otherPlantId) await deletePlant(otherPlantId).catch(() => undefined);
     if (flowerId) await deletePlant(flowerId).catch(() => undefined);
     if (potId) {
-      await sql`DELETE FROM pot_sizes WHERE pot_id = ${potId}::uuid`.catch(() => undefined);
       await deletePot(potId).catch(() => undefined);
     }
     for (const locationId of locationIds) {

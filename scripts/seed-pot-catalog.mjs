@@ -1,6 +1,6 @@
 /**
  * Load the Urban Plant pot catalog into pots + plant_library_images.
- * Uses the original generated PNGs. Does not resize or re-encode them.
+ * Uses the original generated PNG or JPEG files. Does not resize or re-encode them.
  *
  * Source photos default to the Desktop generated folder. Stable copies are
  * written to data/pot-catalog and stored in plant_library_images.
@@ -125,7 +125,48 @@ const CATALOG = [
     texture: null,
     match: (filename) => filename.includes("16"),
   },
+  {
+    filename: "pot-vaso-textured-natural-terracotta.jpg",
+    name: "טרקוטה טבעי מחורץ",
+    family: "Vaso Textured",
+    diameterCm: null,
+    material: "Terracotta",
+    color: "Natural terracotta / warm peach-beige",
+    form: "classic",
+    texture:
+      "Textured horizontal band near the rim. Natural terracotta look. Softer, lighter tone than classic orange terracotta.",
+    match: (filename) => filename === "pot-vaso-textured-natural-terracotta.jpg",
+  },
+  {
+    filename: "pot-vaso-minimal-beige-ceramic.jpg",
+    name: "קרמי בז׳ מינימליסטי",
+    family: "Vaso Minimal",
+    diameterCm: null,
+    material: "Ceramic",
+    color: "Beige / ivory / warm off-white",
+    form: "classic",
+    texture: "Smooth minimal finish. Clean, simple, modern look.",
+    match: (filename) => filename === "pot-vaso-minimal-beige-ceramic.jpg",
+  },
+  {
+    filename: "pot-concrete-classic-light-grey.jpg",
+    name: "בטון אפור בהיר",
+    family: "Concrete Classic",
+    diameterCm: null,
+    material: "Concrete / stone-look",
+    color: "Light grey",
+    form: "classic",
+    texture:
+      "Weathered concrete texture. Mineral/mottled surface. Natural stone-like finish.",
+    match: (filename) => filename === "pot-concrete-classic-light-grey.jpg",
+  },
 ];
+
+function catalogImageMime(buffer, filename) {
+  if (buffer.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") return "image/png";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  throw new Error(`${filename} is not a PNG or JPEG`);
+}
 
 async function ensureCatalogFiles() {
   await mkdir(catalogDir, { recursive: true });
@@ -163,13 +204,11 @@ const results = [];
 for (const item of CATALOG) {
   const filePath = path.join(catalogDir, item.filename);
   const buffer = await readFile(filePath);
-  if (buffer.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
-    throw new Error(`${item.filename} is not a PNG`);
-  }
+  const mimeType = catalogImageMime(buffer, item.filename);
 
   await sql`
     INSERT INTO plant_library_images (filename, mime_type, data)
-    VALUES (${item.filename}, ${"image/png"}, ${buffer})
+    VALUES (${item.filename}, ${mimeType}, ${buffer})
     ON CONFLICT (filename) DO UPDATE
     SET mime_type = EXCLUDED.mime_type,
         data = EXCLUDED.data,
@@ -177,14 +216,24 @@ for (const item of CATALOG) {
   `;
 
   const image = `/plant-library/${item.filename}`;
-  const existing = await sql`
-    SELECT id
-    FROM pots
-    WHERE family = ${item.family}
-      AND diameter_cm = ${item.diameterCm}
-      AND color = ${item.color}
-    LIMIT 1
-  `;
+  const existing =
+    item.diameterCm == null
+      ? await sql`
+          SELECT id
+          FROM pots
+          WHERE family = ${item.family}
+            AND diameter_cm IS NULL
+            AND color = ${item.color}
+          LIMIT 1
+        `
+      : await sql`
+          SELECT id
+          FROM pots
+          WHERE family = ${item.family}
+            AND diameter_cm = ${item.diameterCm}
+            AND color = ${item.color}
+          LIMIT 1
+        `;
   const current = existing[0];
   const rows = current
     ? await sql`
