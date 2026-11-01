@@ -108,6 +108,11 @@ function parseImages(value: unknown): string[] {
     .filter(Boolean);
 }
 
+/** Catalog card thumbnail: the first persisted plant image, in stored order. */
+export function firstStoredPlantImage(value: unknown): string | undefined {
+  return parseImages(value)[0];
+}
+
 function parseCurrency(value: string): PlantProduct["currency"] {
   if (value === "USD" || value === "EUR" || value === "ILS") return value;
   return "ILS";
@@ -333,7 +338,7 @@ export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
 
   return plants.map((plant) => {
     const nameHe = optionalTrimmed(plant.name_he);
-    const image = parseImages(plant.images)[0];
+    const image = firstStoredPlantImage(plant.images);
     const sizes = sizesByPlant.get(plant.id) ?? [];
     return {
       id: plant.id,

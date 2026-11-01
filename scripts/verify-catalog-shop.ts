@@ -77,6 +77,10 @@ function assertShopWiring(): void {
   assert.match(detailUi, /from \"@\/lib\/catalogShopSelection\"/);
   assert.match(detailUi, /import type \{ CatalogShopDetail/);
   assert.match(detailUi, /selectedVariantId/);
+  assert.match(detailUi, /variant\.potImage/);
+  assert.match(detailUi, /shop\.noPot/);
+  assert.match(detailUi, /selectNoPot/);
+  assert.doesNotMatch(detailUi, /variantChoiceLabel/);
   assert.doesNotMatch(detailUi, /catalog_price/);
   assert.doesNotMatch(detailUi, /difficulty/);
   assert.match(detailUi, /petFriendly=\{plant\.petFriendly\}/);
@@ -102,6 +106,10 @@ function assertShopWiring(): void {
   assert.match(shopCard, /selectedSizeId/);
   assert.match(shopCard, /resolved && resolvedVariant\?\.potImage/);
   assert.match(shopCard, /src=\{resolvedVariant\.potImage\}/);
+  assert.match(shopCard, /additionalVariantOptionCount/);
+  assert.match(shopCard, /extraOptions > 0/);
+  assert.doesNotMatch(shopCard, /GalleryCue/);
+  assert.doesNotMatch(shopCard, /shop\.unavailable/);
   assert.doesNotMatch(shopCard, /useState\(sizeOptions\[0\]/);
   assert.doesNotMatch(shopCard, /useState\(""\)/);
   assert.doesNotMatch(shopCard, /opacity-60/);
@@ -160,6 +168,7 @@ async function main(): Promise<void> {
   assertShopWiring();
 
   const {
+    additionalVariantOptionCount,
     catalogSizeChoices,
     defaultCatalogCardSizeId,
     plantMatchesCatalogSizeFilter,
@@ -211,7 +220,8 @@ async function main(): Promise<void> {
   assert.equal(defaultCatalogCardSizeId([sizeS, sizeM, sizeL], "L"), "size-l");
   assert.equal(defaultCatalogCardSizeId([sizeS, sizeM, sizeL], "S"), "size-s");
   assert.equal(defaultCatalogCardSizeId([sizeS, soldOutM, sizeL]), "size-s");
-  assert.equal(defaultCatalogCardSizeId([sizeS, soldOutM, sizeL], "M"), "size-m-out");
+  assert.equal(defaultCatalogCardSizeId([sizeS, soldOutM, sizeL], "M"), "size-s");
+  assert.equal(defaultCatalogCardSizeId([soldOutM]), "");
   const potA = {
     id: "sv-b",
     potId: "pot-b",
@@ -245,6 +255,13 @@ async function main(): Promise<void> {
   assert.equal(
     resolveCardVariant({ ...sized, variants: [potA, imagelessAlpha, noPot] })?.id,
     "sv-bare",
+  );
+  const counted = { ...sized, sizeLabel: "M" };
+  assert.equal(additionalVariantOptionCount([counted], "sv-a"), 2);
+  assert.equal(additionalVariantOptionCount([counted], "sv-none"), 2);
+  assert.equal(
+    additionalVariantOptionCount([{ ...counted, variants: [potB] }], "sv-a"),
+    0,
   );
   assert.equal(
     resolveExplicitConfiguration(
@@ -312,7 +329,25 @@ async function main(): Promise<void> {
     "../lib/plantVariantStorage"
   );
   const { applyInventoryDelta } = await import("../lib/inventoryStorage");
-  const { readCatalogShopCards, readCatalogShopDetail } = await import("../lib/catalogShop");
+  const { firstStoredPlantImage, readCatalogShopCards, readCatalogShopDetail } = await import(
+    "../lib/catalogShop"
+  );
+  assert.equal(
+    firstStoredPlantImage([
+      "/plant-library/green-island-ficus-tree-catalog-b9ced762.png",
+      "/plant-library/green-island-ficus-tree-room-de0435a6.png",
+    ]),
+    "/plant-library/green-island-ficus-tree-catalog-b9ced762.png",
+  );
+  assert.equal(
+    firstStoredPlantImage([
+      "/plant-library/happy-leaf-photos-room-1f7bb676.jpg",
+      "/plant-library/happy-leaf-photos-catalog-26ebd598.jpg",
+    ]),
+    "/plant-library/happy-leaf-photos-room-1f7bb676.jpg",
+  );
+  assert.equal(firstStoredPlantImage(["  /a.jpg  ", "", "/b.jpg"]), "/a.jpg");
+  assert.equal(firstStoredPlantImage("not-an-array"), undefined);
   const { createPot, updatePot } = await import("../lib/potStorage");
   const { applyPotInventoryDelta } = await import("../lib/potInventoryStorage");
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");

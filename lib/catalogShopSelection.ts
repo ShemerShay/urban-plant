@@ -37,19 +37,22 @@ export type CatalogSizeChoice = {
 };
 
 /**
- * Catalog-card default Plant Size. Filter wins when that size exists.
+ * Catalog-card default Plant Size.
+ * The selected filter wins only when that size is sellable.
  * Otherwise prefer eligible M, then a sole eligible size, then S, then L.
+ * An unsellable size is never the default.
  */
 export function defaultCatalogCardSizeId(
   sizes: CatalogSizeChoice[],
   filter: "all" | PlantSizeLabel = "all",
 ): string {
-  const choices = catalogSizeChoices(sizes);
+  const eligible = catalogSizeChoices(sizes).filter(
+    (size) => resolveCardConfiguration(size) != null,
+  );
   if (filter !== "all") {
-    const filtered = choices.find((size) => size.sizeLabel === filter);
+    const filtered = eligible.find((size) => size.sizeLabel === filter);
     if (filtered) return filtered.id;
   }
-  const eligible = choices.filter((size) => resolveCardConfiguration(size) != null);
   const medium = eligible.find((size) => size.sizeLabel === "M");
   if (medium) return medium.id;
   if (eligible.length === 1 && eligible[0]) return eligible[0].id;
@@ -57,9 +60,23 @@ export function defaultCatalogCardSizeId(
     const next = eligible.find((size) => size.sizeLabel === label);
     if (next) return next.id;
   }
-  const fallbackMedium = choices.find((size) => size.sizeLabel === "M");
-  if (fallbackMedium) return fallbackMedium.id;
-  return choices[0]?.id ?? "";
+  return "";
+}
+
+/** Other sellable Variants on the plant page, besides the one this card resolved. */
+export function additionalVariantOptionCount(
+  sizes: CatalogSizeChoice[],
+  selectedVariantId: string | null,
+): number {
+  let count = 0;
+  for (const size of catalogSizeChoices(sizes)) {
+    for (const variant of size.variants) {
+      if (!variantIsEligible(size, variant)) continue;
+      if (selectedVariantId && variant.id === selectedVariantId) continue;
+      count += 1;
+    }
+  }
+  return count;
 }
 
 export type CatalogResolvedConfiguration = {
