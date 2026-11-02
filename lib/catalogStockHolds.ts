@@ -9,6 +9,7 @@
 
 import "server-only";
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { PAYMENT_HOLD_TTL_MS } from "@/lib/paymentHoldExpiry";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
@@ -351,6 +352,7 @@ export async function acquireCatalogStockHolds(input: {
     await mapAcquireError(error, attemptId);
   }
 
+  await revalidateCatalogShopCache();
   return listCatalogStockHoldsForAttempt(attemptId);
 }
 
@@ -408,7 +410,9 @@ export async function releaseCatalogStockHolds(attemptId: string): Promise<numbe
       AND status = 'active'
     RETURNING id
   `;
-  return (rows as unknown[]).length;
+  const released = (rows as unknown[]).length;
+  if (released > 0) await revalidateCatalogShopCache();
+  return released;
 }
 
 /**
@@ -435,7 +439,9 @@ export async function expireStaleCatalogStockHolds(options?: {
           AND expires_at <= now()
         RETURNING id
       `;
-  return (rows as unknown[]).length;
+  const expired = (rows as unknown[]).length;
+  if (expired > 0) await revalidateCatalogShopCache();
+  return expired;
 }
 
 /**
@@ -453,5 +459,7 @@ export async function consumeCatalogStockHolds(attemptId: string): Promise<numbe
       AND expires_at > now()
     RETURNING id
   `;
-  return (rows as unknown[]).length;
+  const consumed = (rows as unknown[]).length;
+  if (consumed > 0) await revalidateCatalogShopCache();
+  return consumed;
 }

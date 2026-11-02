@@ -3,6 +3,7 @@
  * Partner/POS placement is not stock. Flowers are not writable.
  */
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
@@ -268,6 +269,7 @@ export async function applyInventoryDelta(input: {
         "Inventory quantity cannot go below 0",
       );
     }
+    await revalidateCatalogShopCache();
     return mapBalance(row);
   } catch (error) {
     mapInventoryWriteError(error);

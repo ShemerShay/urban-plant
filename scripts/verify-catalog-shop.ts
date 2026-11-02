@@ -54,7 +54,27 @@ function assertShopWiring(): void {
   assert.doesNotMatch(shop, /average_size/);
   assert.doesNotMatch(shop, /averageSize/);
 
-  const shopPage = read("app/shop/page.tsx");
+  const shopCache = read("lib/catalogShopCache.ts");
+  assert.match(shopCache, /CATALOG_SHOP_CACHE_TAG = "catalog-shop"/);
+  assert.match(shopCache, /CATALOG_SHOP_REVALIDATE_SECONDS = 15/);
+  assert.match(shopCache, /revalidateCatalogShopCache/);
+  assert.match(shop, /unstable_cache/);
+  assert.match(shop, /CATALOG_SHOP_CACHE_TAG/);
+  assert.match(shop, /resolveCatalogCartLines/);
+  assert.doesNotMatch(
+    shop.slice(shop.indexOf("export async function resolveCatalogCartLines")),
+    /unstable_cache/,
+  );
+
+  const shopLoading = read("app/shop/(browse)/loading.tsx");
+  assert.match(shopLoading, /ShopSoftSpinner/);
+  const plantLoading = read("app/shop/plants/[plantId]/loading.tsx");
+  assert.match(plantLoading, /ShopSoftSpinner/);
+  const plantLayout = read("app/shop/plants/[plantId]/layout.tsx");
+  assert.match(plantLayout, /readCatalogShopDetail/);
+  assert.match(plantLayout, /notFound/);
+
+  const shopPage = read("app/shop/(browse)/page.tsx");
   assert.match(shopPage, /readCatalogShopCards/);
   assert.match(shopPage, /max-w-5xl/);
   assert.match(shopPage, /ShopCatalogBar/);
@@ -70,10 +90,15 @@ function assertShopWiring(): void {
   assert.doesNotMatch(shopPage, /TrackPosScan/);
 
   const grid = read("components/shop/ShopCatalogGrid.tsx");
-  assert.match(grid, /plantMatchesCatalogSizeFilter/);
+  assert.match(grid, /ShopCatalogSizeFilter/);
   assert.match(grid, /plantSizeCodes/);
-  assert.match(grid, /sizeFilter=\{filter\}/);
+  assert.doesNotMatch(grid, /"use client"/);
   assert.doesNotMatch(grid, /averageSize/);
+  const sizeFilter = read("components/shop/ShopCatalogSizeFilter.tsx");
+  assert.match(sizeFilter, /"use client"/);
+  assert.match(sizeFilter, /plantMatchesCatalogSizeFilter/);
+  assert.match(sizeFilter, /plantSizeCodes/);
+  assert.match(sizeFilter, /plantMatchesCatalogSizeFilter\(item\.plantSizeCodes, filter\)/);
 
   const detailPage = read("app/shop/plants/[plantId]/page.tsx");
   assert.match(detailPage, /readCatalogShopDetail/);
@@ -112,24 +137,32 @@ function assertShopWiring(): void {
   assert.doesNotMatch(detailUi, /routes\.cart/);
 
   const shopCard = read("components/shop/ShopPlantCard.tsx");
-  assert.match(shopCard, /formatCatalogPrice/);
-  assert.match(shopCard, /CatalogSizeOptions/);
-  assert.match(shopCard, /resolveCardConfiguration/);
-  assert.match(shopCard, /defaultCatalogCardSizeId/);
-  assert.match(shopCard, /addCatalogCartItem/);
   assert.match(shopCard, /w-4\/5/);
-  assert.match(shopCard, /ANALYTICS_EVENTS\.addToCart/);
-  assert.match(shopCard, /selectedSizeId/);
-  assert.match(shopCard, /resolved && resolvedVariant\?\.potImage/);
-  assert.match(shopCard, /src=\{resolvedVariant\.potImage\}/);
-  assert.match(shopCard, /additionalVariantOptionCount/);
-  assert.match(shopCard, /extraOptions > 0/);
+  assert.doesNotMatch(shopCard, /"use client"/);
   assert.doesNotMatch(shopCard, /GalleryCue/);
   assert.doesNotMatch(shopCard, /shop\.unavailable/);
-  assert.doesNotMatch(shopCard, /useState\(sizeOptions\[0\]/);
-  assert.doesNotMatch(shopCard, /useState\(""\)/);
   assert.doesNotMatch(shopCard, /opacity-60/);
   assert.doesNotMatch(shopCard, /startCardcom/);
+  const shopCardActions = read("components/shop/ShopPlantCardActions.tsx");
+  assert.match(shopCardActions, /"use client"/);
+  assert.match(shopCardActions, /formatCatalogPrice/);
+  assert.match(shopCardActions, /CatalogSizeOptions/);
+  assert.match(shopCardActions, /resolveCardConfiguration/);
+  assert.match(shopCardActions, /defaultCatalogCardSizeId\(plant\.sizes, filter\)/);
+  assert.match(shopCardActions, /addCatalogCartItem/);
+  assert.match(shopCardActions, /w-4\/5/);
+  assert.match(shopCardActions, /ANALYTICS_EVENTS\.addToCart/);
+  assert.match(shopCardActions, /selectedSizeId/);
+  assert.match(shopCardActions, /resolved && resolvedVariant\?\.potImage/);
+  assert.match(shopCardActions, /src=\{resolvedVariant\.potImage\}/);
+  assert.match(shopCardActions, /additionalVariantOptionCount/);
+  assert.match(shopCardActions, /extraOptions > 0/);
+  assert.doesNotMatch(shopCardActions, /GalleryCue/);
+  assert.doesNotMatch(shopCardActions, /shop\.unavailable/);
+  assert.doesNotMatch(shopCardActions, /useState\(sizeOptions\[0\]/);
+  assert.doesNotMatch(shopCardActions, /useState\(""\)/);
+  assert.doesNotMatch(shopCardActions, /opacity-60/);
+  assert.doesNotMatch(shopCardActions, /startCardcom/);
 
   const tracker = read("components/analytics/TrackProductView.tsx");
   assert.match(tracker, /captureOncePerSession/);

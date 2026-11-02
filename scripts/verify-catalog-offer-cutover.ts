@@ -55,18 +55,24 @@ function assertSources(): void {
   assert.doesNotMatch(purchase, /plant_price|pot_price|pot_variant_id|plantUnitPrice/);
 
   const card = read("components/shop/ShopPlantCard.tsx");
-  assert.match(card, /defaultCatalogCardSizeId/);
-  assert.doesNotMatch(card, /useState\(""\)/);
-  assert.doesNotMatch(card, /opacity-60/);
-  assert.match(card, /resolveCardConfiguration/);
-  assert.doesNotMatch(card, /additionalInStockColorCount/);
   assert.match(card, /w-4\/5/);
-  assert.match(card, /ANALYTICS_EVENTS\.addToCart/);
-  assert.match(card, /disabled=\{!canAdd\}/);
-  assert.match(card, /resolved && resolvedVariant\?\.potImage/);
-  assert.match(card, /src=\{resolvedVariant\.potImage\}/);
+  assert.doesNotMatch(card, /"use client"/);
+  assert.doesNotMatch(card, /opacity-60/);
   assert.doesNotMatch(card, /backgroundColor/);
   assert.doesNotMatch(card, /plant_price|pot_price|potVariantId/);
+  const cardActions = read("components/shop/ShopPlantCardActions.tsx");
+  assert.match(cardActions, /defaultCatalogCardSizeId/);
+  assert.doesNotMatch(cardActions, /useState\(""\)/);
+  assert.doesNotMatch(cardActions, /opacity-60/);
+  assert.match(cardActions, /resolveCardConfiguration/);
+  assert.doesNotMatch(cardActions, /additionalInStockColorCount/);
+  assert.match(cardActions, /w-4\/5/);
+  assert.match(cardActions, /ANALYTICS_EVENTS\.addToCart/);
+  assert.match(cardActions, /disabled=\{!canAdd\}/);
+  assert.match(cardActions, /resolved && resolvedVariant\?\.potImage/);
+  assert.match(cardActions, /src=\{resolvedVariant\.potImage\}/);
+  assert.doesNotMatch(cardActions, /backgroundColor/);
+  assert.doesNotMatch(cardActions, /plant_price|pot_price|potVariantId/);
 
   const detail = read("components/shop/ShopPlantDetail.tsx");
   assert.match(detail, /resolveExplicitConfiguration/);
@@ -80,7 +86,7 @@ function assertSources(): void {
   assert.match(cartUi, /sellable_variant_id: line\.sellableVariantId/);
   assert.doesNotMatch(cartUi, /plant_price|pot_price|pot_variant_id/);
 
-  const shopPage = read("app/shop/page.tsx");
+  const shopPage = read("app/shop/(browse)/page.tsx");
   const plantPage = read("app/shop/plants/[plantId]/page.tsx");
   assert.match(shopPage, /PlantPageContactLink/);
   assert.match(shopPage, /shop\.whatsapp/);

@@ -3,6 +3,7 @@
  * A missing row is 0. This table is not plant inventory.
  */
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { isDatabaseUuid } from "@/lib/potStorage";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
@@ -233,6 +234,7 @@ export async function applyPotInventoryDelta(input: {
         "Inventory quantity cannot go below 0",
       );
     }
+    await revalidateCatalogShopCache();
     return mapBalance(row);
   } catch (error) {
     mapWriteError(error);

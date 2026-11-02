@@ -7,6 +7,7 @@
  * POS occupancy still keys off variant id / size fields only.
  */
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { applyInventoryDelta, getInventoryQuantities } from "@/lib/inventoryStorage";
 import { isPlantSizeLabel } from "@/lib/plantSizes";
@@ -301,6 +302,7 @@ export async function createPlantVariant(input: {
   `;
   const row = (rows as PlantVariantRow[])[0];
   if (!row) throw new Error("Could not create variant");
+  await revalidateCatalogShopCache();
   return mapPlantVariantRow(row);
 }
 
@@ -393,6 +395,7 @@ export async function updatePlantVariant(input: {
   `;
   const row = (rows as PlantVariantRow[])[0];
   if (!row) throw new PlantVariantWriteError("not_found", "Variant not found");
+  await revalidateCatalogShopCache();
   return mapPlantVariantRow(row);
 }
 
@@ -431,6 +434,7 @@ export async function deletePlantVariant(input: {
     }
     throw error;
   }
+  await revalidateCatalogShopCache();
 }
 
 export function plantVariantWriteHttp(error: PlantVariantWriteError): {

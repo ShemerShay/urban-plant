@@ -2,6 +2,7 @@
  * Plant catalog backed by Neon Postgres (`plants` table).
  */
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { inventoryTypeOrDefault, type InventoryType } from "@/lib/inventoryType";
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
@@ -233,6 +234,7 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
   `;
   const row = (rows as PlantRow[])[0];
   if (!row) throw new Error("Could not create plant");
+  await revalidateCatalogShopCache();
   return mapPlantRow(row);
 }
 
@@ -281,7 +283,9 @@ export async function updatePlant(
       care_instructions, created_at, inventory_type, catalog_published
   `;
   const row = (rows as PlantRow[])[0];
-  return row ? mapPlantRow(row) : null;
+  if (!row) return null;
+  await revalidateCatalogShopCache();
+  return mapPlantRow(row);
 }
 
 export async function deletePlant(id: string): Promise<boolean> {
@@ -292,5 +296,7 @@ export async function deletePlant(id: string): Promise<boolean> {
     WHERE id = ${trimmed}
     RETURNING id
   `;
-  return (rows as { id: string }[]).length > 0;
+  const deleted = (rows as { id: string }[]).length > 0;
+  if (deleted) await revalidateCatalogShopCache();
+  return deleted;
 }

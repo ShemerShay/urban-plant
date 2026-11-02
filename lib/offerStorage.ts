@@ -5,6 +5,7 @@
 
 import { randomUUID } from "crypto";
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import type { InventoryType } from "@/lib/inventoryType";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
@@ -566,6 +567,7 @@ export async function createOrReusePlantOffer(input: {
     reused = row.reused === true || String(row.reused) === "t" || String(row.reused) === "true";
     const offer = await getOfferById(row.offer_id);
     if (!offer) throw new OfferWriteError("not_found", "Offer not found");
+    await revalidateCatalogShopCache();
     return { offer, reused };
   } catch (error) {
     if (error instanceof OfferWriteError) throw error;
@@ -628,6 +630,7 @@ export async function updateOffer(
       if (error instanceof OfferWriteError) throw error;
       throwMapped(error);
     }
+    await revalidateCatalogShopCache();
     return getOfferById(trimmed);
   }
 
@@ -641,5 +644,6 @@ export async function updateOffer(
     if (error instanceof OfferWriteError) throw error;
     throwMapped(error);
   }
+  await revalidateCatalogShopCache();
   return getOfferById(trimmed);
 }

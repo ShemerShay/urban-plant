@@ -3,6 +3,7 @@
  * No selling price and no inventory. Cost is derived, not stored.
  */
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { isDatabaseUuid } from "@/lib/potStorage";
 import { getPlantByIdAsync } from "@/lib/plantStorage";
@@ -320,6 +321,7 @@ export async function createSellableVariant(input: {
     `;
     const id = (inserted as { id: string }[])[0]?.id;
     if (!id) throw new SellableVariantWriteError("not_found", "Variant not found");
+    await revalidateCatalogShopCache();
     return readMappedSellableVariant(id);
   } catch (error) {
     if (error instanceof SellableVariantWriteError) throw error;
@@ -443,6 +445,7 @@ export async function updateSellableVariantPot(input: {
       if (await sellableVariantHasActiveOffer(current.id)) throw activeOfferLockError();
       throw new SellableVariantWriteError("not_found", "Variant not found");
     }
+    await revalidateCatalogShopCache();
     return readMappedSellableVariant(id);
   } catch (error) {
     if (error instanceof SellableVariantWriteError) throw error;
@@ -495,4 +498,5 @@ export async function deleteSellableVariant(input: {
     }
     throw error;
   }
+  await revalidateCatalogShopCache();
 }

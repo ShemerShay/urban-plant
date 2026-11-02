@@ -3,6 +3,7 @@
  * Selling price lives on the Offer. Central quantity lives in pot_inventory.
  */
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 
 export const POT_FORMS = ["classic", "tall", "bowl"] as const;
@@ -221,6 +222,7 @@ export async function createPot(input: {
   const id = (rows as { id: string }[])[0]?.id;
   const pot = id ? await getPotById(id) : undefined;
   if (!pot) throw new PotWriteError("not_found", "Pot not found");
+  await revalidateCatalogShopCache();
   return pot;
 }
 
@@ -248,6 +250,7 @@ export async function updatePot(input: {
   `;
   const pot = await getPotById(existing.id);
   if (!pot) throw new PotWriteError("not_found", "Pot not found");
+  await revalidateCatalogShopCache();
   return pot;
 }
 
@@ -318,4 +321,5 @@ export async function deletePot(potId: string): Promise<void> {
     }
     throw error;
   }
+  await revalidateCatalogShopCache();
 }
