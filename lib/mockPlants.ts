@@ -1,7 +1,7 @@
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
 import { plantToWire, type PlantProductWire } from "@/lib/plantWire";
 import type { PlantProduct } from "@/lib/types";
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
+import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 
 /** Static seed catalog for client bundles. Server routes should use `@/lib/plantCatalog`. */
@@ -16,7 +16,7 @@ export function getPlantById(id: string): PlantProductWire | undefined {
 export function formatPrice(
   price: number,
   currency: PlantProduct["currency"],
-  locale: Locale = DEFAULT_LOCALE,
+  locale: Locale = "en",
 ) {
   return new Intl.NumberFormat(locale === "he" ? "he-IL" : "en-US", {
     style: "currency",
@@ -29,7 +29,7 @@ export function formatPrice(
 export function formatBuyCta(
   price: number,
   currency: PlantProduct["currency"],
-  locale: Locale = DEFAULT_LOCALE,
+  locale: Locale = "en",
 ) {
   const amount = currency === "ILS" ? `₪${price}` : formatPrice(price, currency, locale);
   return t(locale, "plant.cta.buy", { price: amount });

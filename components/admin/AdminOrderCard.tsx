@@ -313,7 +313,7 @@ export function AdminOrderCard({ order, catalogItems = [] }: AdminOrderCardProps
           {order.fulfillmentMethod === "delivery" &&
           (order.address.trim() || order.apartmentOrNotes.trim()) ? (
             <DetailRow icon={<IconMapPin className="size-4" />}>
-              {formatOrderDeliveryAddressDisplay(order, locale)}
+              {formatOrderDeliveryAddressDisplay(order, "en")}
             </DetailRow>
           ) : null}
         </div>

@@ -58,8 +58,7 @@ function catalogResume(
 }
 
 export default async function ShopCheckoutPage({ searchParams }: ShopCheckoutPageProps) {
-  const locale = await getLocale();
-  const sp = await searchParams;
+  const [locale, sp] = await Promise.all([getLocale(), searchParams]);
   const paymentFailedFlag =
     readParam(sp.paymentFailed) === "1" || readParam(sp.paymentFailed) === "true";
   const orderId = parseOrderIdQueryParam(readParam(sp.orderId));

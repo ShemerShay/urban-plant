@@ -455,7 +455,7 @@ function PartnerDetailView({
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.common.address")}</dt>
           <dd className="text-slate-900">
-            {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+            {formatStoredDeliveryAddressDisplay(partner.address, "en")}
           </dd>
         </div>
         <div className="flex flex-wrap gap-x-2">
@@ -600,7 +600,7 @@ function AdminPartnerCard({
               {partner.name}
             </span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">
-              {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+              {formatStoredDeliveryAddressDisplay(partner.address, "en")}
             </span>
             <span className="mt-1 block truncate text-xs text-slate-500">
               {partner.type}

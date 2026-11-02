@@ -7,7 +7,6 @@
 
 import type { CatalogCartItem, CatalogCartResolvedLine } from "@/lib/catalogCart";
 import { sql } from "@/lib/db";
-import { getInventoryQuantities } from "@/lib/inventoryStorage";
 import { catalogPlantSizeCodes, type PlantSizeLabel } from "@/lib/plantSizes";
 import type { LightLevel, PlantProduct } from "@/lib/types";
 
@@ -82,16 +81,17 @@ type VariantShopRow = {
   nursery_pot_diameter_cm: string | number | null;
 };
 
-type OfferVariantRow = {
-  id: string;
-  plant_variant_id: string;
+type CatalogConfigurationRow = VariantShopRow & {
+  plant_quantity: string | number;
+  sellable_variant_id: string | null;
   pot_id: string | null;
   pot_name: string | null;
   pot_name_he: string | null;
   pot_image: string | null;
   pot_color: string | null;
-  offer_id: string;
-  consumer_price: string | number;
+  offer_id: string | null;
+  consumer_price: string | number | null;
+  pot_quantity: string | number;
 };
 
 function optionalTrimmed(value: string | null | undefined): string | undefined {
@@ -166,59 +166,6 @@ function variantKey(id: string): string {
   return id.trim().toLowerCase();
 }
 
-async function readOfferVariants(plantVariantIds: string[]): Promise<OfferVariantRow[]> {
-  if (plantVariantIds.length === 0) return [];
-  const rows = await sql`
-    SELECT
-      sv.id,
-      sv.plant_variant_id,
-      sv.pot_id,
-      pot.name AS pot_name,
-      pot.name_he AS pot_name_he,
-      pot.image AS pot_image,
-      pot.color AS pot_color,
-      o.id AS offer_id,
-      o.consumer_price
-    FROM sellable_variants sv
-    INNER JOIN offers o
-      ON o.sellable_variant_id = sv.id
-     AND o.status = 'active'
-    INNER JOIN offer_availabilities a
-      ON a.offer_id = o.id
-     AND a.scope = 'catalog'
-    LEFT JOIN pots pot ON pot.id = sv.pot_id
-    WHERE sv.plant_variant_id = ANY(${plantVariantIds}::uuid[])
-    ORDER BY pot.name ASC NULLS FIRST, sv.id ASC
-  `;
-  return rows as OfferVariantRow[];
-}
-
-async function availablePotQuantities(potIds: string[]): Promise<Map<string, number>> {
-  const available = new Map<string, number>();
-  if (potIds.length === 0) return available;
-  const rows = await sql`
-    SELECT
-      p.id::text AS pot_id,
-      GREATEST(
-        COALESCE(i.quantity, 0) - COALESCE((
-          SELECT SUM(h.quantity)::int
-          FROM catalog_stock_holds h
-          WHERE h.pot_id = p.id
-            AND h.status = 'active'
-            AND h.expires_at > now()
-        ), 0),
-        0
-      )::int AS quantity
-    FROM pots p
-    LEFT JOIN pot_inventory i ON i.pot_id = p.id
-    WHERE p.id = ANY(${potIds}::uuid[])
-  `;
-  for (const row of rows as { pot_id: string; quantity: number | string }[]) {
-    available.set(variantKey(row.pot_id), Number(row.quantity) || 0);
-  }
-  return available;
-}
-
 async function readPublishedPlantRows(): Promise<PlantShopRow[]> {
   const rows = await sql`
     SELECT
@@ -232,47 +179,131 @@ async function readPublishedPlantRows(): Promise<PlantShopRow[]> {
   return rows as PlantShopRow[];
 }
 
-async function readVariantRows(plantIds: string[]): Promise<VariantShopRow[]> {
+async function readPublishedPlantRowsByIds(plantIds: string[]): Promise<PlantShopRow[]> {
   if (plantIds.length === 0) return [];
   const rows = await sql`
-    SELECT id, plant_id, size_label, nursery_pot_diameter_cm
-    FROM plant_variants
-    WHERE plant_id = ANY(${plantIds}::text[])
+    SELECT
+      id, name, name_he, subtitle, subtitle_he, description, description_he,
+      currency, images, light, water, water_he, pet_friendly
+    FROM plants
+    WHERE id = ANY(${plantIds}::text[])
+      AND catalog_published = true
+      AND inventory_type = 'plants'
+    ORDER BY name ASC, id ASC
   `;
-  return rows as VariantShopRow[];
+  return rows as PlantShopRow[];
 }
 
-async function heldPlantQuantities(ids: string[]): Promise<Map<string, number>> {
-  const held = new Map<string, number>();
-  if (ids.length === 0) return held;
+async function readCatalogConfigurationRows(
+  plantIds: string[],
+): Promise<CatalogConfigurationRow[]> {
+  if (plantIds.length === 0) return [];
   const rows = await sql`
-    SELECT plant_variant_id::text AS plant_variant_id, COALESCE(SUM(quantity), 0)::int AS quantity
-    FROM catalog_stock_holds
-    WHERE plant_variant_id = ANY(${ids}::uuid[])
-      AND status = 'active'
-      AND expires_at > now()
-    GROUP BY plant_variant_id
+    WITH requested_variants AS (
+      SELECT id, plant_id, size_label, nursery_pot_diameter_cm
+      FROM plant_variants
+      WHERE plant_id = ANY(${plantIds}::text[])
+    ),
+    active_plant_holds AS (
+      SELECT plant_variant_id, SUM(quantity)::int AS quantity
+      FROM catalog_stock_holds
+      WHERE status = 'active'
+        AND expires_at > now()
+        AND plant_variant_id IS NOT NULL
+        AND plant_variant_id IN (SELECT id FROM requested_variants)
+      GROUP BY plant_variant_id
+    ),
+    catalog_offers AS (
+      SELECT
+        sv.id AS sellable_variant_id,
+        sv.plant_variant_id,
+        sv.pot_id,
+        o.id AS offer_id,
+        o.consumer_price
+      FROM sellable_variants sv
+      INNER JOIN requested_variants requested ON requested.id = sv.plant_variant_id
+      INNER JOIN offers o
+        ON o.sellable_variant_id = sv.id
+       AND o.status = 'active'
+      INNER JOIN offer_availabilities a
+        ON a.offer_id = o.id
+       AND a.scope = 'catalog'
+    ),
+    active_pot_holds AS (
+      SELECT pot_id, SUM(quantity)::int AS quantity
+      FROM catalog_stock_holds
+      WHERE status = 'active'
+        AND expires_at > now()
+        AND pot_id IS NOT NULL
+        AND pot_id IN (SELECT pot_id FROM catalog_offers WHERE pot_id IS NOT NULL)
+      GROUP BY pot_id
+    )
+    SELECT
+      pv.id,
+      pv.plant_id,
+      pv.size_label,
+      pv.nursery_pot_diameter_cm,
+      GREATEST(
+        COALESCE(i.quantity, 0) - COALESCE(plant_holds.quantity, 0),
+        0
+      )::int AS plant_quantity,
+      catalog_offers.sellable_variant_id,
+      catalog_offers.pot_id,
+      pot.name AS pot_name,
+      pot.name_he AS pot_name_he,
+      pot.image AS pot_image,
+      pot.color AS pot_color,
+      catalog_offers.offer_id,
+      catalog_offers.consumer_price,
+      CASE
+        WHEN catalog_offers.pot_id IS NULL THEN 0
+        ELSE GREATEST(
+          COALESCE(pot_stock.quantity, 0) - COALESCE(pot_holds.quantity, 0),
+          0
+        )::int
+      END AS pot_quantity
+    FROM requested_variants pv
+    LEFT JOIN inventory i ON i.variant_id = pv.id
+    LEFT JOIN active_plant_holds plant_holds ON plant_holds.plant_variant_id = pv.id
+    LEFT JOIN catalog_offers ON catalog_offers.plant_variant_id = pv.id
+    LEFT JOIN pots pot ON pot.id = catalog_offers.pot_id
+    LEFT JOIN pot_inventory pot_stock ON pot_stock.pot_id = catalog_offers.pot_id
+    LEFT JOIN active_pot_holds pot_holds ON pot_holds.pot_id = catalog_offers.pot_id
+    ORDER BY pv.plant_id ASC, pot.name ASC NULLS FIRST, catalog_offers.sellable_variant_id ASC
   `;
-  for (const row of rows as { plant_variant_id: string; quantity: number | string }[]) {
-    held.set(variantKey(row.plant_variant_id), Number(row.quantity) || 0);
-  }
-  return held;
+  return rows as CatalogConfigurationRow[];
 }
 
-async function buildSizesByPlant(plantIds: string[]): Promise<Map<string, CatalogShopSize[]>> {
+async function readCatalogConfiguration(plantIds: string[]): Promise<{
+  labelsByPlant: Map<string, Array<string | null>>;
+  sizesByPlant: Map<string, CatalogShopSize[]>;
+}> {
+  const rows = await readCatalogConfigurationRows(plantIds);
   const byPlant = new Map<string, CatalogShopSize[]>();
-  const variants = await readVariantRows(plantIds);
-  if (variants.length === 0) return byPlant;
-  const variantIds = variants.map((variant) => variant.id);
-  const quantities = await getInventoryQuantities(variantIds);
-  const held = await heldPlantQuantities(variantIds);
-  const offerRows = await readOfferVariants(variantIds);
-  const potIds = [
-    ...new Set(offerRows.map((row) => row.pot_id).filter((id): id is string => Boolean(id))),
-  ];
-  const potsAvailable = await availablePotQuantities(potIds);
-  const variantsByPlantSize = new Map<string, CatalogShopVariant[]>();
-  for (const row of offerRows) {
+  const labelsByPlant = new Map<string, Array<string | null>>();
+  const sizesById = new Map<string, CatalogShopSize & { plantId: string }>();
+
+  for (const row of rows) {
+    const key = variantKey(row.id);
+    let size = sizesById.get(key);
+    if (!size) {
+      const sizeLabel = optionalTrimmed(row.size_label);
+      const diameter = parseDiameter(row.nursery_pot_diameter_cm);
+      size = {
+        id: row.id,
+        plantId: row.plant_id,
+        quantity: Math.max(0, Number(row.plant_quantity) || 0),
+        variants: [],
+        ...(sizeLabel ? { sizeLabel } : {}),
+        ...(diameter != null ? { nurseryPotDiameterCm: diameter } : {}),
+      };
+      sizesById.set(key, size);
+      const labels = labelsByPlant.get(row.plant_id) ?? [];
+      labels.push(row.size_label);
+      labelsByPlant.set(row.plant_id, labels);
+    }
+
+    if (!row.sellable_variant_id || !row.offer_id) continue;
     const unitPrice = parsePrice(row.consumer_price);
     if (unitPrice == null) continue;
     const potName = optionalTrimmed(row.pot_name ?? undefined);
@@ -280,44 +311,30 @@ async function buildSizesByPlant(plantIds: string[]): Promise<Map<string, Catalo
     const potImage = optionalTrimmed(row.pot_image ?? undefined);
     const potColor = optionalTrimmed(row.pot_color ?? undefined);
     const shopVariant: CatalogShopVariant = {
-      id: row.id,
+      id: row.sellable_variant_id,
       potId: row.pot_id,
       offerId: row.offer_id,
       unitPrice,
-      potQuantity: row.pot_id ? (potsAvailable.get(variantKey(row.pot_id)) ?? 0) : 0,
+      potQuantity: row.pot_id ? Math.max(0, Number(row.pot_quantity) || 0) : 0,
       ...(potName ? { potName } : {}),
       ...(potNameHe ? { potNameHe } : {}),
       ...(potImage ? { potImage } : {}),
       ...(potColor ? { potColor } : {}),
     };
-    const list = variantsByPlantSize.get(variantKey(row.plant_variant_id)) ?? [];
-    list.push(shopVariant);
-    variantsByPlantSize.set(variantKey(row.plant_variant_id), list);
+    size.variants.push(shopVariant);
   }
 
-  for (const variant of variants) {
-    const sellable = variantsByPlantSize.get(variantKey(variant.id)) ?? [];
-    if (sellable.length === 0) continue;
-    const central = quantities.get(variant.id) ?? 0;
-    const quantity = Math.max(0, central - (held.get(variantKey(variant.id)) ?? 0));
-    const sizeLabel = optionalTrimmed(variant.size_label);
-    const diameter = parseDiameter(variant.nursery_pot_diameter_cm);
-    const size: CatalogShopSize = {
-      id: variant.id,
-      quantity,
-      variants: sellable,
-      ...(sizeLabel ? { sizeLabel } : {}),
-      ...(diameter != null ? { nurseryPotDiameterCm: diameter } : {}),
-    };
-    const list = byPlant.get(variant.plant_id) ?? [];
+  for (const { plantId, ...size } of sizesById.values()) {
+    if (size.variants.length === 0) continue;
+    const list = byPlant.get(plantId) ?? [];
     list.push(size);
-    byPlant.set(variant.plant_id, list);
+    byPlant.set(plantId, list);
   }
 
   for (const [plantId, sizes] of byPlant) {
     byPlant.set(plantId, sizes.sort(compareSizes));
   }
-  return byPlant;
+  return { labelsByPlant, sizesByPlant: byPlant };
 }
 
 function plantIsUnavailable(sizes: CatalogShopSize[]): boolean {
@@ -327,14 +344,9 @@ function plantIsUnavailable(sizes: CatalogShopSize[]): boolean {
 
 export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
   const plants = await readPublishedPlantRows();
-  const variants = await readVariantRows(plants.map((plant) => plant.id));
-  const sizesByPlant = await buildSizesByPlant(plants.map((plant) => plant.id));
-  const labelsByPlant = new Map<string, Array<string | null>>();
-  for (const variant of variants) {
-    const list = labelsByPlant.get(variant.plant_id) ?? [];
-    list.push(variant.size_label);
-    labelsByPlant.set(variant.plant_id, list);
-  }
+  const { labelsByPlant, sizesByPlant } = await readCatalogConfiguration(
+    plants.map((plant) => plant.id),
+  );
 
   return plants.map((plant) => {
     const nameHe = optionalTrimmed(plant.name_he);
@@ -353,22 +365,10 @@ export async function readCatalogShopCards(): Promise<CatalogShopCard[]> {
   });
 }
 
-export async function readCatalogShopDetail(plantId: string): Promise<CatalogShopDetail | null> {
-  const trimmed = plantId.trim();
-  if (!trimmed) return null;
-  const rows = await sql`
-    SELECT
-      id, name, name_he, subtitle, subtitle_he, description, description_he,
-      currency, images, light, water, water_he, pet_friendly
-    FROM plants
-    WHERE id = ${trimmed}
-      AND catalog_published = true
-      AND inventory_type = 'plants'
-    LIMIT 1
-  `;
-  const plant = (rows as PlantShopRow[])[0];
-  if (!plant) return null;
-  const sizes = (await buildSizesByPlant([plant.id])).get(plant.id) ?? [];
+function mapCatalogShopDetail(
+  plant: PlantShopRow,
+  sizes: CatalogShopSize[],
+): CatalogShopDetail {
   const nameHe = optionalTrimmed(plant.name_he);
   const subtitle = optionalTrimmed(plant.subtitle);
   const subtitleHe = optionalTrimmed(plant.subtitle_he);
@@ -396,6 +396,15 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
   };
 }
 
+export async function readCatalogShopDetail(plantId: string): Promise<CatalogShopDetail | null> {
+  const trimmed = plantId.trim();
+  if (!trimmed) return null;
+  const plant = (await readPublishedPlantRowsByIds([trimmed]))[0];
+  if (!plant) return null;
+  const { sizesByPlant } = await readCatalogConfiguration([plant.id]);
+  return mapCatalogShopDetail(plant, sizesByPlant.get(plant.id) ?? []);
+}
+
 /**
  * Map stored v2 Cart lines onto current published Catalog Offers.
  * Drops a line whose Offer, Variant, Plant Size, or stock no longer agrees.
@@ -405,16 +414,21 @@ export async function readCatalogShopDetail(plantId: string): Promise<CatalogSho
 export async function resolveCatalogCartLines(
   items: CatalogCartItem[],
 ): Promise<CatalogCartResolvedLine[]> {
-  const plants = new Map<string, CatalogShopDetail | null>();
-  for (const item of items) {
-    if (!plants.has(item.plantId)) {
-      plants.set(item.plantId, await readCatalogShopDetail(item.plantId));
-    }
+  const requestedPlantIds = [
+    ...new Set(items.map((item) => item.plantId.trim()).filter(Boolean)),
+  ];
+  if (requestedPlantIds.length === 0) return [];
+
+  const plantRows = await readPublishedPlantRowsByIds(requestedPlantIds);
+  const { sizesByPlant } = await readCatalogConfiguration(plantRows.map((plant) => plant.id));
+  const plants = new Map<string, CatalogShopDetail>();
+  for (const plant of plantRows) {
+    plants.set(plant.id, mapCatalogShopDetail(plant, sizesByPlant.get(plant.id) ?? []));
   }
 
   const resolved: CatalogCartResolvedLine[] = [];
   for (const item of items) {
-    const plant = plants.get(item.plantId);
+    const plant = plants.get(item.plantId.trim());
     if (!plant) continue;
     const size = plant.sizes.find((entry) => variantKey(entry.id) === variantKey(item.plantSizeId));
     if (!size || size.quantity <= 0) continue;

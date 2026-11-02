@@ -43,9 +43,7 @@ export default async function PosCheckoutPage({
   params,
   searchParams,
 }: PosCheckoutPageProps) {
-  const { spotSlug } = await params;
-  const locale = await getLocale();
-  const sp = await searchParams;
+  const [{ spotSlug }, locale, sp] = await Promise.all([params, getLocale(), searchParams]);
   const resolved = await getPosSpotForCustomerPurchase(spotSlug);
   if (!resolved) notFound();
   const { posSpot } = resolved;

@@ -915,7 +915,7 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
           <div>
             <h1 className="text-2xl font-semibold text-emerald-950">{partner.name}</h1>
             <p className="mt-1 text-sm text-slate-600">
-              {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+              {formatStoredDeliveryAddressDisplay(partner.address, "en")}
             </p>
             <p className="mt-0.5 text-sm text-slate-500">{partner.type}</p>
           </div>

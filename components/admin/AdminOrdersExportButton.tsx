@@ -71,7 +71,7 @@ function orderToRow(
     [t(locale, "admin.common.location")]: locationName ?? "",
     [t(locale, "admin.export.deliveryAddress")]:
       order.fulfillmentMethod === "delivery"
-        ? formatOrderDeliveryAddressDisplay(order, locale)
+        ? formatOrderDeliveryAddressDisplay(order, "en")
         : "",
     [t(locale, "admin.export.notes")]: order.apartmentOrNotes,
   };

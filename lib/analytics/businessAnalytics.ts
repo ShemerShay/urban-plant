@@ -635,6 +635,47 @@ GROUP BY plant_name, location_id, pocket_name
 LIMIT 5000
 `.trim();
 
+  const visitorsSql = `
+SELECT
+  uniqIf(
+    distinct_id,
+    position(toString(properties.$current_url), '/shop') > 0
+  ) AS catalog_visitors,
+  uniqIf(
+    $session_id,
+    position(toString(properties.$current_url), '/shop') > 0
+  ) AS catalog_sessions
+FROM events
+WHERE ${timeFilter}
+  AND ${customerScope}
+  AND event = '$pageview'
+`.trim();
+
+  const checkout = ANALYTICS_EVENTS.checkoutStarted;
+  const payment = ANALYTICS_EVENTS.paymentStarted;
+  const funnelSql = `
+SELECT
+  countIf(event = '${checkout}' AND toString(properties.channel) != 'catalog') AS checkouts,
+  countIf(event = '${payment}' AND toString(properties.channel) != 'catalog') AS payments
+FROM events
+WHERE ${timeFilter}
+  AND ${customerScope}
+  AND ${inventoryPredicate}
+  AND ${locationPredicate}
+  AND event IN ('${checkout}', '${payment}')
+  AND toString(properties.channel) != 'catalog'
+`.trim();
+  const catalogFunnelSql = `
+SELECT
+  countIf(event = '${checkout}' AND toString(properties.channel) = 'catalog') AS checkouts,
+  countIf(event = '${payment}' AND toString(properties.channel) = 'catalog') AS payments
+FROM events
+WHERE ${timeFilter}
+  AND ${customerScope}
+  AND event IN ('${checkout}', '${payment}')
+  AND toString(properties.channel) = 'catalog'
+`.trim();
+
   logAnalyticsEvent(loadId, "op_start", { op: "kpis" });
   logAnalyticsEvent(loadId, "op_start", { op: "series" });
   logAnalyticsEvent(loadId, "op_start", { op: "breakdowns" });
@@ -677,30 +718,21 @@ LIMIT 5000
   const series = seriesTimed.value;
   const breakdowns = breakdownsTimed.value;
 
-  const visitorsSql = `
-SELECT
-  uniqIf(
-    distinct_id,
-    position(toString(properties.$current_url), '/shop') > 0
-  ) AS catalog_visitors,
-  uniqIf(
-    $session_id,
-    position(toString(properties.$current_url), '/shop') > 0
-  ) AS catalog_sessions
-FROM events
-WHERE ${timeFilter}
-  AND ${customerScope}
-  AND event = '$pageview'
-`.trim();
-
   const visitorsP =
     filters.inventoryType === "flowers" || filters.partnerId
       ? Promise.resolve(null)
       : withDuration(runHogQLQuery(visitorsSql, "admin_analytics_visitors", { signal })).then(
           (timed) => timed.value,
         );
-
-  const visitors = await visitorsP;
+  const funnelP = runHogQLQuery(funnelSql, "admin_analytics_funnel", { signal });
+  const catalogFunnelP = filters.partnerId
+    ? Promise.resolve(null)
+    : runHogQLQuery(catalogFunnelSql, "admin_analytics_catalog_funnel", { signal });
+  const [visitors, funnel, catalogFunnel] = await Promise.all([
+    visitorsP,
+    funnelP,
+    catalogFunnelP,
+  ]);
   const posthogErrors = [kpis, series, breakdowns, ...(visitors ? [visitors] : [])]
     .filter((r): r is Extract<PostHogQueryOutcome, { ok: false }> => !r.ok)
     .map((r) => r.error);
@@ -753,34 +785,6 @@ WHERE ${timeFilter}
     }
   }
 
-  const checkout = ANALYTICS_EVENTS.checkoutStarted;
-  const payment = ANALYTICS_EVENTS.paymentStarted;
-  const funnelSql = `
-SELECT
-  countIf(event = '${checkout}' AND toString(properties.channel) != 'catalog') AS checkouts,
-  countIf(event = '${payment}' AND toString(properties.channel) != 'catalog') AS payments
-FROM events
-WHERE ${timeFilter}
-  AND ${customerScope}
-  AND ${inventoryPredicate}
-  AND ${locationPredicate}
-  AND event IN ('${checkout}', '${payment}')
-  AND toString(properties.channel) != 'catalog'
-`.trim();
-  const catalogFunnelSql = `
-SELECT
-  countIf(event = '${checkout}' AND toString(properties.channel) = 'catalog') AS checkouts,
-  countIf(event = '${payment}' AND toString(properties.channel) = 'catalog') AS payments
-FROM events
-WHERE ${timeFilter}
-  AND ${customerScope}
-  AND event IN ('${checkout}', '${payment}')
-  AND toString(properties.channel) = 'catalog'
-`.trim();
-  const funnel = await runHogQLQuery(funnelSql, "admin_analytics_funnel", { signal });
-  const catalogFunnel = filters.partnerId
-    ? null
-    : await runHogQLQuery(catalogFunnelSql, "admin_analytics_catalog_funnel", { signal });
   const posthogError =
     [
       ...posthogErrors,

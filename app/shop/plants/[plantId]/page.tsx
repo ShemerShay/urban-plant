@@ -15,9 +15,8 @@ interface PageProps {
 }
 
 export default async function ShopPlantPage({ params }: PageProps) {
-  const { plantId: rawId } = await params;
+  const [{ plantId: rawId }, locale] = await Promise.all([params, getLocale()]);
   const plantId = decodeURIComponent(rawId).trim();
-  const locale = await getLocale();
   const plant = await readCatalogShopDetail(plantId);
   if (!plant) notFound();
 

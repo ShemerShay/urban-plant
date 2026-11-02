@@ -51,7 +51,7 @@ export function AdminReconciliationCard({ attempt }: AdminReconciliationCardProp
         <p className="break-words [overflow-wrap:anywhere]">
           {formatOrderDeliveryAddressDisplay(
             { address: attempt.address, apartmentOrNotes: attempt.apartmentOrNotes },
-            locale,
+            "en",
           )}
         </p>
       </div>

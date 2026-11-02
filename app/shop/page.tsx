@@ -21,9 +21,11 @@ function readParam(raw: string | string[] | undefined): string | null {
 }
 
 export default async function ShopPage({ searchParams }: ShopPageProps) {
-  const locale = await getLocale();
-  const plants = await readCatalogShopCards();
-  const sp = await searchParams;
+  const [locale, plants, sp] = await Promise.all([
+    getLocale(),
+    readCatalogShopCards(),
+    searchParams,
+  ]);
 
   return (
     <main

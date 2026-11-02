@@ -22,9 +22,7 @@ function firstParam(v: string | string[] | undefined): string | undefined {
 }
 
 export default async function AdminAnalyticsPage({ searchParams }: AdminAnalyticsPageProps) {
-  const sp = await searchParams;
-  const locale = await getLocale();
-  const partners = await readPartners();
+  const [sp, locale, partners] = await Promise.all([searchParams, getLocale(), readPartners()]);
   const requestedPartner = firstParam(sp.partner)?.trim() ?? "";
   const selectedPartner = partners.find((partner) => partner.id === requestedPartner) ?? null;
   const filters = parseAnalyticsFilterState({
