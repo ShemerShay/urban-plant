@@ -12,6 +12,7 @@ export interface AdminNavItem {
  */
 export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   { href: routes.admin.analytics(), label: "admin.home.analytics" },
+  { href: routes.admin.finance(), label: "admin.nav.finance" },
   { href: routes.admin.orders(), label: "admin.home.orders" },
   { href: routes.admin.inventoryTypes(), label: "admin.nav.catalog" },
   { href: routes.admin.offers(), label: "admin.home.offers" },

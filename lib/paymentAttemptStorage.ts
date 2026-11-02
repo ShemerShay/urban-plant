@@ -19,6 +19,7 @@ import {
   snapshotCatalogPaymentPlantCosts,
   type CatalogPaymentSnapshot,
 } from "./catalogCheckoutSnapshot";
+import { parseStoredPartnerSupplierCost } from "@/lib/partnerSupplierCost";
 import { saleTimeSnapshotFields, type FulfillmentMethod, type OrderSnapshot, type SavedOrder } from "./orderTypes";
 import type {
   PaymentAttemptChannel,
@@ -76,6 +77,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
     ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
     ...saleTimeSnapshotFields(o),
+    ...parseStoredPartnerSupplierCost(o),
   };
 }
 
@@ -945,6 +947,8 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         commission_rate,
         picked_up_at,
         snapshot,
+        supplier_unit_cost,
+        supplier_unit_cost_source,
         is_internal,
         created_at,
         cardcom_transaction_id,
@@ -976,6 +980,20 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         NULL,
         ${pickedUpAt}::timestamptz,
         e.snapshot,
+        CASE
+          WHEN e.snapshot->>'supplierUnitCostSource' = 'plants.supplier_price@sale'
+            AND jsonb_typeof(e.snapshot->'supplierUnitCost') = 'number'
+            AND (e.snapshot->>'supplierUnitCost')::numeric >= 0
+          THEN round((e.snapshot->>'supplierUnitCost')::numeric, 2)
+          ELSE NULL
+        END,
+        CASE
+          WHEN e.snapshot->>'supplierUnitCostSource' = 'plants.supplier_price@sale'
+            AND jsonb_typeof(e.snapshot->'supplierUnitCost') = 'number'
+            AND (e.snapshot->>'supplierUnitCost')::numeric >= 0
+          THEN 'plants.supplier_price@sale'
+          ELSE NULL
+        END,
         e.is_internal,
         now(),
         ${cardcomTransactionId}::bigint,

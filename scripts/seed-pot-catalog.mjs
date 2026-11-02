@@ -160,6 +160,18 @@ const CATALOG = [
       "Weathered concrete texture. Mineral/mottled surface. Natural stone-like finish.",
     match: (filename) => filename === "pot-concrete-classic-light-grey.jpg",
   },
+  {
+    filename: "pot-vaso-natural-14-beige-concrete.jpg",
+    name: "קוטר 14 בטון בגוון בז׳ טבעי",
+    family: "Vaso Natural",
+    diameterCm: 14,
+    material: "Concrete",
+    color: "Warm beige / sand",
+    form: "classic",
+    texture:
+      "Matte. Natural handmade texture. Small speckles and pits. Thin clean rim. No raised band or decorative groove.",
+    match: (filename) => filename === "pot-vaso-natural-14-beige-concrete.jpg",
+  },
 ];
 
 function catalogImageMime(buffer, filename) {

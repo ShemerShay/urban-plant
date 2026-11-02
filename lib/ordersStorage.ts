@@ -13,6 +13,7 @@ import {
   parseOptionalCommissionRate,
 } from "@/lib/orderCommission";
 import { resolveOrderSaleIdentity, saleIdentityFromRow } from "@/lib/orderSaleIdentity";
+import { parseStoredPartnerSupplierCost } from "@/lib/partnerSupplierCost";
 import {
   saleTimeSnapshotFields,
   type FulfillmentMethod,
@@ -107,6 +108,7 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
     ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
     ...saleTimeSnapshotFields(o),
+    ...parseStoredPartnerSupplierCost(o),
   };
 }
 

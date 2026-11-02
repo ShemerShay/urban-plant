@@ -34,6 +34,7 @@ export const routes = {
     offersFlowers: () => "/admin/offers/flowers",
     partners: () => "/admin/partners",
     analytics: () => "/admin/analytics",
+    finance: () => "/admin/finance",
     analyticsWithQuery: (query: string) => {
       const qs = query.replace(/^\?/, "");
       return qs ? `/admin/analytics?${qs}` : "/admin/analytics";
@@ -150,6 +151,13 @@ export const routes = {
     },
     /** Resume holder: create a new Cardcom LowProfile for the same pending order. */
     cardcomRetry: () => "/api/payments/cardcom/retry",
+    financeEntries: () => "/api/finance/entries",
+    financeEntry: (entryId: string) =>
+      `/api/finance/entries/${encodeURIComponent(entryId.trim())}`,
+    financeEntryAllocations: (entryId: string) =>
+      `/api/finance/entries/${encodeURIComponent(entryId.trim())}/allocations`,
+    financeAllocation: (allocationId: string) =>
+      `/api/finance/allocations/${encodeURIComponent(allocationId.trim())}`,
   },
   plantLibrary: (filename: string) =>
     `/plant-library/${encodeURIComponent(filename.trim())}`,

@@ -28,6 +28,7 @@ import type { SavedPaymentAttempt } from "@/lib/paymentAttemptTypes";
 import { PAYMENT_HOLD_TTL_MS } from "@/lib/paymentHoldExpiry";
 import { createPaymentResumeToken } from "@/lib/paymentResume";
 import { getPlantById } from "@/lib/plantCatalog";
+import { partnerSupplierCostFromPlantPrice } from "@/lib/partnerSupplierCost";
 import { getPlantVariantById } from "@/lib/plantVariantStorage";
 import {
   cardcomLineItemName,
@@ -115,6 +116,7 @@ async function buildOrderSnapshot(input: {
 }): Promise<OrderSnapshot> {
   const { plant, offer, posSpot, fulfillmentMethod, inventoryType } = input;
   const partner = await getLocationById(posSpot.partnerLocationId);
+  const supplierCost = partnerSupplierCostFromPlantPrice(plant.supplierPrice);
   const plantVariantId = posSpot.plantVariantId?.trim() || "";
   let sizeLabel: string | undefined;
   if (plantVariantId) {
@@ -139,6 +141,7 @@ async function buildOrderSnapshot(input: {
     inventoryType,
     ...(plantVariantId ? { plantVariantId } : {}),
     ...(sizeLabel ? { sizeLabel } : {}),
+    ...(supplierCost ?? {}),
   };
 }
 

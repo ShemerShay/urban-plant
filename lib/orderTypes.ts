@@ -36,6 +36,12 @@ export interface OrderSnapshot {
   plantVariantId?: string;
   /** Plant size label copied at payment prep. */
   sizeLabel?: string;
+  /**
+   * Plant supplier cost copied at Partner payment prep.
+   * Flowers use the same snapshot. Catalog cost stays on order lines.
+   */
+  supplierUnitCost?: number;
+  supplierUnitCostSource?: "plants.supplier_price@sale";
 }
 
 export function saleTimeSnapshotFields(
