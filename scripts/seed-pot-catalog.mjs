@@ -4,6 +4,8 @@
  *
  * Source photos default to the Desktop generated folder. Stable copies are
  * written to data/pot-catalog and stored in plant_library_images.
+ * Photos that already live in data/plant-library are read from there and
+ * are not copied into data/pot-catalog.
  *
  * Run: npm run db:seed:pot-catalog
  */
@@ -17,6 +19,7 @@ import { loadEnvLocal } from "./load-env-local.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const catalogDir = path.join(root, "data", "pot-catalog");
+const libraryDir = path.join(root, "data", "plant-library");
 const defaultSourceDir = "C:/Users/Shemer/Desktop/UrbanPlant/Pots/genertated";
 
 /**
@@ -172,6 +175,73 @@ const CATALOG = [
       "Matte. Natural handmade texture. Small speckles and pits. Thin clean rim. No raised band or decorative groove.",
     match: (filename) => filename === "pot-vaso-natural-14-beige-concrete.jpg",
   },
+  // Supplied shapes that are not classic, tall, or bowl stay form: null.
+  {
+    filename: "pot-vaso-alto-natural-beige.jpg",
+    name: "כד גבוה בז׳ טבעי",
+    family: "Vaso Alto Natural",
+    diameterCm: null,
+    material: "Terracotta / natural clay",
+    color: "Warm beige / sand",
+    form: "tall",
+    texture: "Natural weathered texture with subtle horizontal marks",
+    reusePlantLibrary: true,
+  },
+  {
+    filename: "pot-vaso-rounded-terracotta.jpg",
+    name: "כד טרקוטה מעוגל",
+    family: "Vaso Rounded",
+    diameterCm: null,
+    material: "Terracotta",
+    color: "Light terracotta / peach",
+    form: null,
+    texture: "Matte natural terracotta",
+    reusePlantLibrary: true,
+  },
+  {
+    filename: "pot-rounded-stone-cream.jpg",
+    name: "כד אבן מעוגל בגוון שמנת",
+    family: "Rounded Stone",
+    diameterCm: null,
+    material: "Concrete / stone-look",
+    color: "Cream / light beige",
+    form: "bowl",
+    texture: "Natural mottled stone texture",
+    reusePlantLibrary: true,
+  },
+  {
+    filename: "pot-vaso-classic-light-peach.jpg",
+    name: "טרקוטה קלאסי בהיר",
+    family: "Vaso Classic",
+    diameterCm: null,
+    material: "Terracotta",
+    color: "Light terracotta / peach",
+    form: "classic",
+    texture: "Light weathered terracotta texture",
+    reusePlantLibrary: true,
+  },
+  {
+    filename: "pot-vaso-ribbed-rounded-beige.jpg",
+    name: "כד בז׳ מעוגל מחורץ",
+    family: "Vaso Ribbed Rounded",
+    diameterCm: null,
+    material: "Terracotta / stone-look",
+    color: "Light beige / cream",
+    form: null,
+    texture: "Horizontal grooves around the middle/lower body",
+    reusePlantLibrary: true,
+  },
+  {
+    filename: "pot-concrete-cube-off-white.jpg",
+    name: "כד בטון מרובע לבן",
+    family: "Concrete Cube",
+    diameterCm: null,
+    material: "Concrete",
+    color: "Off-white / light grey",
+    form: null,
+    texture: "Matte concrete texture with subtle natural imperfections",
+    reusePlantLibrary: true,
+  },
 ];
 
 function catalogImageMime(buffer, filename) {
@@ -191,6 +261,14 @@ async function ensureCatalogFiles() {
   }
 
   for (const item of CATALOG) {
+    if (item.reusePlantLibrary) {
+      try {
+        await stat(path.join(libraryDir, item.filename));
+      } catch {
+        throw new Error(`Missing data/plant-library/${item.filename}`);
+      }
+      continue;
+    }
     const destination = path.join(catalogDir, item.filename);
     try {
       await stat(destination);
@@ -214,7 +292,9 @@ const sql = neon(process.env.DATABASE_URL);
 const results = [];
 
 for (const item of CATALOG) {
-  const filePath = path.join(catalogDir, item.filename);
+  const filePath = item.reusePlantLibrary
+    ? path.join(libraryDir, item.filename)
+    : path.join(catalogDir, item.filename);
   const buffer = await readFile(filePath);
   const mimeType = catalogImageMime(buffer, item.filename);
 
