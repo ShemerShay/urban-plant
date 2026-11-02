@@ -130,7 +130,29 @@ async function main(): Promise<void> {
     });
     assert.equal(partner.status, 200, `${routes.admin.partner(partnerId)} returned ${partner.status}`);
     assert.equal(isCustomerNotFoundPage(partner.status, partner.text), false);
+    assert.equal(
+      partner.text.includes('data-partner-finance="summary"'),
+      true,
+      `${routes.admin.partner(partnerId)} did not render the finance summary`,
+    );
+    assert.equal(
+      partner.text.includes("סה״כ הושקע") || partner.text.includes("Total invested"),
+      true,
+      `${routes.admin.partner(partnerId)} finance summary is missing Total invested`,
+    );
+    assert.equal(partner.text.includes("monthly_revenue"), false);
+    assert.equal(partner.text.includes("setup_cost"), false);
   }
+
+  const finance = await fetchText(`${routes.admin.finance()}?month=all`, { headers: { cookie } });
+  assert.equal(finance.status, 200, `${routes.admin.finance()}?month=all returned ${finance.status}`);
+  const allocatedHeader = finance.text.includes(">הוקצה</th>")
+    ? finance.text.indexOf(">הוקצה</th>")
+    : finance.text.indexOf(">Allocated</th>");
+  const investedHeader = finance.text.includes(">סה״כ הושקע</th>")
+    ? finance.text.indexOf(">סה״כ הושקע</th>")
+    : finance.text.indexOf(">Total invested</th>");
+  assert.ok(allocatedHeader >= 0 && investedHeader > allocatedHeader, "Total invested must follow Allocated");
 
   const missingPartner = await fetchText("/admin/partners/not-a-real-partner-zzzz", {
     headers: { cookie },

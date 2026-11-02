@@ -89,7 +89,44 @@ export type FinancePartnerRow = {
   expenses: number;
   result: number;
   allocated: number;
+  totalInvested: number;
 };
+
+export type PartnerFinanceFigures = {
+  orderRevenue: number;
+  otherIncome: number;
+  expenses: number;
+  allocated: number;
+  totalInvested: number;
+  result: number;
+};
+
+export function emptyPartnerFinance(): PartnerFinanceFigures {
+  return {
+    orderRevenue: 0,
+    otherIncome: 0,
+    expenses: 0,
+    allocated: 0,
+    totalInvested: 0,
+    result: 0,
+  };
+}
+
+export function partnerFinanceSummary(
+  partners: readonly FinancePartnerRow[],
+  partnerId: string,
+): PartnerFinanceFigures {
+  const row = partners.find((partner) => partner.id === partnerId);
+  if (!row) return emptyPartnerFinance();
+  return {
+    orderRevenue: row.orderRevenue,
+    otherIncome: row.otherIncome,
+    expenses: row.expenses,
+    allocated: row.allocated,
+    totalInvested: row.totalInvested,
+    result: row.result,
+  };
+}
 
 export type FinanceMonthPoint = {
   month: string;
@@ -223,6 +260,7 @@ export function buildFinanceView(
       expenses: 0,
       result: 0,
       allocated: 0,
+      totalInvested: 0,
     };
     partners.set(id, created);
     return created;
@@ -241,14 +279,21 @@ export function buildFinanceView(
     partnerBucket(row.partnerId, row.partnerName).allocated += row.amount;
   }
   const partnerRows = [...partners.values()]
-    .map((row) => ({
-      ...row,
-      orderRevenue: money(row.orderRevenue),
-      otherIncome: money(row.otherIncome),
-      expenses: money(row.expenses),
-      allocated: money(row.allocated),
-      result: money(row.orderRevenue + row.otherIncome - row.expenses),
-    }))
+    .map((row) => {
+      const orderRevenue = money(row.orderRevenue);
+      const otherIncome = money(row.otherIncome);
+      const expenses = money(row.expenses);
+      const allocated = money(row.allocated);
+      return {
+        ...row,
+        orderRevenue,
+        otherIncome,
+        expenses,
+        allocated,
+        totalInvested: money(expenses + allocated),
+        result: money(orderRevenue + otherIncome - expenses),
+      };
+    })
     .filter(
       (row) =>
         row.orderRevenue !== 0 ||

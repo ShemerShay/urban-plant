@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
 
+import { formatFinanceMoney as formatMoney } from "@/lib/finance/format";
 import { financePageHref } from "@/lib/finance/query";
 import type { FinanceView } from "@/lib/finance/view";
 import {
@@ -66,14 +67,6 @@ const SOURCE_KEYS: Record<FinanceActivitySource, MessageKey> = {
   import: "admin.finance.source.import",
   payment_attempt: "admin.finance.source.payment_attempt",
 };
-
-function formatMoney(value: number, locale: Locale): string {
-  return new Intl.NumberFormat(locale === "he" ? "he-IL" : "en-US", {
-    style: "currency",
-    currency: "ILS",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function formatMonth(month: string, locale: Locale): string {
   const [year, monthNumber] = month.split("-").map(Number);
@@ -385,7 +378,7 @@ export function AdminFinanceDashboard({
           <p className="text-sm text-slate-500">{t(locale, "admin.finance.empty")}</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-left text-sm">
+            <table className="w-full min-w-[48rem] text-left text-sm">
               <thead className="text-xs text-slate-500">
                 <tr>
                   <th className="py-2 pr-3 font-medium">{t(locale, "admin.finance.colPartner")}</th>
@@ -393,7 +386,8 @@ export function AdminFinanceDashboard({
                   <th className="py-2 pr-3 font-medium">{t(locale, "admin.finance.colOtherIncome")}</th>
                   <th className="py-2 pr-3 font-medium">{t(locale, "admin.finance.colExpenses")}</th>
                   <th className="py-2 pr-3 font-medium">{t(locale, "admin.finance.colResult")}</th>
-                  <th className="py-2 font-medium">{t(locale, "admin.finance.colAllocated")}</th>
+                  <th className="py-2 pr-3 font-medium">{t(locale, "admin.finance.colAllocated")}</th>
+                  <th className="py-2 font-medium">{t(locale, "admin.finance.colTotalInvested")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -404,7 +398,8 @@ export function AdminFinanceDashboard({
                     <td className="py-2 pr-3 tabular-nums">{formatMoney(row.otherIncome, locale)}</td>
                     <td className="py-2 pr-3 tabular-nums">{formatMoney(row.expenses, locale)}</td>
                     <td className="py-2 pr-3 tabular-nums">{formatMoney(row.result, locale)}</td>
-                    <td className="py-2 tabular-nums">{formatMoney(row.allocated, locale)}</td>
+                    <td className="py-2 pr-3 tabular-nums">{formatMoney(row.allocated, locale)}</td>
+                    <td className="py-2 tabular-nums">{formatMoney(row.totalInvested, locale)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -36,6 +36,18 @@ async function main(): Promise<void> {
   assert.match(finalize, /supplierUnitCostSource/);
   assert.match(dashboard, /view\.openObligations > 0/);
   assert.match(dashboard, /FINANCE_ACTIVITY_FILTERS/);
+  assert.match(dashboard, /row\.totalInvested/);
+  assert.match(dashboard, /admin\.finance\.colTotalInvested/);
+  assert.doesNotMatch(dashboard, /monthlyRevenue|monthly_revenue|setupCost|setup_cost/);
+  const partnerPage = read("app/admin/partners/[partnerId]/page.tsx");
+  assert.match(partnerPage, /loadFinanceView\("all", "all"\)/);
+  assert.match(partnerPage, /partnerFinanceSummary/);
+  assert.match(partnerPage, /data-partner-finance="summary"/);
+  assert.doesNotMatch(partnerPage, /monthlyRevenue|monthly_revenue|setupCost|setup_cost|payments/);
+  assert.doesNotMatch(
+    read("lib/finance/view.ts"),
+    /monthlyRevenue|monthly_revenue|setupCost|setup_cost|partner_locations/,
+  );
   assert.doesNotMatch(read("lib/finalizeCatalogPayment.ts"), /supplier_unit_cost/);
 
   await import("./stub-server-only.mjs");
@@ -48,7 +60,7 @@ async function main(): Promise<void> {
     partnerSupplierCostFromPlantPrice,
     parseStoredPartnerSupplierCost,
   } = await import("../lib/partnerSupplierCost");
-  const { buildFinanceView } = await import("../lib/finance/view");
+  const { buildFinanceView, partnerFinanceSummary } = await import("../lib/finance/view");
   const {
     base44InvestmentTotalsMatch,
     parseBase44Csv,
@@ -176,7 +188,88 @@ async function main(): Promise<void> {
   assert.equal(view.remaining, 50);
   assert.equal(view.purchases[0]?.remaining, 50);
   assert.equal(view.unmatchedAmount, 70);
-  assert.equal(view.partners[0]?.result, 60);
+  const partnerRow = view.partners[0];
+  assert.equal(partnerRow?.orderRevenue, 100);
+  assert.equal(partnerRow?.expenses, 40);
+  assert.equal(partnerRow?.allocated, 30);
+  assert.equal(partnerRow?.totalInvested, 70);
+  assert.equal(partnerRow?.result, 60);
+  assert.equal(
+    partnerRow?.result,
+    (partnerRow?.orderRevenue ?? 0) + (partnerRow?.otherIncome ?? 0) - (partnerRow?.expenses ?? 0),
+  );
+  assert.equal(partnerRow?.totalInvested, (partnerRow?.expenses ?? 0) + (partnerRow?.allocated ?? 0));
+  const withOtherIncome = buildFinanceView(
+    {
+      orders: [
+        {
+          id: "order-1",
+          occurredOn: "2026-03-02",
+          month: "2026-03",
+          amount: 100,
+          description: "Plant",
+          partnerId: "partner-1",
+          partnerName: "Partner",
+        },
+      ],
+      entries: [
+        {
+          id: "expense-unpaid",
+          kind: "expense",
+          occurredOn: "2026-03-04",
+          amount: 40,
+          description: "Sign",
+          category: "marketing_signage",
+          partnerId: "partner-1",
+          partnerName: "Partner",
+          paymentStatus: "unpaid",
+          imported: false,
+        },
+        {
+          id: "income-1",
+          kind: "other_income",
+          occurredOn: "2026-03-08",
+          amount: 15,
+          description: "Credit",
+          category: null,
+          partnerId: "partner-1",
+          partnerName: "Partner",
+          paymentStatus: "paid",
+          imported: false,
+        },
+      ],
+      allocations: [
+        {
+          id: "alloc-1",
+          purchaseId: "purchase-1",
+          occurredOn: "2026-03-06",
+          amount: 30,
+          description: "To partner",
+          partnerId: "partner-1",
+          partnerName: "Partner",
+          purchaseDescription: "Pots",
+          imported: false,
+        },
+      ],
+      unmatched: [],
+    },
+    "all",
+    "all",
+  );
+  const incomePartner = withOtherIncome.partners[0];
+  assert.equal(incomePartner?.otherIncome, 15);
+  assert.equal(incomePartner?.expenses, 40);
+  assert.equal(incomePartner?.allocated, 30);
+  assert.equal(incomePartner?.totalInvested, 70);
+  assert.equal(incomePartner?.result, 75);
+  assert.deepEqual(partnerFinanceSummary(view.partners, "missing-partner"), {
+    orderRevenue: 0,
+    otherIncome: 0,
+    expenses: 0,
+    allocated: 0,
+    totalInvested: 0,
+    result: 0,
+  });
   assert.equal(view.activityRows.some((row) => row.source === "order"), true);
   assert.equal(view.activityRows.filter((row) => row.type === "order").length, 1);
   const expensesOnly = buildFinanceView(
