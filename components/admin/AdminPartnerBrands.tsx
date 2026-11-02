@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { AdminFormModal } from "@/components/admin/shared/AdminFormModal";
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
@@ -153,11 +153,17 @@ async function fetchBrandsPageData(locale: Locale): Promise<BrandsPageData> {
 }
 
 /** Top-level partners (businesses/brands) with their location counts. */
-export function AdminPartnerBrandsManager() {
+export function AdminPartnerBrandsManager({
+  initialPartners,
+  initialLocations,
+}: {
+  initialPartners: Partner[];
+  initialLocations: PartnerLocation[];
+}) {
   const locale = useLocale();
-  const [partners, setPartners] = useState<Partner[]>([]);
-  const [locations, setLocations] = useState<PartnerLocation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [partners, setPartners] = useState<Partner[]>(initialPartners);
+  const [locations, setLocations] = useState<PartnerLocation[]>(initialLocations);
+  const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -186,16 +192,6 @@ export function AdminPartnerBrandsManager() {
     async () => applyLoadResult(await fetchBrandsPageData(locale)),
     [applyLoadResult, locale],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchBrandsPageData(locale).then((result) => {
-      if (!cancelled) applyLoadResult(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [applyLoadResult, locale]);
 
   async function createPartner(value: { name: string; image: string | null }) {
     try {

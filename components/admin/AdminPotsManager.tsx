@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
@@ -57,11 +57,11 @@ function specLine(pot: PotRow): string {
     .join(" · ");
 }
 
-export function AdminPotsManager() {
+export function AdminPotsManager({ initialPots }: { initialPots: PotRow[] }) {
   const locale = useLocale();
-  const [pots, setPots] = useState<PotRow[]>([]);
+  const [pots, setPots] = useState<PotRow[]>(initialPots);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [name, setName] = useState("");
   const [nameHe, setNameHe] = useState("");
@@ -106,12 +106,6 @@ export function AdminPotsManager() {
     },
     [locale],
   );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadPots(controller.signal);
-    return () => controller.abort();
-  }, [loadPots]);
 
   async function handleCreate() {
     setIsCreating(true);

@@ -40,9 +40,14 @@ async function main(): Promise<void> {
   assert.match(dashboard, /admin\.finance\.colTotalInvested/);
   assert.doesNotMatch(dashboard, /monthlyRevenue|monthly_revenue|setupCost|setup_cost/);
   const partnerPage = read("app/admin/partners/[partnerId]/page.tsx");
-  assert.match(partnerPage, /loadFinanceView\("all", "all"\)/);
-  assert.match(partnerPage, /partnerFinanceSummary/);
+  assert.match(partnerPage, /loadPartnerFinanceSummary/);
+  assert.doesNotMatch(partnerPage, /loadFinanceView\(/);
   assert.match(partnerPage, /data-partner-finance="summary"/);
+  const financeStorage = read("lib/finance/storage.ts");
+  assert.match(financeStorage, /loadFinanceFactsForPartner/);
+  assert.match(financeStorage, /partner_id = \$\{trimmed\}/);
+  assert.match(financeStorage, /buildFinanceView\(await loadFinanceFactsForPartner/);
+  assert.match(financeStorage, /partnerFinanceSummary\(view\.partners/);
   assert.doesNotMatch(partnerPage, /monthlyRevenue|monthly_revenue|setupCost|setup_cost|payments/);
   assert.doesNotMatch(
     read("lib/finance/view.ts"),

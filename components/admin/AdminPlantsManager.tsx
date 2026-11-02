@@ -908,8 +908,10 @@ function AdminPlantCard({
 
 export function AdminPlantsManager({
   inventoryType,
+  initialPlants,
 }: {
   inventoryType: InventoryType;
+  initialPlants: PlantProduct[];
 }) {
   const locale = useLocale();
   const isFlowers = inventoryType === "flowers";
@@ -934,9 +936,9 @@ export function AdminPlantsManager({
   const createFailedKey = isFlowers
     ? "admin.flowers.createFailed"
     : "admin.plants.createFailed";
-  const [plants, setPlants] = useState<PlantProduct[]>([]);
+  const [plants, setPlants] = useState<PlantProduct[]>(initialPlants);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState(emptyDraft);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -973,12 +975,6 @@ export function AdminPlantsManager({
       if (!signal?.aborted) setIsLoading(false);
     }
   }, [inventoryType, locale, loadFailedKey, loadNetworkKey]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadPlants(controller.signal);
-    return () => controller.abort();
-  }, [loadPlants]);
 
   async function handleCreate() {
     setIsCreating(true);

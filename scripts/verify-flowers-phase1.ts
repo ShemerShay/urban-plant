@@ -261,7 +261,9 @@ assert.match(offersPlants, /inventoryType="plants"/);
 const offersFlowers = read("app/admin/offers/flowers/page.tsx");
 assert.match(offersFlowers, /inventoryType="flowers"/);
 const offersManager = read("components/admin/AdminOffersManager.tsx");
-assert.match(offersManager, /function AdminOffersManager\(\{ inventoryType \}/);
+assert.match(offersManager, /function AdminOffersManager\(\{/);
+assert.match(offersManager, /initialOffers/);
+assert.match(offersManager, /inventoryType/);
 assert.match(offersManager, /inventoryType=\$\{inventoryType\}/);
 
 const prep = read("lib/startCardcomPaymentPrep.ts");

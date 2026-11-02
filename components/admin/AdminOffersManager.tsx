@@ -690,14 +690,26 @@ function AdminOfferCard({
   );
 }
 
-export function AdminOffersManager({ inventoryType }: { inventoryType: InventoryType }) {
+export function AdminOffersManager({
+  inventoryType,
+  initialOffers,
+  initialPlants,
+  initialVariants = [],
+  initialLocations = [],
+}: {
+  inventoryType: InventoryType;
+  initialOffers: OfferWithProduct[];
+  initialPlants: PlantProduct[];
+  initialVariants?: VariantChoice[];
+  initialLocations?: LocationChoice[];
+}) {
   const locale = useLocale();
-  const [offers, setOffers] = useState<OfferWithProduct[]>([]);
-  const [plants, setPlants] = useState<PlantProduct[]>([]);
-  const [variants, setVariants] = useState<VariantChoice[]>([]);
-  const [locations, setLocations] = useState<LocationChoice[]>([]);
+  const [offers, setOffers] = useState<OfferWithProduct[]>(initialOffers);
+  const [plants, setPlants] = useState<PlantProduct[]>(initialPlants);
+  const [variants, setVariants] = useState<VariantChoice[]>(initialVariants);
+  const [locations, setLocations] = useState<LocationChoice[]>(initialLocations);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState(emptyDraft);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -771,12 +783,6 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
       if (!signal?.aborted) setIsLoading(false);
     }
   }, [inventoryType, isPlants, locale]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadData(controller.signal);
-    return () => controller.abort();
-  }, [loadData]);
 
   async function handleCreate() {
     if (isPlants) {

@@ -3,8 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { AdminPartnerBrandHeader } from "@/components/admin/AdminPartnerBrands";
 import { AdminPartnersManager } from "@/components/admin/AdminPartnersManager";
 import { formatFinanceMoney } from "@/lib/finance/format";
-import { loadFinanceView } from "@/lib/finance/storage";
-import { partnerFinanceSummary, type PartnerFinanceFigures } from "@/lib/finance/view";
+import { loadPartnerFinanceSummary } from "@/lib/finance/storage";
+import type { PartnerFinanceFigures } from "@/lib/finance/view";
 import { getLocale } from "@/lib/getLocale";
 import type { Locale } from "@/lib/locale";
 import { t, type MessageKey } from "@/lib/messages";
@@ -35,8 +35,10 @@ export default async function AdminPartnerPage({ params }: PageProps) {
     notFound();
   }
 
-  const [locale, view] = await Promise.all([getLocale(), loadFinanceView("all", "all")]);
-  const summary = partnerFinanceSummary(view.partners, partner.id);
+  const [locale, summary] = await Promise.all([
+    getLocale(),
+    loadPartnerFinanceSummary(partner.id),
+  ]);
 
   return (
     <main id="admin-partner-page" className="mx-auto min-h-screen w-full max-w-md px-4 py-6 pb-12">

@@ -3,7 +3,15 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 
 import type { Base44Row } from "@/lib/finance/base44Csv";
-import { buildFinanceView, type FinanceEntryFact, type FinanceFacts, type FinanceView } from "@/lib/finance/view";
+import {
+  buildFinanceView,
+  emptyPartnerFinance,
+  partnerFinanceSummary,
+  type FinanceEntryFact,
+  type FinanceFacts,
+  type FinanceView,
+  type PartnerFinanceFigures,
+} from "@/lib/finance/view";
 import type { FinanceMonth } from "@/lib/finance/period";
 import {
   isFinanceCategory,
@@ -253,6 +261,101 @@ export async function loadFinanceView(
   activity: FinanceActivityFilter,
 ): Promise<FinanceView> {
   return buildFinanceView(await loadFinanceFacts(), month, activity);
+}
+
+/** Partner-scoped facts only — same row mapping as loadFinanceFacts, filtered in SQL. */
+async function loadFinanceFactsForPartner(partnerId: string): Promise<FinanceFacts> {
+  const trimmed = partnerId.trim();
+  if (!trimmed) {
+    return { orders: [], entries: [], allocations: [], unmatched: [] };
+  }
+
+  const [orders, entries, allocations] = await Promise.all([
+    sql`
+      SELECT
+        o.order_id,
+        o.price,
+        o.product_name,
+        to_char(timezone('Asia/Jerusalem', o.created_at), 'YYYY-MM-DD') AS occurred_on,
+        o.partner_id,
+        pr.name AS partner_name
+      FROM orders o
+      LEFT JOIN partners pr ON pr.id = o.partner_id
+      WHERE o.is_internal = false
+        AND o.order_status IN ('sold', 'picked_up', 'delivered')
+        AND o.partner_id = ${trimmed}
+    `,
+    sql`
+      SELECT
+        e.id::text AS id,
+        e.kind,
+        e.amount,
+        to_char(e.occurred_on, 'YYYY-MM-DD') AS occurred_on,
+        e.description,
+        e.category,
+        e.partner_id,
+        pr.name AS partner_name,
+        e.payment_status,
+        e.import_key
+      FROM finance_entries e
+      LEFT JOIN partners pr ON pr.id = e.partner_id
+      WHERE e.partner_id = ${trimmed}
+    `,
+    sql`
+      SELECT
+        a.id::text AS id,
+        a.purchase_id::text AS purchase_id,
+        a.amount,
+        to_char(a.occurred_on, 'YYYY-MM-DD') AS occurred_on,
+        a.description,
+        a.partner_id,
+        pr.name AS partner_name,
+        e.description AS purchase_description,
+        a.import_key
+      FROM finance_inventory_allocations a
+      INNER JOIN finance_entries e ON e.id = a.purchase_id
+      INNER JOIN partners pr ON pr.id = a.partner_id
+      WHERE a.partner_id = ${trimmed}
+    `,
+  ]);
+
+  return {
+    orders: (orders as OrderRow[]).map((row) => ({
+      id: row.order_id,
+      occurredOn: row.occurred_on,
+      month: row.occurred_on.slice(0, 7),
+      amount: moneyValue(row.price),
+      description: row.product_name,
+      partnerId: row.partner_id,
+      partnerName: row.partner_name,
+    })),
+    entries: (entries as EntryRow[]).map(mapEntry),
+    allocations: (allocations as AllocationRow[]).map((row) => ({
+      id: row.id,
+      purchaseId: row.purchase_id,
+      occurredOn: row.occurred_on,
+      amount: moneyValue(row.amount),
+      description: row.description,
+      partnerId: row.partner_id,
+      partnerName: row.partner_name,
+      purchaseDescription: row.purchase_description,
+      imported: row.import_key != null,
+    })),
+    unmatched: [],
+  };
+}
+
+/**
+ * All-time Partner finance summary using the same buildFinanceView helpers,
+ * without loading finance facts for every partner.
+ */
+export async function loadPartnerFinanceSummary(
+  partnerId: string,
+): Promise<PartnerFinanceFigures> {
+  const trimmed = partnerId.trim();
+  if (!trimmed) return emptyPartnerFinance();
+  const view = buildFinanceView(await loadFinanceFactsForPartner(trimmed), "all", "all");
+  return partnerFinanceSummary(view.partners, trimmed);
 }
 
 export async function createFinanceEntry(input: ManualFinanceEntryInput): Promise<void> {
