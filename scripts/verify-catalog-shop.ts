@@ -17,6 +17,22 @@ function read(rel: string): string {
 }
 
 function assertShopWiring(): void {
+  const imageStorage = read("lib/plantImageStorage.ts");
+  const imageBlobs = read("lib/plantImageBlobs.ts");
+  const imageRoute = read("app/plant-library/[filename]/route.ts");
+  assert.match(imageStorage, /readFile\(filePath\)/);
+  assert.match(imageStorage, /writePlantLibraryBlob/);
+  assert.match(imageStorage, /readPlantLibraryBlob/);
+  assert.match(imageStorage, /deletePlantLibraryBlob/);
+  assert.doesNotMatch(imageStorage, /writeFile/);
+  assert.match(imageRoute, /getPlantLibraryImageBytes/);
+  assert.doesNotMatch(imageStorage, /getPlantLibraryImageFromDb/);
+  assert.doesNotMatch(imageRoute, /plant_library_images/);
+  assert.match(imageBlobs, /PLANT_LIBRARY_BLOB_STORE = "plant-library"/);
+  assert.match(imageBlobs, /getStore\(PLANT_LIBRARY_BLOB_STORE\)/);
+  assert.doesNotMatch(imageBlobs, /getDeployStore\(/);
+  assert.doesNotMatch(imageBlobs, /consistency:\s*"strong"/);
+
   const shop = read("lib/catalogShop.ts");
   assert.match(shop, /catalog_published = true/);
   assert.match(shop, /inventory_type = 'plants'/);
@@ -164,8 +180,63 @@ function assertShopWiring(): void {
   console.log("verify-catalog-shop: shop wiring leaves POS and plant variants unchanged");
 }
 
+async function assertPlantImageStores(): Promise<void> {
+  const { getPlantLibraryImageBytes } = await import("../lib/plantImageStorage");
+  const {
+    deletePlantLibraryBlob,
+    readPlantLibraryBlob,
+    usesNetlifyBlobStore,
+    writePlantLibraryBlob,
+  } = await import("../lib/plantImageBlobs");
+  assert.equal(
+    usesNetlifyBlobStore(),
+    false,
+    "catalog verification must use the local blob directory, not the site-wide store",
+  );
+
+  const shippedName = "pot-vaso-classic-36-light.png";
+  const shipped = await getPlantLibraryImageBytes(shippedName);
+  const shippedDisk = readFileSync(join(root, "data", "plant-library", shippedName));
+  assert.ok(shipped);
+  assert.equal(shipped.mimeType, "image/png");
+  assert.equal(shipped.data.length, shippedDisk.length);
+  assert.equal(await readPlantLibraryBlob(shippedName), null);
+
+  const misnamed = await getPlantLibraryImageBytes("green-island-ficus-tree-catalog-b9ced762.png");
+  assert.equal(misnamed?.mimeType, "image/jpeg");
+  assert.equal(misnamed?.data[0], 0xff);
+
+  assert.equal(await getPlantLibraryImageBytes("does-not-exist.png"), null);
+
+  for (const potName of [
+    "pot-concrete-cube-off-white.jpg",
+    "pot-rounded-stone-cream.jpg",
+    "pot-vaso-alto-natural-beige.jpg",
+    "pot-vaso-classic-light-peach.jpg",
+    "pot-vaso-ribbed-rounded-beige.jpg",
+    "pot-vaso-rounded-terracotta.jpg",
+  ]) {
+    assert.equal(existsSync(join(root, "data", "plant-library", potName)), true, potName);
+  }
+
+  const uploadName = `verify-blob-${randomUUID().slice(0, 8)}.jpg`;
+  const payload = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43]);
+  await writePlantLibraryBlob(uploadName, payload);
+  try {
+    assert.equal(existsSync(join(root, "data", "plant-library", uploadName)), false);
+    const uploaded = await getPlantLibraryImageBytes(uploadName);
+    assert.equal(uploaded?.mimeType, "image/jpeg");
+    assert.deepEqual(uploaded?.data, payload);
+  } finally {
+    await deletePlantLibraryBlob(uploadName);
+  }
+  assert.equal(await readPlantLibraryBlob(uploadName), null);
+  assert.equal(await getPlantLibraryImageBytes(uploadName), null);
+}
+
 async function main(): Promise<void> {
   assertShopWiring();
+  await assertPlantImageStores();
 
   const {
     additionalVariantOptionCount,
