@@ -24,7 +24,7 @@ const CARE_INSTRUCTION_HE: Record<string, string> = {
     "הציבו באור שמש עקיף בהיר לפחות 6 שעות ביום.",
   "Let the top 2-3 cm of soil dry between watering.":
     "תנו ל־2–3 ס״מ העליונים של האדמה להתייבש בין השקיות.",
-  "Rotate the pot weekly for balanced growth.": "סובבו את העציץ מדי שבוע לצמיחה מאוזנת.",
+  "Rotate the pot weekly for balanced growth.": "סובבו את הכד מדי שבוע לצמיחה מאוזנת.",
   "Wipe leaves gently once a month to remove dust.":
     "נגבו בעדינות את העלים פעם בחודש להסרת אבק.",
 
