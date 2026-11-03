@@ -393,8 +393,8 @@ function emptySnapshot(
 
 /**
  * Load admin business analytics for inventory type + resolved date bounds.
- * Internal distinct_ids are resolved once, then three parallel PostHog HogQL
- * queries plus Neon purchase aggregates.
+ * Neon purchase aggregates always run. PostHog HogQL runs only for areas that
+ * consume it (Overall KPI; Logistics suite), in one parallel wave after setup.
  */
 export async function loadBusinessAnalytics(
   filters: AnalyticsFilterState,
@@ -472,6 +472,45 @@ async function loadBusinessAnalyticsInner(
   const scan = ANALYTICS_EVENTS.posScan;
   const purchase = ANALYTICS_EVENTS.purchaseCompleted;
 
+  const neonPromise = getNeonPurchaseAnalytics({
+    startInclusive: bounds.startInclusive,
+    endExclusive: bounds.endExclusive,
+    inventoryType: filters.inventoryType,
+    partnerId: filters.partnerId,
+  })
+    .then((data) => ({ ok: true as const, data }))
+    .catch((err: unknown) => ({
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Neon purchase query failed",
+    }));
+
+  logAnalyticsEvent(loadId, "op_start", { op: "neon" });
+  const neonP = withDuration(neonPromise).then((timed) => {
+    logAnalyticsEvent(loadId, "op", {
+      op: "neon",
+      ms: timed.ms,
+      ok: timed.value.ok,
+      timeout: timed.value.ok ? false : looksLikeTimeout(timed.value.error),
+      code: timed.value.ok ? null : "neon_failed",
+    });
+    return timed;
+  });
+
+  // Financial UI is Neon-only — skip PostHog setup and HogQL entirely.
+  if (filters.area === "financial") {
+    const neonTimed = await neonP;
+    const neonResult = neonTimed.value;
+    const neonError = neonResult.ok ? null : neonResult.error;
+    const neonFields = neonMetrics(neonResult.ok ? neonResult.data : null);
+    return {
+      ...emptySnapshot(filters, granularity, {
+        posthogError: null,
+        neonError,
+      }),
+      ...neonFields,
+    };
+  }
+
   const plantIdsPromise =
     filters.inventoryType === "all"
       ? Promise.resolve({ ok: true as const, ids: [] as string[] })
@@ -489,20 +528,7 @@ async function loadBusinessAnalyticsInner(
       error: err instanceof Error ? err.message : "Partner directory failed",
     }));
 
-  const neonPromise = getNeonPurchaseAnalytics({
-    startInclusive: bounds.startInclusive,
-    endExclusive: bounds.endExclusive,
-    inventoryType: filters.inventoryType,
-    partnerId: filters.partnerId,
-  })
-    .then((data) => ({ ok: true as const, data }))
-    .catch((err: unknown) => ({
-      ok: false as const,
-      error: err instanceof Error ? err.message : "Neon purchase query failed",
-    }));
-
   logAnalyticsEvent(loadId, "op_start", { op: "internal_ids" });
-  logAnalyticsEvent(loadId, "op_start", { op: "neon" });
   const internalP = withDuration(listInternalDistinctIds(signal)).then((timed) => {
     logAnalyticsEvent(loadId, "op", {
       op: "internal_ids",
@@ -511,16 +537,6 @@ async function loadBusinessAnalyticsInner(
       cache: timed.value.cache,
       timeout: timed.value.ok ? false : timed.value.code === "timeout",
       code: timed.value.ok ? null : timed.value.code,
-    });
-    return timed;
-  });
-  const neonP = withDuration(neonPromise).then((timed) => {
-    logAnalyticsEvent(loadId, "op", {
-      op: "neon",
-      ms: timed.ms,
-      ok: timed.value.ok,
-      timeout: timed.value.ok ? false : looksLikeTimeout(timed.value.error),
-      code: timed.value.ok ? null : "neon_failed",
     });
     return timed;
   });
@@ -570,6 +586,17 @@ async function loadBusinessAnalyticsInner(
   const locationById = new Map(
     (locationsResult.ok ? locationsResult.rows : []).map((row) => [row.locationId, row]),
   );
+
+  /** Overall consumes KPI conversion only; Logistics consumes the full PostHog suite. */
+  const needKpis = true;
+  const needSeries = filters.area === "logistics";
+  const needBreakdowns = filters.area === "logistics";
+  const needFunnel = filters.area === "logistics";
+  const needVisitors =
+    filters.area === "logistics" &&
+    filters.inventoryType !== "flowers" &&
+    filters.partnerId == null;
+  const needCatalogFunnel = filters.area === "logistics" && filters.partnerId == null;
 
   // Scan-level: a pos_scan converts if a purchase_completed exists in the same
   // $session_id + pos_spot_id with timestamp >= the scan.
@@ -676,59 +703,90 @@ WHERE ${timeFilter}
   AND toString(properties.channel) = 'catalog'
 `.trim();
 
-  logAnalyticsEvent(loadId, "op_start", { op: "kpis" });
-  logAnalyticsEvent(loadId, "op_start", { op: "series" });
-  logAnalyticsEvent(loadId, "op_start", { op: "breakdowns" });
-  const kpisP = withDuration(
-    runHogQLQuery(kpisSql, `admin_analytics_kpis`, { signal }),
-  ).then((timed) => {
-    logAnalyticsEvent(loadId, "op", {
-      op: "kpis",
-      ms: timed.ms,
-      ...hogqlLogFields(timed.value),
-    });
-    return timed;
-  });
-  const seriesP = withDuration(
-    runHogQLQuery(seriesSql, `admin_analytics_series`, { signal }),
-  ).then((timed) => {
-    logAnalyticsEvent(loadId, "op", {
-      op: "series",
-      ms: timed.ms,
-      ...hogqlLogFields(timed.value),
-    });
-    return timed;
-  });
-  const breakdownsP = withDuration(
-    runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`, { signal }),
-  ).then((timed) => {
-    logAnalyticsEvent(loadId, "op", {
-      op: "breakdowns",
-      ms: timed.ms,
-      ...hogqlLogFields(timed.value),
-    });
-    return timed;
-  });
-  const [kpisTimed, seriesTimed, breakdownsTimed] = await Promise.all([
+  const emptyHogqlOk: PostHogQueryOutcome = {
+    ok: true,
+    data: { columns: [], results: [] },
+  };
+
+  if (needKpis) logAnalyticsEvent(loadId, "op_start", { op: "kpis" });
+  if (needSeries) logAnalyticsEvent(loadId, "op_start", { op: "series" });
+  if (needBreakdowns) logAnalyticsEvent(loadId, "op_start", { op: "breakdowns" });
+  if (needVisitors) logAnalyticsEvent(loadId, "op_start", { op: "visitors" });
+  if (needFunnel) logAnalyticsEvent(loadId, "op_start", { op: "funnel" });
+  if (needCatalogFunnel) logAnalyticsEvent(loadId, "op_start", { op: "catalog_funnel" });
+
+  // Single PostHog wave: run only area-needed queries concurrently (no B→C gate).
+  const kpisP = needKpis
+    ? withDuration(runHogQLQuery(kpisSql, `admin_analytics_kpis`, { signal })).then((timed) => {
+        logAnalyticsEvent(loadId, "op", {
+          op: "kpis",
+          ms: timed.ms,
+          ...hogqlLogFields(timed.value),
+        });
+        return timed.value;
+      })
+    : Promise.resolve(emptyHogqlOk);
+  const seriesP = needSeries
+    ? withDuration(runHogQLQuery(seriesSql, `admin_analytics_series`, { signal })).then((timed) => {
+        logAnalyticsEvent(loadId, "op", {
+          op: "series",
+          ms: timed.ms,
+          ...hogqlLogFields(timed.value),
+        });
+        return timed.value;
+      })
+    : Promise.resolve(emptyHogqlOk);
+  const breakdownsP = needBreakdowns
+    ? withDuration(runHogQLQuery(breakdownsSql, `admin_analytics_breakdowns`, { signal })).then(
+        (timed) => {
+          logAnalyticsEvent(loadId, "op", {
+            op: "breakdowns",
+            ms: timed.ms,
+            ...hogqlLogFields(timed.value),
+          });
+          return timed.value;
+        },
+      )
+    : Promise.resolve(emptyHogqlOk);
+  const visitorsP = needVisitors
+    ? withDuration(runHogQLQuery(visitorsSql, "admin_analytics_visitors", { signal })).then(
+        (timed) => {
+          logAnalyticsEvent(loadId, "op", {
+            op: "visitors",
+            ms: timed.ms,
+            ...hogqlLogFields(timed.value),
+          });
+          return timed.value;
+        },
+      )
+    : Promise.resolve(null);
+  const funnelP = needFunnel
+    ? withDuration(runHogQLQuery(funnelSql, "admin_analytics_funnel", { signal })).then((timed) => {
+        logAnalyticsEvent(loadId, "op", {
+          op: "funnel",
+          ms: timed.ms,
+          ...hogqlLogFields(timed.value),
+        });
+        return timed.value;
+      })
+    : Promise.resolve(emptyHogqlOk);
+  const catalogFunnelP = needCatalogFunnel
+    ? withDuration(
+        runHogQLQuery(catalogFunnelSql, "admin_analytics_catalog_funnel", { signal }),
+      ).then((timed) => {
+        logAnalyticsEvent(loadId, "op", {
+          op: "catalog_funnel",
+          ms: timed.ms,
+          ...hogqlLogFields(timed.value),
+        });
+        return timed.value;
+      })
+    : Promise.resolve(null);
+
+  const [kpis, series, breakdowns, visitors, funnel, catalogFunnel] = await Promise.all([
     kpisP,
     seriesP,
     breakdownsP,
-  ]);
-  const kpis = kpisTimed.value;
-  const series = seriesTimed.value;
-  const breakdowns = breakdownsTimed.value;
-
-  const visitorsP =
-    filters.inventoryType === "flowers" || filters.partnerId
-      ? Promise.resolve(null)
-      : withDuration(runHogQLQuery(visitorsSql, "admin_analytics_visitors", { signal })).then(
-          (timed) => timed.value,
-        );
-  const funnelP = runHogQLQuery(funnelSql, "admin_analytics_funnel", { signal });
-  const catalogFunnelP = filters.partnerId
-    ? Promise.resolve(null)
-    : runHogQLQuery(catalogFunnelSql, "admin_analytics_catalog_funnel", { signal });
-  const [visitors, funnel, catalogFunnel] = await Promise.all([
     visitorsP,
     funnelP,
     catalogFunnelP,

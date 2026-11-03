@@ -1458,7 +1458,7 @@ const he: { [K in keyof typeof en]: string } = {
   "shop.sizeFilter.empty": "אין צמחים בגודל הזה.",
   "shop.pots": "כדים",
   "shop.morePotColors": "עוד צבעי כד",
-  "shop.noPot": "בלי כד",
+  "shop.noPot": "ללא כד",
   "shop.diameter": "כד משתלה {cm} ס״מ",
   "shop.cart": "עגלה",
   "shop.closeCart": "סגירת עגלה",

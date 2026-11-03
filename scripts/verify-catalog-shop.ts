@@ -121,6 +121,8 @@ function assertShopWiring(): void {
   assert.match(detailUi, /variant\.potImage/);
   assert.match(detailUi, /shop\.noPot/);
   assert.match(detailUi, /selectNoPot/);
+  assert.match(detailUi, /const potChoiceClass/);
+  assert.doesNotMatch(detailUi, /shopPotChoiceClass/);
   assert.doesNotMatch(detailUi, /variantChoiceLabel/);
   assert.doesNotMatch(detailUi, /catalog_price/);
   assert.doesNotMatch(detailUi, /difficulty/);
@@ -153,8 +155,16 @@ function assertShopWiring(): void {
   assert.match(shopCardActions, /w-4\/5/);
   assert.match(shopCardActions, /ANALYTICS_EVENTS\.addToCart/);
   assert.match(shopCardActions, /selectedSizeId/);
-  assert.match(shopCardActions, /resolved && resolvedVariant\?\.potImage/);
+  assert.match(shopCardActions, /resolved && resolved\.potId == null/);
+  assert.match(shopCardActions, /shop\.noPot/);
+  assert.match(shopCardActions, /mt-2 inline-flex items-center gap-1\.5/);
+  assert.match(shopCardActions, /h-8 p-2 items-center justify-center overflow-hidden rounded-md border border-black\/15 bg-neutral-100/);
+  assert.doesNotMatch(shopCardActions, /shopPotChoiceStaticClass|shopPotChoiceStyles|flex justify-center/);
+  assert.doesNotMatch(shopCardActions, /h-\[4\.5rem\]|rounded-2xl/);
+  assert.doesNotMatch(shopCardActions, /text-caption mt-2 text-neutral-600/);
+  assert.match(shopCardActions, /resolved && resolved\.potId != null && resolvedVariant\?\.potImage/);
   assert.match(shopCardActions, /src=\{resolvedVariant\.potImage\}/);
+  assert.match(shopCardActions, /relative h-5 w-5 overflow-hidden rounded-md border border-black\/15 bg-neutral-100/);
   assert.match(shopCardActions, /additionalVariantOptionCount/);
   assert.match(shopCardActions, /extraOptions > 0/);
   assert.doesNotMatch(shopCardActions, /GalleryCue/);

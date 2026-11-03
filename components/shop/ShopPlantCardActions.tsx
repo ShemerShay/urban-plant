@@ -129,7 +129,14 @@ export function ShopPlantCardActions({
       {resolved ? (
         <p className="text-caption mt-1 text-neutral-600">{t(locale, "shop.inStock")}</p>
       ) : null}
-      {resolved && resolvedVariant?.potImage ? (
+      {resolved && resolved.potId == null ? (
+        <span className="mt-2 inline-flex items-center gap-1.5 text-neutral-700">
+          <span className="inline-flex h-8 p-2 items-center justify-center overflow-hidden rounded-md border border-black/15 bg-neutral-100 px-1 text-caption leading-none">
+            {t(locale, "shop.noPot")}
+          </span>
+        </span>
+      ) : null}
+      {resolved && resolved.potId != null && resolvedVariant?.potImage ? (
         <Link
           href={routes.shop.plant(plant.id)}
           aria-label={t(locale, "shop.morePotColors")}
