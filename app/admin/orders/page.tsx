@@ -10,28 +10,38 @@ import { AdminOrdersFilters } from "@/components/admin/AdminOrdersFilters";
 import { AdminReconciliationCard } from "@/components/admin/AdminReconciliationCard";
 import {
   catalogItemsRecordFromOrderItems,
-  catalogStoredPlantName,
   isCatalogAdminOrder,
   reconciliationAttemptViewFromAttempt,
 } from "@/lib/adminOrderDisplay";
 import {
-  filterOrders,
   parseChannel,
   parseDateParam,
   parseLocation,
   parsePlant,
   parseStatuses,
 } from "@/lib/adminOrdersFilterUtils";
+import {
+  readAdminOrderFilterOptions,
+  readAdminOrdersList,
+} from "@/lib/adminOrdersList";
 import { getLocale } from "@/lib/getLocale";
+import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import { getOrderItemsByOrderIds } from "@/lib/orderItemStorage";
-import { readOrders } from "@/lib/ordersStorage";
 import { listCatalogPaymentAttemptsNeedingReconciliation } from "@/lib/paymentAttemptStorage";
 
 function firstParam(v: string | string[] | undefined): string | undefined {
   if (typeof v === "string") return v;
   if (Array.isArray(v)) return v[0];
   return undefined;
+}
+
+function plantOptionLabel(
+  plant: { name: string; nameHe: string | null },
+  locale: Locale,
+): string {
+  if (locale === "he" && plant.nameHe) return plant.nameHe;
+  return plant.name;
 }
 
 interface AdminOrdersPageProps {
@@ -55,73 +65,40 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
   const dateFrom = parseDateParam(firstParam(sp.dateFrom));
   const dateTo = parseDateParam(firstParam(sp.dateTo));
 
-  const [allOrders, reconciliationAttempts] = await Promise.all([
-    readOrders(),
+  const filters = {
+    statuses: statusFilters,
+    channel: channelFilter,
+    location: locationFilter,
+    plant: plantFilter,
+    dateFrom,
+    dateTo,
+  };
+
+  const [orders, filterOptions, reconciliationAttempts] = await Promise.all([
+    readAdminOrdersList(filters),
+    readAdminOrderFilterOptions(),
     listCatalogPaymentAttemptsNeedingReconciliation(),
   ]);
-  const catalogOrderIds = allOrders.filter(isCatalogAdminOrder).map((order) => order.orderId);
+
+  const catalogOrderIds = orders.filter(isCatalogAdminOrder).map((order) => order.orderId);
   const itemsByOrderId = await getOrderItemsByOrderIds(catalogOrderIds);
   const catalogItemsByOrderId = catalogItemsRecordFromOrderItems(
     itemsByOrderId,
     catalogOrderIds,
   );
 
-  const orders = filterOrders(
-    allOrders,
-    {
-      statuses: statusFilters,
-      channel: channelFilter,
-      location: locationFilter,
-      plant: plantFilter,
-      dateFrom,
-      dateTo,
-    },
-    catalogItemsByOrderId,
-  );
-
-  const hasNoLocationOrder = allOrders.some(
-    (o) => (o.snapshot?.partnerLocationId ?? o.locationId) === null,
-  );
-  const locationMap = new Map<string, string>();
-  for (const o of allOrders) {
-    const locationId = o.snapshot?.partnerLocationId ?? o.locationId;
-    if (locationId !== null && !locationMap.has(locationId)) {
-      locationMap.set(locationId, o.snapshot?.partnerLocationName ?? o.locationName ?? locationId);
-    }
-  }
   const locationOptions: FilterOption[] = [];
-  if (hasNoLocationOrder) {
+  if (filterOptions.hasNoLocationOrder) {
     locationOptions.push({ value: "__none__", label: t(locale, "admin.orders.noLocation") });
   }
-  const sortedLocIds = [...locationMap.keys()].sort((a, b) =>
-    (locationMap.get(a) ?? a).localeCompare(locationMap.get(b) ?? b),
-  );
-  for (const id of sortedLocIds) {
-    locationOptions.push({ value: id, label: locationMap.get(id) ?? id });
+  for (const location of filterOptions.locations) {
+    locationOptions.push({ value: location.id, label: location.name });
   }
 
-  const plantMap = new Map<string, string>();
-  for (const o of allOrders) {
-    if (isCatalogAdminOrder(o)) {
-      const lines = catalogItemsByOrderId[o.orderId] ?? [];
-      if (lines.length === 0) {
-        const productId = o.snapshot?.productId ?? o.plantId;
-        if (!plantMap.has(productId)) plantMap.set(productId, o.snapshot?.productName ?? o.plantName);
-        continue;
-      }
-      for (const line of lines) {
-        if (!plantMap.has(line.plantId)) {
-          plantMap.set(line.plantId, catalogStoredPlantName(line, locale));
-        }
-      }
-      continue;
-    }
-    const productId = o.snapshot?.productId ?? o.plantId;
-    if (!plantMap.has(productId)) plantMap.set(productId, o.snapshot?.productName ?? o.plantName);
-  }
-  const plantOptions: FilterOption[] = [...plantMap.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1]))
-    .map(([value, label]) => ({ value, label }));
+  const plantOptions: FilterOption[] = filterOptions.plants.map((plant) => ({
+    value: plant.id,
+    label: plantOptionLabel(plant, locale),
+  }));
 
   const reconciliationViews = reconciliationAttempts.map(reconciliationAttemptViewFromAttempt);
 
@@ -172,7 +149,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
 
       {orders.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          {allOrders.length === 0
+          {!filterOptions.hasAnyOrders
             ? t(locale, "admin.orders.empty")
             : t(locale, "admin.orders.noMatch")}
         </p>

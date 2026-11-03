@@ -15,7 +15,11 @@ import {
   catalogStoredPlantName,
   reconciliationAttemptViewFromAttempt,
 } from "../lib/adminOrderDisplay";
-import { filterOrders, parseChannel } from "../lib/adminOrdersFilterUtils";
+import {
+  filterOrders,
+  parseChannel,
+  type OrdersFilterState,
+} from "../lib/adminOrdersFilterUtils";
 import type { SavedOrder } from "../lib/orderTypes";
 
 const root = process.cwd();
@@ -65,9 +69,12 @@ function order(patch: Partial<SavedOrder> = {}): SavedOrder {
 function assertSources(): void {
   const page = read("app/admin/orders/page.tsx");
   assert.match(page, /getOrderItemsByOrderIds/);
+  assert.match(page, /readAdminOrdersList/);
+  assert.match(page, /readAdminOrderFilterOptions/);
   assert.match(page, /listCatalogPaymentAttemptsNeedingReconciliation/);
   assert.match(page, /reconciliationViews\.length > 0/);
   assert.doesNotMatch(page, /approve|refund|retry|manual.?resolv/i);
+  assert.doesNotMatch(page, /\breadOrders\s*\(/);
 
   const card = read("components/admin/AdminOrderCard.tsx");
   assert.match(card, /isCatalogAdminOrder/);
@@ -81,6 +88,11 @@ function assertSources(): void {
   assert.doesNotMatch(recon, /fetch\(/);
   assert.doesNotMatch(recon, /approve|refund|retry/i);
 
+  assert.equal(existsSync(join(root, "app/admin/orders/loading.tsx")), true);
+  const loading = read("app/admin/orders/loading.tsx");
+  assert.match(loading, /admin\.common\.loading/);
+  assert.match(loading, /animate-pulse/);
+
   const storage = read("lib/ordersStorage.ts");
   assert.match(storage, /export async function readOrders/);
   assert.match(storage, /purchase_email_status/);
@@ -92,6 +104,14 @@ function assertSources(): void {
   assert.match(readOrdersSlice, /purchase_email_status/);
   assert.match(readOrdersSlice, /cardcom_transaction_id/);
   assert.doesNotMatch(readOrdersSlice, /order_items/);
+
+  const adminList = read("lib/adminOrdersList.ts");
+  assert.match(adminList, /export async function readAdminOrdersList/);
+  assert.match(adminList, /export async function readAdminOrderFilterOptions/);
+  assert.match(adminList, /order_items/);
+  assert.match(adminList, /AT TIME ZONE 'UTC'/);
+  assert.doesNotMatch(adminList, /payment_resume_token/);
+  assert.doesNotMatch(adminList, /cardcom_transaction_id/);
 
   const attempts = read("lib/paymentAttemptStorage.ts");
   assert.match(attempts, /listCatalogPaymentAttemptsNeedingReconciliation/);
@@ -257,9 +277,138 @@ async function assertHelpers(): Promise<void> {
   console.log("verify-admin-catalog-orders: helper checks ok");
 }
 
+function orderIds(orders: SavedOrder[]): string {
+  return orders.map((order) => order.orderId).join(",");
+}
+
+function exportFieldsPresent(order: SavedOrder): void {
+  assert.ok(order.orderId);
+  assert.ok(order.createdAt);
+  assert.ok(order.orderStatus);
+  assert.ok(typeof order.fullName === "string");
+  assert.ok(typeof order.phone === "string");
+  assert.ok(typeof order.price === "number");
+  assert.ok(order.fulfillmentMethod === "delivery" || order.fulfillmentMethod === "pickup");
+  assert.ok(typeof order.plantName === "string" || order.snapshot?.productName);
+}
+
+async function assertSqlFilterParity(): Promise<void> {
+  await import("./stub-server-only.mjs");
+  const { loadEnvLocal } = await import("./load-env-local.mjs");
+  await loadEnvLocal();
+  const host = new URL(process.env.DATABASE_URL ?? "").hostname;
+  if (host.includes("twilight-truth")) {
+    throw new Error("Refusing to verify against production");
+  }
+
+  const { readOrders } = await import("../lib/ordersStorage");
+  const { readAdminOrdersList, readAdminOrderFilterOptions } = await import(
+    "../lib/adminOrdersList"
+  );
+  const { getOrderItemsByOrderIds } = await import("../lib/orderItemStorage");
+  const { isCatalogAdminOrder, catalogItemsRecordFromOrderItems } = await import(
+    "../lib/adminOrderDisplay"
+  );
+  const { filterOrders } = await import("../lib/adminOrdersFilterUtils");
+
+  const allOrders = await readOrders();
+  const catalogOrderIds = allOrders.filter(isCatalogAdminOrder).map((order) => order.orderId);
+  const itemsByOrderId = await getOrderItemsByOrderIds(catalogOrderIds);
+  const catalogItemsByOrderId = catalogItemsRecordFromOrderItems(
+    itemsByOrderId,
+    catalogOrderIds,
+  );
+
+  const cases: OrdersFilterState[] = [
+    { statuses: [], channel: "all", location: "all", plant: "all" },
+    { statuses: ["sold"], channel: "all", location: "all", plant: "all" },
+    { statuses: [], channel: "catalog", location: "all", plant: "all" },
+    { statuses: [], channel: "partner", location: "all", plant: "all" },
+    { statuses: [], channel: "all", location: "__none__", plant: "all" },
+    {
+      statuses: [],
+      channel: "all",
+      location: "all",
+      plant: "all",
+      dateFrom: "2020-01-01",
+      dateTo: "2099-12-31",
+    },
+  ];
+
+  const locationSample = allOrders
+    .map((order) => order.snapshot?.partnerLocationId ?? order.locationId)
+    .find((id): id is string => typeof id === "string" && id.length > 0);
+  if (locationSample) {
+    cases.push({
+      statuses: [],
+      channel: "all",
+      location: locationSample,
+      plant: "all",
+    });
+  }
+
+  const plantSample =
+    Object.values(catalogItemsByOrderId)
+      .flat()
+      .map((line) => line.plantId)[0] ??
+    allOrders.map((order) => order.snapshot?.productId ?? order.plantId).find(Boolean);
+  if (plantSample) {
+    cases.push({
+      statuses: [],
+      channel: "all",
+      location: "all",
+      plant: plantSample,
+    });
+  }
+
+  // Catalog empty-items fallback: header product id when no order_items rows.
+  const emptyCatalog = allOrders.find(
+    (order) =>
+      isCatalogAdminOrder(order) && (catalogItemsByOrderId[order.orderId] ?? []).length === 0,
+  );
+  if (emptyCatalog) {
+    cases.push({
+      statuses: [],
+      channel: "catalog",
+      location: "all",
+      plant: emptyCatalog.snapshot?.productId ?? emptyCatalog.plantId,
+    });
+  }
+
+  for (const filters of cases) {
+    const expected = filterOrders(allOrders, filters, catalogItemsByOrderId);
+    const actual = await readAdminOrdersList(filters);
+    assert.equal(
+      orderIds(actual),
+      orderIds(expected),
+      `SQL filter parity failed for ${JSON.stringify(filters)}`,
+    );
+  }
+
+  for (const order of await readAdminOrdersList({
+    statuses: [],
+    channel: "all",
+    location: "all",
+    plant: "all",
+  })) {
+    exportFieldsPresent(order);
+    assert.equal(order.checkoutSessionId, undefined);
+    assert.equal(order.paymentResumeToken, undefined);
+    assert.equal(order.cardcomTransactionId, undefined);
+  }
+
+  const options = await readAdminOrderFilterOptions();
+  assert.equal(options.hasAnyOrders, allOrders.length > 0);
+  assert.ok(Array.isArray(options.locations));
+  assert.ok(Array.isArray(options.plants));
+
+  console.log("verify-admin-catalog-orders: SQL filter parity ok");
+}
+
 async function main(): Promise<void> {
   assertSources();
   await assertHelpers();
+  await assertSqlFilterParity();
   console.log("verify-admin-catalog-orders: ok");
 }
 
