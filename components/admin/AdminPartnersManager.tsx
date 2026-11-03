@@ -687,12 +687,22 @@ function IconChevron({ className, open }: { className?: string; open: boolean })
 }
 
 /** Locations (physical branches) that belong to one partner. */
-export function AdminPartnersManager({ partnerId }: { partnerId: string }) {
+export function AdminPartnersManager({
+  partnerId,
+  initialPartners,
+  initialPosSpots,
+}: {
+  partnerId: string;
+  initialPartners: PartnerLocation[];
+  initialPosSpots: PosSpot[];
+}) {
   const locale = useLocale();
-  const [partners, setPartners] = useState<PartnerLocation[]>([]);
-  const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
+  const [partners, setPartners] = useState<PartnerLocation[]>(() =>
+    initialPartners.map(normalizePartner),
+  );
+  const [posSpots, setPosSpots] = useState<PosSpot[]>(initialPosSpots);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState(emptyDraft);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -727,7 +737,10 @@ export function AdminPartnersManager({ partnerId }: { partnerId: string }) {
     try {
       const [partnersRes, spotsRes] = await Promise.all([
         fetch(routes.api.partners(), { cache: "no-store", signal }),
-        fetch(routes.api.posSpots(), { cache: "no-store", signal }),
+        fetch(
+          `${routes.api.posSpots()}?brandId=${encodeURIComponent(partnerId)}`,
+          { cache: "no-store", signal },
+        ),
       ]);
       const partnersData = (await partnersRes.json().catch(() => ({}))) as PartnersApiResponse;
       const spotsData = (await spotsRes.json().catch(() => ({}))) as PosSpotsApiResponse;
@@ -747,11 +760,8 @@ export function AdminPartnersManager({ partnerId }: { partnerId: string }) {
       const locations = (partnersData.partners ?? []).filter(
         (location) => location.partnerId === partnerId,
       );
-      const locationIds = new Set(locations.map((location) => location.id));
       setPartners(locations.map(normalizePartner));
-      setPosSpots(
-        (spotsData.posSpots ?? []).filter((spot) => locationIds.has(spot.partnerLocationId)),
-      );
+      setPosSpots(spotsData.posSpots ?? []);
     } catch {
       if (signal?.aborted) return;
       setLoadError(t(locale, "admin.partners.networkLoad"));
@@ -761,12 +771,6 @@ export function AdminPartnersManager({ partnerId }: { partnerId: string }) {
       if (!signal?.aborted) setIsLoading(false);
     }
   }, [locale, partnerId]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadPageData(controller.signal);
-    return () => controller.abort();
-  }, [loadPageData]);
 
   async function handleCreate() {
     const result = draftToPayload(createDraft, locale);

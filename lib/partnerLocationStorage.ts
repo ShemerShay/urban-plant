@@ -64,6 +64,21 @@ export async function readPartnerLocations(): Promise<PartnerLocation[]> {
   return (rows as PartnerLocationRow[]).map(mapPartnerLocationRow);
 }
 
+/** Locations owned by one Partner brand. */
+export async function readPartnerLocationsByPartnerId(
+  partnerId: string,
+): Promise<PartnerLocation[]> {
+  const trimmed = partnerId.trim();
+  if (!trimmed) return [];
+  const rows = await sql`
+    SELECT id, partner_id, name, address, type, payments, pickup_disabled, monthly_revenue, setup_cost, notes, created_at
+    FROM partner_locations
+    WHERE partner_id = ${trimmed}
+    ORDER BY name ASC
+  `;
+  return (rows as PartnerLocationRow[]).map(mapPartnerLocationRow);
+}
+
 export async function getPartnerLocationById(
   id: string,
 ): Promise<PartnerLocation | undefined> {

@@ -1,16 +1,15 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  loadAdminPosSpotsAll,
+  loadAdminPosSpotsForLocation,
+} from "@/lib/adminPosSpotsPayload";
 import { appendEvent } from "@/lib/eventStorage";
 import { readPartnerLocations } from "@/lib/mockLocations";
-import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
-import {
-  isPlantPosEligibleOffer,
-  isPosAssignableOffer,
-} from "@/lib/offerTypes";
-import { resolveSpotOffers, type PartnerPlantProduct } from "@/lib/partnerPlantSummary";
-import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
+import { isPosAssignableOffer } from "@/lib/offerTypes";
+import { readPartnerLocationsByPartnerId } from "@/lib/partnerLocationStorage";
 import { getPocketById } from "@/lib/pocketStorage";
 import { posCentralStockHttpError, writePosCreate } from "@/lib/posCentralStock";
 import {
@@ -18,7 +17,10 @@ import {
   PosOccupancyError,
   resolveOccupancyForPosCreate,
 } from "@/lib/posOccupancy";
-import { PosSpotSlugConflictError, readPosSpots } from "@/lib/posSpotStorage";
+import {
+  PosSpotSlugConflictError,
+  readPosSpotsByPartnerLocationIds,
+} from "@/lib/posSpotStorage";
 import {
   buildPosSpotNameAndSlug,
   formatPosSpotDisplayName,
@@ -43,67 +45,29 @@ function cleanString(value: unknown): string {
 
 export async function GET(request: NextRequest) {
   const partnerId = cleanString(request.nextUrl.searchParams.get("partnerId"));
-  const [offers, allSpotsInitial, locations] = await Promise.all([
-    readOffers(),
-    readPosSpots(),
-    readPartnerLocations(),
-  ]);
+  const brandId = cleanString(request.nextUrl.searchParams.get("brandId"));
 
-  // Lazy-repair expired holds so Admin lists show truth without waiting for cron.
-  const held = allSpotsInitial.filter((s) => s.status === "held_for_payment");
-  if (held.length > 0) {
-    await Promise.all(held.map((s) => expireStalePaymentHold(s.id)));
-  }
-  const allSpots = held.length > 0 ? await readPosSpots() : allSpotsInitial;
-
-  const posSpots = partnerId
-    ? allSpots.filter((spot) => spot.partnerLocationId === partnerId)
-    : allSpots;
-  const referencedOfferIds = new Set(
-    posSpots
-      .map((spot) => spot.currentOfferId)
-      .filter((id): id is string => Boolean(id)),
-  );
-  const productIds = new Set(
-    offers
-      .filter((offer) => isPosAssignableOffer(offer) || referencedOfferIds.has(offer.id))
-      .map((offer) => offer.productId),
-  );
-  const productEntries = await Promise.all(
-    Array.from(productIds).map(async (id) => [id, await getPlantById(id)] as const),
-  );
-  const productById = new Map(productEntries);
-
-  const posOffers = offers.filter((offer) => {
-    if (referencedOfferIds.has(offer.id)) return true;
-    if (!isPosAssignableOffer(offer)) return false;
-    const inventoryType = productById.get(offer.productId)?.inventoryType ?? "plants";
-    if (inventoryType === "flowers") return true;
-    return partnerId ? isPlantPosEligibleOffer(offer, partnerId) : Boolean(offer.sellableVariantId);
-  });
-
-  const enrichedOffers = posOffers.map((offer) => {
-    const product = productById.get(offer.productId);
-    return {
-      ...offer,
-      productName: product?.name ?? offer.productId,
-      currency: product?.currency ?? "ILS",
-      inventoryType: product?.inventoryType ?? null,
-    };
-  });
-  const catalogById = new Map<string, PartnerPlantProduct>();
-  for (const [id, product] of productById) {
-    if (product) catalogById.set(id, { name: product.name, inventoryType: product.inventoryType });
+  // Brand Admin list: spots only (no offers / hold repair — counts & search only).
+  if (brandId) {
+    const brandLocations = await readPartnerLocationsByPartnerId(brandId);
+    const posSpots = await readPosSpotsByPartnerLocationIds(
+      brandLocations.map((location) => location.id),
+    );
+    return NextResponse.json({ posSpots });
   }
 
-  return NextResponse.json({
-    offers: enrichedOffers,
-    /** Plant metadata for every offer referenced by `posSpots`, regardless of offer status. */
-    spotOffers: resolveSpotOffers(posSpots, offers, catalogById),
-    locations,
-    posSpots,
-    potColors: [],
-  });
+  // Location Admin detail: scoped spots + request-time hold repair on that set only.
+  if (partnerId) {
+    const payload = await loadAdminPosSpotsForLocation(partnerId);
+    return NextResponse.json({
+      offers: payload.offers,
+      spotOffers: payload.spotOffers,
+      posSpots: payload.posSpots,
+    });
+  }
+
+  const payload = await loadAdminPosSpotsAll();
+  return NextResponse.json(payload);
 }
 
 export async function POST(request: NextRequest) {

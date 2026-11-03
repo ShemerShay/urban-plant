@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -88,6 +87,11 @@ type AdminPartnerDetailProps = {
   partnerId: string;
   /** Partner brand that owns the location. */
   partner: Partner;
+  initialLocation: PartnerLocation;
+  initialPockets: Pocket[];
+  initialPosSpots: PosSpot[];
+  initialOffers: OfferOption[];
+  initialSpotOffers: PartnerPlantOffer[];
 };
 
 function subscribeToNothing(): () => void {
@@ -322,18 +326,26 @@ function ExpandablePocketCard({
   );
 }
 
-export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDetailProps) {
+export function AdminPartnerDetail({
+  partnerId,
+  partner: brand,
+  initialLocation,
+  initialPockets,
+  initialPosSpots,
+  initialOffers,
+  initialSpotOffers,
+}: AdminPartnerDetailProps) {
   const locale = useLocale();
   const origin = useClientOrigin();
   const qrHostRef = useRef<HTMLDivElement>(null);
 
-  const [partner, setPartner] = useState<PartnerLocation | null>(null);
-  const [pockets, setPockets] = useState<Pocket[]>([]);
-  const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
-  const [offers, setOffers] = useState<OfferOption[]>([]);
-  const [spotOffers, setSpotOffers] = useState<PartnerPlantOffer[]>([]);
+  const [partner, setPartner] = useState<PartnerLocation | null>(initialLocation);
+  const [pockets, setPockets] = useState<Pocket[]>(initialPockets);
+  const [posSpots, setPosSpots] = useState<PosSpot[]>(initialPosSpots);
+  const [offers, setOffers] = useState<OfferOption[]>(initialOffers);
+  const [spotOffers, setSpotOffers] = useState<PartnerPlantOffer[]>(initialSpotOffers);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const [pocketModal, setPocketModal] = useState<"create" | "edit" | null>(null);
   const [editingPocket, setEditingPocket] = useState<Pocket | null>(null);
@@ -488,10 +500,6 @@ export function AdminPartnerDetail({ partnerId, partner: brand }: AdminPartnerDe
       setLoading(false);
     }
   }, [partnerId, locale]);
-
-  useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
 
   const assignedCounts = useMemo(() => {
     const counts = new Map<string, number>();

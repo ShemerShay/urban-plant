@@ -941,3 +941,20 @@ export async function readPosSpotsByPartner(partnerLocationId: string): Promise<
   `;
   return sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
 }
+
+/** Spots for many Partner Locations in one query (brand Admin pages). */
+export async function readPosSpotsByPartnerLocationIds(
+  partnerLocationIds: readonly string[],
+): Promise<PosSpot[]> {
+  const ids = [
+    ...new Set(partnerLocationIds.map((id) => id.trim()).filter(Boolean)),
+  ];
+  if (ids.length === 0) return [];
+  const rows = await sql`
+    SELECT ${POS_SPOT_ROW_SQL}
+    FROM pos_spots
+    WHERE partner_location_id = ANY(${ids}::text[])
+    ORDER BY created_at ASC
+  `;
+  return sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
+}

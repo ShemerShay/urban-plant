@@ -8,8 +8,12 @@ import type { PartnerFinanceFigures } from "@/lib/finance/view";
 import { getLocale } from "@/lib/getLocale";
 import type { Locale } from "@/lib/locale";
 import { t, type MessageKey } from "@/lib/messages";
-import { getPartnerLocationById } from "@/lib/partnerLocationStorage";
+import {
+  getPartnerLocationById,
+  readPartnerLocationsByPartnerId,
+} from "@/lib/partnerLocationStorage";
 import { getPartnerById } from "@/lib/partnerStorage";
+import { readPosSpotsByPartnerLocationIds } from "@/lib/posSpotStorage";
 import { routes } from "@/lib/routes";
 
 interface PageProps {
@@ -35,16 +39,24 @@ export default async function AdminPartnerPage({ params }: PageProps) {
     notFound();
   }
 
-  const [locale, summary] = await Promise.all([
+  const [locale, summary, locations] = await Promise.all([
     getLocale(),
     loadPartnerFinanceSummary(partner.id),
+    readPartnerLocationsByPartnerId(partner.id),
   ]);
+  const posSpots = await readPosSpotsByPartnerLocationIds(
+    locations.map((location) => location.id),
+  );
 
   return (
     <main id="admin-partner-page" className="mx-auto min-h-screen w-full max-w-md px-4 py-6 pb-12">
       <AdminPartnerBrandHeader initialPartner={partner} />
       <PartnerFinanceSummary locale={locale} summary={summary} />
-      <AdminPartnersManager partnerId={partner.id} />
+      <AdminPartnersManager
+        partnerId={partner.id}
+        initialPartners={locations}
+        initialPosSpots={posSpots}
+      />
     </main>
   );
 }
