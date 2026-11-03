@@ -90,6 +90,33 @@ async function cardcomRetryProductName(
     : named;
 }
 
+function retryResultFromAttemptClaimFailure(
+  reason: "not_found" | "not_awaiting" | "token_mismatch" | "busy" | "conflict",
+): Extract<RetryCardcomPaymentResult, { ok: false }> {
+  if (reason === "busy") {
+    return {
+      ok: false,
+      code: "busy",
+      error: "Payment is already being prepared. Please wait.",
+      httpStatus: 409,
+    };
+  }
+  if (reason === "not_awaiting" || reason === "token_mismatch") {
+    return {
+      ok: false,
+      code: "unauthorized",
+      error: "Payment session is not available to retry.",
+      httpStatus: 403,
+    };
+  }
+  return {
+    ok: false,
+    code: "conflict",
+    error: "Could not retry payment. Try again.",
+    httpStatus: 409,
+  };
+}
+
 async function retryAttemptPayment(
   attemptId: string,
   resumeToken: string,
@@ -124,10 +151,22 @@ async function retryAttemptPayment(
     };
   }
 
+  // Claim before expire / POS / Cardcom Create so concurrent retries collide on
+  // the atomic DB update instead of racing through slow pre-Create I/O while the
+  // winner already released payment_retry_lock_at.
+  const claimed = await claimPaymentAttemptRetryLock({
+    attemptId: attemptBefore.id,
+    resumeToken: attemptBefore.paymentResumeToken,
+  });
+  if (!claimed.ok) {
+    return retryResultFromAttemptClaimFailure(claimed.reason);
+  }
+
   await expireStalePaymentHold(attemptBefore.posSpotId);
 
   const attempt = await getAwaitingPaymentAttemptForResume(attemptId, resumeToken);
   if (!attempt) {
+    await releasePaymentAttemptRetryLock(attemptBefore.id);
     return {
       ok: false,
       code: "unauthorized",
@@ -136,6 +175,7 @@ async function retryAttemptPayment(
     };
   }
   if (!attempt.posSpotId) {
+    await releasePaymentAttemptRetryLock(attempt.id);
     return {
       ok: false,
       code: "conflict",
@@ -157,6 +197,7 @@ async function retryAttemptPayment(
       attempt.id,
     )
   ) {
+    await releasePaymentAttemptRetryLock(attempt.id);
     return {
       ok: false,
       code: "conflict",
@@ -167,6 +208,7 @@ async function retryAttemptPayment(
 
   const spotSlug = attempt.snapshot?.spotSlug?.trim() || posSpot.spotSlug;
   if (!spotSlug) {
+    await releasePaymentAttemptRetryLock(attempt.id);
     return {
       ok: false,
       code: "server_error",
@@ -183,6 +225,7 @@ async function retryAttemptPayment(
       publicOrigin = getPublicAppOrigin();
     }
   } catch {
+    await releasePaymentAttemptRetryLock(attempt.id);
     return {
       ok: false,
       code: "config",
@@ -195,40 +238,12 @@ async function retryAttemptPayment(
   try {
     productName = await cardcomRetryProductName(attempt.productId, attempt);
   } catch {
+    await releasePaymentAttemptRetryLock(attempt.id);
     return {
       ok: false,
       code: "server_error",
       error: "Could not retry payment. Try again.",
       httpStatus: 500,
-    };
-  }
-
-  const claimed = await claimPaymentAttemptRetryLock({
-    attemptId: attempt.id,
-    resumeToken: attempt.paymentResumeToken,
-  });
-  if (!claimed.ok) {
-    if (claimed.reason === "busy") {
-      return {
-        ok: false,
-        code: "busy",
-        error: "Payment is already being prepared. Please wait.",
-        httpStatus: 409,
-      };
-    }
-    if (claimed.reason === "not_awaiting" || claimed.reason === "token_mismatch") {
-      return {
-        ok: false,
-        code: "unauthorized",
-        error: "Payment session is not available to retry.",
-        httpStatus: 403,
-      };
-    }
-    return {
-      ok: false,
-      code: "conflict",
-      error: "Could not retry payment. Try again.",
-      httpStatus: 409,
     };
   }
 
@@ -357,10 +372,8 @@ async function retryLegacyOrderPayment(
     };
   }
 
-  await expireStalePaymentHold(orderBefore.posSpotId);
-
-  const order = await getPendingOrderForPaymentResume(orderId, resumeToken);
-  if (!order || !order.posSpotId) {
+  const resumeBefore = orderBefore.paymentResumeToken;
+  if (!resumeBefore) {
     return {
       ok: false,
       code: "unauthorized",
@@ -369,73 +382,10 @@ async function retryLegacyOrderPayment(
     };
   }
 
-  const posSpot = await getPosSpotById(order.posSpotId);
-  const plant = await getPlantById(order.plantId);
-  const inventoryType = inventoryTypeOrDefault(plant?.inventoryType);
-  const posOk =
-    inventoryType === "flowers" || inventoryType === "plants"
-      ? posSpot?.status === "available"
-      : false;
-  if (!posSpot || !posOk) {
-    return {
-      ok: false,
-      code: "conflict",
-      error: "This POS Spot is no longer available for purchase.",
-      httpStatus: 409,
-    };
-  }
-
-  const spotSlug = order.snapshot?.spotSlug?.trim() || posSpot.spotSlug;
-  if (!spotSlug) {
-    return {
-      ok: false,
-      code: "server_error",
-      error: "Could not retry payment. Try again.",
-      httpStatus: 500,
-    };
-  }
-
-  let publicOrigin: string;
-  try {
-    if (deps.publicOrigin?.trim()) {
-      publicOrigin = new URL(deps.publicOrigin.trim()).origin;
-    } else {
-      publicOrigin = getPublicAppOrigin();
-    }
-  } catch {
-    return {
-      ok: false,
-      code: "config",
-      error: "Payment is temporarily unavailable. Try again later.",
-      httpStatus: 500,
-    };
-  }
-
-  let productName: string;
-  try {
-    productName = await cardcomRetryProductName(order.plantId, order);
-  } catch {
-    return {
-      ok: false,
-      code: "server_error",
-      error: "Could not retry payment. Try again.",
-      httpStatus: 500,
-    };
-  }
-
-  const resume = order.paymentResumeToken;
-  if (!resume) {
-    return {
-      ok: false,
-      code: "unauthorized",
-      error: "Payment session is not available to retry.",
-      httpStatus: 403,
-    };
-  }
-
+  // Claim before expire / POS / Cardcom Create (same race as attempt path).
   const claimed = await claimPaymentRetryLock({
-    orderId: order.orderId,
-    resumeToken: resume,
+    orderId: orderBefore.orderId,
+    resumeToken: resumeBefore,
   });
   if (!claimed.ok) {
     if (claimed.reason === "busy") {
@@ -459,6 +409,88 @@ async function retryLegacyOrderPayment(
       code: "conflict",
       error: "Could not retry payment. Try again.",
       httpStatus: 409,
+    };
+  }
+
+  await expireStalePaymentHold(orderBefore.posSpotId);
+
+  const order = await getPendingOrderForPaymentResume(orderId, resumeToken);
+  if (!order || !order.posSpotId) {
+    await releasePaymentRetryLock(orderBefore.orderId);
+    return {
+      ok: false,
+      code: "unauthorized",
+      error: "Payment session is not available to retry.",
+      httpStatus: 403,
+    };
+  }
+
+  const posSpot = await getPosSpotById(order.posSpotId);
+  const plant = await getPlantById(order.plantId);
+  const inventoryType = inventoryTypeOrDefault(plant?.inventoryType);
+  const posOk =
+    inventoryType === "flowers" || inventoryType === "plants"
+      ? posSpot?.status === "available"
+      : false;
+  if (!posSpot || !posOk) {
+    await releasePaymentRetryLock(order.orderId);
+    return {
+      ok: false,
+      code: "conflict",
+      error: "This POS Spot is no longer available for purchase.",
+      httpStatus: 409,
+    };
+  }
+
+  const spotSlug = order.snapshot?.spotSlug?.trim() || posSpot.spotSlug;
+  if (!spotSlug) {
+    await releasePaymentRetryLock(order.orderId);
+    return {
+      ok: false,
+      code: "server_error",
+      error: "Could not retry payment. Try again.",
+      httpStatus: 500,
+    };
+  }
+
+  let publicOrigin: string;
+  try {
+    if (deps.publicOrigin?.trim()) {
+      publicOrigin = new URL(deps.publicOrigin.trim()).origin;
+    } else {
+      publicOrigin = getPublicAppOrigin();
+    }
+  } catch {
+    await releasePaymentRetryLock(order.orderId);
+    return {
+      ok: false,
+      code: "config",
+      error: "Payment is temporarily unavailable. Try again later.",
+      httpStatus: 500,
+    };
+  }
+
+  let productName: string;
+  try {
+    productName = await cardcomRetryProductName(order.plantId, order);
+  } catch {
+    await releasePaymentRetryLock(order.orderId);
+    return {
+      ok: false,
+      code: "server_error",
+      error: "Could not retry payment. Try again.",
+      httpStatus: 500,
+    };
+  }
+
+  const resume = order.paymentResumeToken;
+  if (!resume) {
+    await releasePaymentRetryLock(order.orderId);
+    return {
+      ok: false,
+      code: "unauthorized",
+      error: "Payment session is not available to retry.",
+      httpStatus: 403,
     };
   }
 

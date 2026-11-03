@@ -981,44 +981,8 @@ export async function retryCatalogCardcomPayment(
     };
   }
 
-  const holdsOk = await catalogHoldsAllowRetry(attempt.id);
-  if (!holdsOk) {
-    return {
-      ok: false,
-      code: "conflict",
-      error: "This order is no longer held for your payment.",
-      httpStatus: 409,
-    };
-  }
-
-  let publicOrigin: string;
-  try {
-    if (deps.publicOrigin?.trim()) {
-      publicOrigin = new URL(deps.publicOrigin.trim()).origin;
-    } else {
-      publicOrigin = getPublicAppOrigin();
-    }
-  } catch {
-    return {
-      ok: false,
-      code: "config",
-      error: "Payment is temporarily unavailable. Try again later.",
-      httpStatus: 500,
-    };
-  }
-
-  let productName: string;
-  try {
-    productName = catalogCardcomProductName(attempt);
-  } catch {
-    return {
-      ok: false,
-      code: "server_error",
-      error: "Could not retry payment. Try again.",
-      httpStatus: 500,
-    };
-  }
-
+  // Claim before hold checks / Cardcom Create so concurrent catalog retries
+  // serialize on the atomic payment_attempts lock update.
   const claimed = await claimPaymentAttemptRetryLock({
     attemptId: attempt.id,
     resumeToken: attempt.paymentResumeToken,
@@ -1045,6 +1009,47 @@ export async function retryCatalogCardcomPayment(
       code: "conflict",
       error: "Could not retry payment. Try again.",
       httpStatus: 409,
+    };
+  }
+
+  const holdsOk = await catalogHoldsAllowRetry(attempt.id);
+  if (!holdsOk) {
+    await releasePaymentAttemptRetryLock(attempt.id);
+    return {
+      ok: false,
+      code: "conflict",
+      error: "This order is no longer held for your payment.",
+      httpStatus: 409,
+    };
+  }
+
+  let publicOrigin: string;
+  try {
+    if (deps.publicOrigin?.trim()) {
+      publicOrigin = new URL(deps.publicOrigin.trim()).origin;
+    } else {
+      publicOrigin = getPublicAppOrigin();
+    }
+  } catch {
+    await releasePaymentAttemptRetryLock(attempt.id);
+    return {
+      ok: false,
+      code: "config",
+      error: "Payment is temporarily unavailable. Try again later.",
+      httpStatus: 500,
+    };
+  }
+
+  let productName: string;
+  try {
+    productName = catalogCardcomProductName(attempt);
+  } catch {
+    await releasePaymentAttemptRetryLock(attempt.id);
+    return {
+      ok: false,
+      code: "server_error",
+      error: "Could not retry payment. Try again.",
+      httpStatus: 500,
     };
   }
 
