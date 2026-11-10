@@ -545,7 +545,7 @@ async function main(): Promise<void> {
   } = await import("../lib/finance/storage");
 
   const tag = `verify-finance-${randomUUID()}`;
-  const partner = await createPartner({ id: tag, name: tag, image: null });
+  const partner = await createPartner({ id: tag, name: tag });
   const partnerOrderId = randomUUID();
   const catalogOrderId = randomUUID();
 

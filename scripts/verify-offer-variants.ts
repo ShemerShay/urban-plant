@@ -301,7 +301,7 @@ async function main(): Promise<void> {
     assert.equal(noPot.supplierCost, 40);
     assert.equal(withPot.supplierCost, 52.5);
 
-    const partner = await createPartner({ id: randomUUID(), name: `${tag} partner`, image: null });
+    const partner = await createPartner({ id: randomUUID(), name: `${tag} partner` });
     partnerId = partner.id;
     const branchA = await createPartnerLocation({
       id: randomUUID(),

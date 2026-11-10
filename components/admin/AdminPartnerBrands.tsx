@@ -1,11 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 
 import { AdminFormModal } from "@/components/admin/shared/AdminFormModal";
-import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
 import { useLocale } from "@/components/locale/LocaleProvider";
 import { displayApiError } from "@/lib/displayLabels";
 import type { Locale } from "@/lib/locale";
@@ -13,48 +11,6 @@ import { t } from "@/lib/messages";
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { Partner } from "@/lib/partnerStorage";
 import { routes } from "@/lib/routes";
-
-function partnerInitials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
-export function PartnerLogo({
-  name,
-  image,
-  size = "md",
-}: {
-  name: string;
-  image: string | null;
-  size?: "sm" | "md" | "lg";
-}) {
-  const dimension = size === "lg" ? "h-16 w-16" : size === "sm" ? "h-10 w-10" : "h-12 w-12";
-  if (image) {
-    return (
-      <Image
-        src={image}
-        alt={name}
-        width={64}
-        height={64}
-        unoptimized
-        className={`${dimension} shrink-0 rounded-2xl bg-white object-contain ring-1 ring-slate-200`}
-      />
-    );
-  }
-  return (
-    <div
-      className={`${dimension} flex shrink-0 items-center justify-center rounded-2xl bg-emerald-800 text-sm font-semibold text-white`}
-      aria-hidden
-    >
-      {partnerInitials(name)}
-    </div>
-  );
-}
 
 /** Mount only while open so each opening starts from `initial`. */
 function PartnerBrandModal({
@@ -65,14 +21,13 @@ function PartnerBrandModal({
   onSubmit,
 }: {
   title: string;
-  initial: { name: string; image: string | null };
+  initial: { name: string };
   submitLabel?: string;
   onCancel: () => void;
-  onSubmit: (value: { name: string; image: string | null }) => Promise<string | null>;
+  onSubmit: (value: { name: string }) => Promise<string | null>;
 }) {
   const locale = useLocale();
   const [name, setName] = useState(initial.name);
-  const [image, setImage] = useState<string | null>(initial.image);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,7 +37,7 @@ function PartnerBrandModal({
       return;
     }
     setBusy(true);
-    const failure = await onSubmit({ name: name.trim(), image });
+    const failure = await onSubmit({ name: name.trim() });
     setBusy(false);
     setError(failure);
   }
@@ -105,16 +60,6 @@ function PartnerBrandModal({
           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
         />
       </label>
-      <div className="space-y-1">
-        <span className="text-sm font-medium text-slate-700">
-          {t(locale, "admin.partners.brand.logo")}
-        </span>
-        <PlantImagePicker
-          images={image ? [image] : []}
-          onChange={(urls) => setImage(urls.at(-1) ?? null)}
-          plantName={name || t(locale, "admin.partners.brand.logo")}
-        />
-      </div>
     </AdminFormModal>
   );
 }
@@ -193,7 +138,7 @@ export function AdminPartnerBrandsManager({
     [applyLoadResult, locale],
   );
 
-  async function createPartner(value: { name: string; image: string | null }) {
+  async function createPartner(value: { name: string }) {
     try {
       const res = await fetch(routes.api.partnerBrands(), {
         method: "POST",
@@ -248,7 +193,6 @@ export function AdminPartnerBrandsManager({
                   href={routes.admin.partner(partner.id)}
                   className="flex items-center gap-4 rounded-3xl bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.04)] transition hover:bg-slate-50"
                 >
-                  <PartnerLogo name={partner.name} image={partner.image} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-base font-semibold text-emerald-950">
                       {partner.name}
@@ -275,7 +219,7 @@ export function AdminPartnerBrandsManager({
         <PartnerBrandModal
           title={t(locale, "admin.partners.new")}
           submitLabel={t(locale, "admin.partners.create")}
-          initial={{ name: "", image: null }}
+          initial={{ name: "" }}
           onCancel={() => setCreateOpen(false)}
           onSubmit={createPartner}
         />
@@ -284,13 +228,13 @@ export function AdminPartnerBrandsManager({
   );
 }
 
-/** Partner page header with logo and edit (name + logo). */
+/** Partner page header with edit (name). */
 export function AdminPartnerBrandHeader({ initialPartner }: { initialPartner: Partner }) {
   const locale = useLocale();
   const [partner, setPartner] = useState(initialPartner);
   const [editOpen, setEditOpen] = useState(false);
 
-  async function savePartner(value: { name: string; image: string | null }) {
+  async function savePartner(value: { name: string }) {
     try {
       const res = await fetch(routes.api.partnerBrand(partner.id), {
         method: "PATCH",
@@ -311,14 +255,11 @@ export function AdminPartnerBrandHeader({ initialPartner }: { initialPartner: Pa
 
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-4">
-        <PartnerLogo name={partner.name} image={partner.image} size="lg" />
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            {t(locale, "admin.common.partner")}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">{partner.name}</h1>
-        </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+          {t(locale, "admin.common.partner")}
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold text-emerald-950">{partner.name}</h1>
       </div>
       <div className="flex items-center gap-3">
         <button
@@ -338,7 +279,7 @@ export function AdminPartnerBrandHeader({ initialPartner }: { initialPartner: Pa
       {editOpen ? (
         <PartnerBrandModal
           title={t(locale, "admin.partners.brand.edit")}
-          initial={{ name: partner.name, image: partner.image }}
+          initial={{ name: partner.name }}
           onCancel={() => setEditOpen(false)}
           onSubmit={savePartner}
         />

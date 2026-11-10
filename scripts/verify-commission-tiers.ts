@@ -75,7 +75,6 @@ async function main(): Promise<void> {
   const testPartner = await createPartner({
     id: `commission-verify-${randomUUID()}`,
     name: "Commission Verify Partner",
-    image: null,
   });
   const createdIds: string[] = [];
 

@@ -11,7 +11,6 @@ import {
 } from "react";
 import QRCode from "react-qr-code";
 
-import { PartnerLogo } from "@/components/admin/AdminPartnerBrands";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { AdminEmptyState } from "@/components/admin/shared/AdminEmptyState";
 import { AdminEntityList } from "@/components/admin/shared/AdminEntityList";
@@ -918,15 +917,12 @@ export function AdminPartnerDetail({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <PartnerLogo name={brand.name} image={brand.image} />
-          <div>
-            <h1 className="text-2xl font-semibold text-emerald-950">{partner.name}</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              {formatStoredDeliveryAddressDisplay(partner.address, "en")}
-            </p>
-            <p className="mt-0.5 text-sm text-slate-500">{partner.type}</p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-emerald-950">{partner.name}</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            {formatStoredDeliveryAddressDisplay(partner.address, "en")}
+          </p>
+          <p className="mt-0.5 text-sm text-slate-500">{partner.type}</p>
         </div>
         <Link
           href={routes.admin.partner(brand.id)}
