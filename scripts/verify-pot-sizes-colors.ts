@@ -33,8 +33,10 @@ function assertWiring(): void {
   assert.doesNotMatch(migration, /INSERT INTO pot_colors/);
 
   const shop = read("lib/catalogShop.ts");
-  assert.match(shop, /FROM pots/);
-  assert.match(shop, /pot_inventory/);
+  // Catalog shop joins Catalog Pot SKUs (optional pot on an offer) and pot stock.
+  assert.match(shop, /LEFT JOIN pots pot ON pot\.id = catalog_offers\.pot_id/);
+  assert.match(shop, /LEFT JOIN pot_inventory pot_stock ON pot_stock\.pot_id = catalog_offers\.pot_id/);
+  assert.match(shop, /pot\.image AS pot_image/);
   assert.doesNotMatch(shop, /pot_colors/);
   assert.doesNotMatch(shop, /pot_sizes/);
   const holds = read("lib/catalogStockHolds.ts");

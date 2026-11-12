@@ -69,7 +69,8 @@ function assertSources(): void {
   assert.match(cardActions, /w-4\/5/);
   assert.match(cardActions, /ANALYTICS_EVENTS\.addToCart/);
   assert.match(cardActions, /disabled=\{!canAdd\}/);
-  assert.match(cardActions, /resolved && resolvedVariant\?\.potImage/);
+  // Pot thumbnail only when a pot is selected and has an image (no-pot configs use shop.noPot).
+  assert.match(cardActions, /resolved && resolved\.potId != null && resolvedVariant\?\.potImage/);
   assert.match(cardActions, /src=\{resolvedVariant\.potImage\}/);
   assert.doesNotMatch(cardActions, /backgroundColor/);
   assert.doesNotMatch(cardActions, /plant_price|pot_price|potVariantId/);
