@@ -10,11 +10,16 @@ import {
   type CardcomEnvironment,
 } from "@/lib/cardcom";
 import {
+  buildCatalogDocumentProducts,
+  catalogCustomerProductLabel,
+} from "@/lib/catalogDocumentLines";
+import {
   createCardcomDocument,
   fetchCardcomDocumentPdf,
   type CardcomDocumentInfo,
 } from "@/lib/cardcomDocuments";
 import { formatPrice } from "@/lib/mockPlants";
+import { getOrderItemsByOrderId, type OrderItem } from "@/lib/orderItemStorage";
 import type { SavedOrder } from "@/lib/orderTypes";
 import { CARDCOM_FLOWER_LINE_ITEM_NAME, inventoryTypeOrDefault } from "@/lib/inventoryType";
 import {
@@ -23,6 +28,7 @@ import {
   getOrderById,
   markPurchaseEmailFailed,
   markPurchaseEmailSent,
+  markPurchaseEmailSkipped,
   saveCardcomDocumentOnOrder,
 } from "@/lib/ordersStorage";
 import { getPlantById } from "@/lib/plantCatalog";
@@ -30,6 +36,8 @@ import {
   sendInternalOrderNotificationEmail,
   sendPurchaseEmail,
   URBAN_PLANT_NOTIFICATION_TO,
+  type PurchaseEmailCareSection,
+  type PurchaseEmailOrderLine,
 } from "@/lib/purchaseEmail";
 import { isVerifiedPaidOrderStatus } from "@/lib/status";
 
@@ -38,6 +46,8 @@ export type ProcessOrderDocumentAndEmailDeps = {
   fetchPdf?: typeof fetchCardcomDocumentPdf;
   sendEmail?: typeof sendPurchaseEmail;
   sendInternalNotification?: typeof sendInternalOrderNotificationEmail;
+  /** Catalog customer emails load current care text. Defaults to the plant catalog. */
+  loadPlant?: typeof getPlantById;
 };
 
 export type ProcessOrderDocumentAndEmailResult = {
@@ -61,6 +71,41 @@ function safeErrorMessage(error: unknown): string {
   return "Document or email processing failed";
 }
 
+/**
+ * Current care text for each distinct plant on a Catalog order.
+ * A lookup failure or an empty list leaves that plant without care and does not fail the email.
+ */
+async function loadCatalogCustomerCare(
+  items: OrderItem[],
+  loadPlant: (id: string) => Promise<{ careInstructions?: string[] } | undefined>,
+): Promise<PurchaseEmailCareSection[]> {
+  const seen = new Set<string>();
+  const sections: PurchaseEmailCareSection[] = [];
+  for (const item of items) {
+    const plantId = item.plantId.trim();
+    if (!plantId || seen.has(plantId)) continue;
+    seen.add(plantId);
+    let careInstructions: string[] = [];
+    try {
+      const plant = await loadPlant(plantId);
+      careInstructions = (plant?.careInstructions ?? [])
+        .map((line) => line.trim())
+        .filter(Boolean);
+    } catch (error) {
+      console.error("[cardcom-document-email] care instructions lookup failed", {
+        orderId: item.orderId,
+        plantId,
+        error: safeErrorMessage(error),
+      });
+    }
+    sections.push({
+      plantName: item.plantName.trim() || "Plant",
+      careInstructions,
+    });
+  }
+  return sections;
+}
+
 function buildDeliveryAddress(order: SavedOrder): string | undefined {
   if (order.fulfillmentMethod !== "delivery") return undefined;
   const line = [order.address?.trim(), order.apartmentOrNotes?.trim()]
@@ -71,6 +116,7 @@ function buildDeliveryAddress(order: SavedOrder): string | undefined {
 
 async function resolveDocument(
   order: SavedOrder,
+  items: OrderItem[],
   deps: ProcessOrderDocumentAndEmailDeps,
 ): Promise<CardcomDocumentInfo> {
   if (
@@ -89,9 +135,45 @@ async function resolveDocument(
     throw new Error("Missing cardcom_transaction_id for CreateDocument");
   }
 
-  const email = order.customerEmail?.trim();
-  if (!email) {
-    throw new Error("Missing customer email for CreateDocument");
+  // Customer email is optional: orders without email still get a Cardcom document.
+  const email = order.customerEmail?.trim() || undefined;
+  const createDocument = deps.createDocument ?? createCardcomDocument;
+  const environment = resolveEnvironment(order);
+
+  if (order.channel === "catalog") {
+    const products = buildCatalogDocumentProducts(
+      items.map((item) => ({
+        plantName: item.plantName,
+        potName: item.potName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        lineTotal: item.lineTotal,
+      })),
+      order.price,
+    );
+    const created = await createDocument(
+      {
+        dealNumber,
+        name: order.fullName || "Customer",
+        email,
+        phone: order.phone || "",
+        addressLine1: buildDeliveryAddress(order),
+        productDescription: products[0]?.description ?? "Plant",
+        unitCost: order.price,
+        products,
+        externalId: order.orderId,
+      },
+      { environment },
+    );
+    const saved = await saveCardcomDocumentOnOrder({
+      orderId: order.orderId,
+      documentType: created.documentType,
+      documentNumber: created.documentNumber,
+    });
+    if (!saved) {
+      throw new Error("Failed to persist Cardcom document info");
+    }
+    return created;
   }
 
   const catalogPlant = order.plantId ? await getPlantById(order.plantId) : undefined;
@@ -100,7 +182,6 @@ async function resolveDocument(
     ? CARDCOM_FLOWER_LINE_ITEM_NAME
     : order.plantName || "Customer";
 
-  const createDocument = deps.createDocument ?? createCardcomDocument;
   const created = await createDocument(
     {
       dealNumber,
@@ -112,7 +193,7 @@ async function resolveDocument(
       unitCost: order.price,
       externalId: order.orderId,
     },
-    { environment: resolveEnvironment(order) },
+    { environment },
   );
 
   const saved = await saveCardcomDocumentOnOrder({
@@ -150,15 +231,21 @@ export async function processOrderDocumentAndEmail(
   if (before.purchaseEmailSentAt || before.purchaseEmailStatus === "sent") {
     return { outcome: "already_sent" };
   }
+  if (before.purchaseEmailStatus === "skipped") {
+    // Order without customer email: document + internal notice already handled.
+    return { outcome: "skipped", error: "customer_email_skipped" };
+  }
 
-  const catalogPlant = before.plantId
-    ? await getPlantById(before.plantId)
-    : undefined;
-  if (
-    inventoryTypeOrDefault(catalogPlant?.inventoryType) === "flowers" &&
-    !before.customerEmail?.trim()
-  ) {
-    return { outcome: "skipped", error: "flower_no_customer_email" };
+  if (before.channel !== "catalog") {
+    const catalogPlant = before.plantId
+      ? await getPlantById(before.plantId)
+      : undefined;
+    if (
+      inventoryTypeOrDefault(catalogPlant?.inventoryType) === "flowers" &&
+      !before.customerEmail?.trim()
+    ) {
+      return { outcome: "skipped", error: "flower_no_customer_email" };
+    }
   }
 
   await ensurePurchaseEmailPending(trimmedId);
@@ -177,36 +264,108 @@ export async function processOrderDocumentAndEmail(
   const order = claimed.order;
 
   try {
-    const document = await resolveDocument(order, deps);
+    const items =
+      order.channel === "catalog" ? await getOrderItemsByOrderId(order.orderId) : [];
+    const document = await resolveDocument(order, items, deps);
+
+    const customerEmail = order.customerEmail?.trim();
+    if (!customerEmail) {
+      // No customer email (opt-in not chosen): document exists, skip the customer
+      // email and PDF fetch, still notify Urban Plant, then mark skipped.
+      const sendInternal =
+        deps.sendInternalNotification ?? sendInternalOrderNotificationEmail;
+      let publicPlantName =
+        items.length > 0
+          ? catalogCustomerProductLabel(items)
+          : order.plantName || "your plant";
+      if (items.length === 0) {
+        try {
+          const plant = order.plantId ? await getPlantById(order.plantId) : undefined;
+          if (inventoryTypeOrDefault(plant?.inventoryType) === "flowers") {
+            publicPlantName = CARDCOM_FLOWER_LINE_ITEM_NAME;
+          }
+        } catch (error) {
+          console.error("[cardcom-document-email] plant lookup failed", {
+            orderId: order.orderId,
+            error: safeErrorMessage(error),
+          });
+        }
+      }
+      try {
+        await sendInternal({
+          customerEmail: "",
+          fullName: order.fullName,
+          plantName: publicPlantName,
+          priceDisplay: formatPrice(order.price, "ILS"),
+          fulfillmentMethod: order.fulfillmentMethod,
+          phone: order.phone,
+          address: order.address,
+          apartmentOrNotes: order.apartmentOrNotes,
+          locationName: order.locationName ?? undefined,
+          locationAddress: order.locationAddress ?? undefined,
+          orderId: order.orderId,
+        });
+        console.info("[purchase-email] urban_plant_send_ok", {
+          role: "urban_plant",
+          orderId: order.orderId,
+          to: URBAN_PLANT_NOTIFICATION_TO,
+        });
+      } catch (error) {
+        console.error("[purchase-email] urban_plant_send_failed", {
+          role: "urban_plant",
+          orderId: order.orderId,
+          to: URBAN_PLANT_NOTIFICATION_TO,
+          error: safeErrorMessage(error),
+        });
+      }
+      const skipped = await markPurchaseEmailSkipped(order.orderId);
+      if (!skipped) {
+        throw new Error("Failed to mark purchase email as skipped");
+      }
+      return { outcome: "skipped", error: "no_customer_email" };
+    }
+
     const fetchPdf = deps.fetchPdf ?? fetchCardcomDocumentPdf;
     const pdf = await fetchPdf(document, {
       environment: resolveEnvironment(order),
     });
 
-    const customerEmail = order.customerEmail?.trim();
-    if (!customerEmail) {
-      throw new Error("Missing customer email for purchase confirmation");
-    }
-
     let careInstructions: string[] = [];
-    let publicPlantName = order.plantName || "your plant";
-    try {
-      const plant = order.plantId
-        ? await getPlantById(order.plantId)
-        : undefined;
-      if (inventoryTypeOrDefault(plant?.inventoryType) === "flowers") {
-        publicPlantName = CARDCOM_FLOWER_LINE_ITEM_NAME;
-      } else {
-        careInstructions = (plant?.careInstructions ?? [])
-          .map((line) => line.trim())
-          .filter(Boolean);
+    let careSections: PurchaseEmailCareSection[] | undefined;
+    let orderLines: PurchaseEmailOrderLine[] | undefined;
+    let publicPlantName =
+      items.length > 0
+        ? catalogCustomerProductLabel(items)
+        : order.plantName || "your plant";
+    if (items.length > 0) {
+      orderLines = items.map((item) => ({
+        plantName: item.plantName,
+        potName: item.potName,
+        quantity: item.quantity,
+      }));
+      careSections = await loadCatalogCustomerCare(
+        items,
+        deps.loadPlant ?? getPlantById,
+      );
+    } else {
+      try {
+        const plant = order.plantId
+          ? await getPlantById(order.plantId)
+          : undefined;
+        if (inventoryTypeOrDefault(plant?.inventoryType) === "flowers") {
+          publicPlantName = CARDCOM_FLOWER_LINE_ITEM_NAME;
+        } else {
+          careInstructions = (plant?.careInstructions ?? [])
+            .map((line) => line.trim())
+            .filter(Boolean);
+        }
+      } catch (error) {
+        console.error("[cardcom-document-email] care instructions lookup failed", {
+          orderId: order.orderId,
+          plantId: order.plantId,
+          error: safeErrorMessage(error),
+        });
       }
-    } catch (error) {
-      console.error("[cardcom-document-email] care instructions lookup failed", {
-        orderId: order.orderId,
-        plantId: order.plantId,
-        error: safeErrorMessage(error),
-      });
     }
 
     const sendEmail = deps.sendEmail ?? sendPurchaseEmail;
@@ -219,7 +378,11 @@ export async function processOrderDocumentAndEmail(
       plantName: publicPlantName,
       priceDisplay,
       fulfillmentMethod: order.fulfillmentMethod,
+      ...(orderLines ? { orderLines } : {}),
       ...(careInstructions.length > 0 ? { careInstructions } : {}),
+      ...(careSections?.some((section) => section.careInstructions.length > 0)
+        ? { careSections }
+        : {}),
       attachments: [
         {
           filename: pdf.filename,

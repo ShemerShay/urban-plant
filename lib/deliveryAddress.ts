@@ -1,5 +1,5 @@
 import { TEL_AVIV_CITY, TEL_AVIV_STREET_SET, TEL_AVIV_STREETS } from "@/constants/telAvivStreets";
-import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
+import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 
 export { TEL_AVIV_CITY, TEL_AVIV_STREETS };
@@ -65,7 +65,7 @@ export function parseStoredDeliveryAddress(address: string): {
 /** Show stored addresses with a locale-specific city label; storage keeps Tel Aviv. */
 export function formatStoredDeliveryAddressDisplay(
   address: string,
-  locale: Locale = DEFAULT_LOCALE,
+  locale: Locale = "en",
 ): string {
   const trimmed = address.trim();
   if (!trimmed) return trimmed;
@@ -84,7 +84,7 @@ export function formatOrderDeliveryAddressDisplay(
     address: string;
     apartmentOrNotes?: string;
   },
-  locale: Locale = DEFAULT_LOCALE,
+  locale: Locale = "en",
 ): string {
   const raw = order.address?.trim();
   const base = raw ? formatStoredDeliveryAddressDisplay(raw, locale) : "";

@@ -112,40 +112,45 @@ export default async function SuccessPage({ searchParams }: SuccessPageProps) {
       {trackVerifiedPurchase ? (
         <TrackPurchaseCompleted
           order_id={trackVerifiedPurchase.orderId}
-          pos_spot_id={trackVerifiedPurchase.posSpotId}
-          spot_slug={
-            trackVerifiedPurchase.snapshot?.spotSlug?.trim() || spotSlug || undefined
-          }
-          plant_id={
-            trackVerifiedPurchase.plantId ||
-            trackVerifiedPurchase.snapshot?.productId ||
-            undefined
-          }
-          plant_name={
-            isFlowerOrder
-              ? undefined
-              : trackVerifiedPurchase.snapshot?.productName ||
-                trackVerifiedPurchase.plantName ||
-                undefined
-          }
-          inventory_type={inventoryTypeOrDefault(plant?.inventoryType)}
-          offer_id={
-            trackVerifiedPurchase.offerId ||
-            trackVerifiedPurchase.snapshot?.offerId ||
-            undefined
-          }
-          partner_id={
-            trackVerifiedPurchase.locationId ||
-            trackVerifiedPurchase.snapshot?.partnerLocationId ||
-            undefined
-          }
-          partner_name={
-            trackVerifiedPurchase.locationName ||
-            trackVerifiedPurchase.snapshot?.partnerLocationName ||
-            undefined
-          }
+          channel={trackVerifiedPurchase.channel === "catalog" ? "catalog" : "partner"}
           amount={trackVerifiedPurchase.price}
+          currency="ILS"
+          inventory_type={
+            trackVerifiedPurchase.channel === "catalog"
+              ? "plants"
+              : inventoryTypeOrDefault(
+                  trackVerifiedPurchase.snapshot?.inventoryType ?? plant?.inventoryType,
+                )
+          }
           fulfillment_method={trackVerifiedPurchase.fulfillmentMethod}
+          {...(trackVerifiedPurchase.channel === "catalog"
+            ? {}
+            : {
+                pos_spot_id: trackVerifiedPurchase.posSpotId,
+                spot_slug:
+                  trackVerifiedPurchase.snapshot?.spotSlug?.trim() || spotSlug || undefined,
+                plant_id:
+                  trackVerifiedPurchase.plantId ||
+                  trackVerifiedPurchase.snapshot?.productId ||
+                  undefined,
+                plant_name: isFlowerOrder
+                  ? undefined
+                  : trackVerifiedPurchase.snapshot?.productName ||
+                    trackVerifiedPurchase.plantName ||
+                    undefined,
+                offer_id:
+                  trackVerifiedPurchase.offerId ||
+                  trackVerifiedPurchase.snapshot?.offerId ||
+                  undefined,
+                partner_id:
+                  trackVerifiedPurchase.locationId ||
+                  trackVerifiedPurchase.snapshot?.partnerLocationId ||
+                  undefined,
+                partner_name:
+                  trackVerifiedPurchase.locationName ||
+                  trackVerifiedPurchase.snapshot?.partnerLocationName ||
+                  undefined,
+              })}
         />
       ) : null}
       <RememberCustomerPath />

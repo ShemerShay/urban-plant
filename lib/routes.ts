@@ -9,7 +9,6 @@ export const routes = {
     index: () => "/admin",
     login: () => "/admin-login",
     orders: () => "/admin/orders",
-    ordersNew: () => "/admin/orders/new",
     ordersWithQuery: (query: string) => {
       const qs = query.replace(/^\?/, "");
       return qs ? `/admin/orders?${qs}` : "/admin/orders";
@@ -26,6 +25,7 @@ export const routes = {
     inventoryTypes: () => "/admin/inventory-types",
     inventoryTypesPlants: () => "/admin/inventory-types/plants",
     inventoryTypesFlowers: () => "/admin/inventory-types/flowers",
+    pots: () => "/admin/pots",
     products: () => "/admin/products",
     productsPlants: () => "/admin/products/plants",
     productsFlowers: () => "/admin/products/flowers",
@@ -34,12 +34,16 @@ export const routes = {
     offersFlowers: () => "/admin/offers/flowers",
     partners: () => "/admin/partners",
     analytics: () => "/admin/analytics",
+    finance: () => "/admin/finance",
     analyticsWithQuery: (query: string) => {
       const qs = query.replace(/^\?/, "");
       return qs ? `/admin/analytics?${qs}` : "/admin/analytics";
     },
+    /** Partner page; legacy location ids redirect to their location page. */
     partner: (partnerId: string) =>
       `/admin/partners/${encodeURIComponent(partnerId.trim())}`,
+    partnerLocation: (partnerId: string, locationId: string) =>
+      `/admin/partners/${encodeURIComponent(partnerId.trim())}/locations/${encodeURIComponent(locationId.trim())}`,
     partnerPockets: (partnerId: string) =>
       `/admin/partners/${encodeURIComponent(partnerId.trim())}#pockets`,
     partnerPosSpots: (partnerId: string) =>
@@ -49,6 +53,12 @@ export const routes = {
     spot: (spotSlug: string) => `/pos/${encodeURIComponent(spotSlug.trim())}`,
     checkout: (spotSlug: string) =>
       `/checkout/pos/${encodeURIComponent(spotSlug.trim())}`,
+  },
+  shop: {
+    index: () => "/shop",
+    plant: (plantId: string) =>
+      `/shop/plants/${encodeURIComponent(plantId.trim())}`,
+    checkout: () => "/checkout/shop",
   },
   customer: {
     accessibility: () => "/accessibility",
@@ -93,7 +103,8 @@ export const routes = {
     adminLogin: () => "/api/admin-login",
     adminLogout: () => "/api/admin-logout",
     locale: () => "/api/locale",
-    orders: () => "/api/orders",
+    shopCartResolve: () => "/api/shop/cart/resolve",
+    shopCheckout: () => "/api/shop/checkout",
     order: (orderId: string) => `/api/orders/${encodeURIComponent(orderId.trim())}`,
     posSpots: () => "/api/pos-spots",
     posSpot: (posSpotId: string) =>
@@ -101,8 +112,26 @@ export const routes = {
     plants: () => "/api/plants",
     plant: (plantId: string) => `/api/plants/${encodeURIComponent(plantId.trim())}`,
     plantImages: () => "/api/plant-images",
+    plantVariants: (plantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/variants`,
+    plantVariant: (plantId: string, variantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}`,
+    plantVariantInventory: (plantId: string, variantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/variants/${encodeURIComponent(variantId.trim())}/inventory`,
+    sellableVariants: (plantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/sellable-variants`,
+    sellableVariant: (plantId: string, sellableVariantId: string) =>
+      `/api/plants/${encodeURIComponent(plantId.trim())}/sellable-variants/${encodeURIComponent(sellableVariantId.trim())}`,
+    pots: () => "/api/pots",
+    pot: (potId: string) => `/api/pots/${encodeURIComponent(potId.trim())}`,
+    sellableVariantList: () => "/api/sellable-variants",
     offers: () => "/api/offers",
     offer: (offerId: string) => `/api/offers/${encodeURIComponent(offerId.trim())}`,
+    partnerBrands: () => "/api/partner-brands",
+    partnerBrand: (brandId: string) =>
+      `/api/partner-brands/${encodeURIComponent(brandId.trim())}`,
+    partnerBrandCommissionTiers: (brandId: string) =>
+      `/api/partner-brands/${encodeURIComponent(brandId.trim())}/commission-tiers`,
     partners: () => "/api/partners",
     partner: (partnerId: string) =>
       `/api/partners/${encodeURIComponent(partnerId.trim())}`,
@@ -122,6 +151,13 @@ export const routes = {
     },
     /** Resume holder: create a new Cardcom LowProfile for the same pending order. */
     cardcomRetry: () => "/api/payments/cardcom/retry",
+    financeEntries: () => "/api/finance/entries",
+    financeEntry: (entryId: string) =>
+      `/api/finance/entries/${encodeURIComponent(entryId.trim())}`,
+    financeEntryAllocations: (entryId: string) =>
+      `/api/finance/entries/${encodeURIComponent(entryId.trim())}/allocations`,
+    financeAllocation: (allocationId: string) =>
+      `/api/finance/allocations/${encodeURIComponent(allocationId.trim())}`,
   },
   plantLibrary: (filename: string) =>
     `/plant-library/${encodeURIComponent(filename.trim())}`,

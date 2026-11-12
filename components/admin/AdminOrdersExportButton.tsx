@@ -4,10 +4,17 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 
 import { useLocale } from "@/components/locale/LocaleProvider";
+import {
+  catalogStoredItemSummary,
+  isCatalogAdminOrder,
+  type AdminCatalogLineView,
+} from "@/lib/adminOrderDisplay";
 import { formatOrderDeliveryAddressDisplay } from "@/lib/deliveryAddress";
 import {
   fulfillmentLabel,
+  orderChannelLabel,
   orderStatusLabel,
+  purchaseEmailStatusLabel,
   yesNoLabel,
 } from "@/lib/displayLabels";
 import type { Locale } from "@/lib/locale";
@@ -17,6 +24,7 @@ import { isVerifiedPaidOrderStatus } from "@/lib/status";
 
 interface AdminOrdersExportButtonProps {
   orders: SavedOrder[];
+  catalogItemsByOrderId?: Record<string, AdminCatalogLineView[]>;
   menuItem?: boolean;
   onExport?: () => void;
 }
@@ -25,11 +33,23 @@ function intlLocale(locale: Locale): string {
   return locale === "he" ? "he-IL" : "en-US";
 }
 
-function orderToRow(order: SavedOrder, locale: Locale): Record<string, string | number> {
-  const productName = order.snapshot?.productName ?? order.plantName;
-  const price = order.snapshot?.consumerPrice ?? order.price;
+function orderToRow(
+  order: SavedOrder,
+  locale: Locale,
+  catalogItems: AdminCatalogLineView[],
+): Record<string, string | number> {
+  const isCatalog = isCatalogAdminOrder(order);
+  const productName = isCatalog
+    ? catalogStoredItemSummary(catalogItems, locale) ||
+      (order.snapshot?.productName ?? order.plantName)
+    : (order.snapshot?.productName ?? order.plantName);
+  const price = isCatalog ? order.price : (order.snapshot?.consumerPrice ?? order.price);
   const locationName = order.snapshot?.partnerLocationName ?? order.locationName;
   const paid = isVerifiedPaidOrderStatus(order.orderStatus);
+  const channel =
+    order.channel === "catalog" || order.channel === "partner"
+      ? orderChannelLabel(locale, order.channel)
+      : "";
 
   return {
     [t(locale, "admin.export.orderId")]: order.orderId,
@@ -37,6 +57,10 @@ function orderToRow(order: SavedOrder, locale: Locale): Record<string, string | 
       intlLocale(locale),
     ),
     [t(locale, "admin.export.status")]: orderStatusLabel(locale, order.orderStatus),
+    [t(locale, "admin.export.channel")]: channel,
+    [t(locale, "admin.export.purchaseEmailStatus")]: order.purchaseEmailStatus
+      ? purchaseEmailStatusLabel(locale, order.purchaseEmailStatus)
+      : "",
     [t(locale, "admin.export.countedPaid")]: yesNoLabel(locale, paid),
     [t(locale, "admin.export.customerName")]: order.fullName,
     [t(locale, "admin.common.email")]: order.customerEmail ?? "",
@@ -47,7 +71,7 @@ function orderToRow(order: SavedOrder, locale: Locale): Record<string, string | 
     [t(locale, "admin.common.location")]: locationName ?? "",
     [t(locale, "admin.export.deliveryAddress")]:
       order.fulfillmentMethod === "delivery"
-        ? formatOrderDeliveryAddressDisplay(order, locale)
+        ? formatOrderDeliveryAddressDisplay(order, "en")
         : "",
     [t(locale, "admin.export.notes")]: order.apartmentOrNotes,
   };
@@ -55,6 +79,7 @@ function orderToRow(order: SavedOrder, locale: Locale): Record<string, string | 
 
 export function AdminOrdersExportButton({
   orders,
+  catalogItemsByOrderId = {},
   menuItem = false,
   onExport,
 }: AdminOrdersExportButtonProps) {
@@ -64,7 +89,9 @@ export function AdminOrdersExportButton({
   function handleExport() {
     setBusy(true);
     try {
-      const rows = orders.map((order) => orderToRow(order, locale));
+      const rows = orders.map((order) =>
+        orderToRow(order, locale, catalogItemsByOrderId[order.orderId] ?? []),
+      );
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, t(locale, "admin.export.sheet"));

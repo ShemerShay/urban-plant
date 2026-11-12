@@ -1,14 +1,26 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  loadAdminPosSpotsAll,
+  loadAdminPosSpotsForLocation,
+} from "@/lib/adminPosSpotsPayload";
 import { appendEvent } from "@/lib/eventStorage";
 import { readPartnerLocations } from "@/lib/mockLocations";
-import { getPlantById } from "@/lib/plantCatalog";
 import { readOffers } from "@/lib/offerStorage";
 import { isPosAssignableOffer } from "@/lib/offerTypes";
-import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
+import { readPartnerLocationsByPartnerId } from "@/lib/partnerLocationStorage";
 import { getPocketById } from "@/lib/pocketStorage";
-import { appendPosSpot, readPosSpots } from "@/lib/posSpotStorage";
+import { posCentralStockHttpError, writePosCreate } from "@/lib/posCentralStock";
+import {
+  occupancyToSpotFields,
+  PosOccupancyError,
+  resolveOccupancyForPosCreate,
+} from "@/lib/posOccupancy";
+import {
+  PosSpotSlugConflictError,
+  readPosSpotsByPartnerLocationIds,
+} from "@/lib/posSpotStorage";
 import {
   buildPosSpotNameAndSlug,
   formatPosSpotDisplayName,
@@ -33,38 +45,29 @@ function cleanString(value: unknown): string {
 
 export async function GET(request: NextRequest) {
   const partnerId = cleanString(request.nextUrl.searchParams.get("partnerId"));
-  const [offers, allSpotsInitial, locations] = await Promise.all([
-    readOffers(),
-    readPosSpots(),
-    readPartnerLocations(),
-  ]);
+  const brandId = cleanString(request.nextUrl.searchParams.get("brandId"));
 
-  // Lazy-repair expired holds so Admin lists show truth without waiting for cron.
-  const held = allSpotsInitial.filter((s) => s.status === "held_for_payment");
-  if (held.length > 0) {
-    await Promise.all(held.map((s) => expireStalePaymentHold(s.id)));
+  // Brand Admin list: spots only (no offers / hold repair — counts & search only).
+  if (brandId) {
+    const brandLocations = await readPartnerLocationsByPartnerId(brandId);
+    const posSpots = await readPosSpotsByPartnerLocationIds(
+      brandLocations.map((location) => location.id),
+    );
+    return NextResponse.json({ posSpots });
   }
-  const allSpots = held.length > 0 ? await readPosSpots() : allSpotsInitial;
 
-  const posSpots = partnerId
-    ? allSpots.filter((spot) => spot.partnerLocationId === partnerId)
-    : allSpots;
-  const posOffers = offers.filter(isPosAssignableOffer);
-  const enrichedOffers = await Promise.all(
-    posOffers.map(async (offer) => {
-      const product = await getPlantById(offer.productId);
-      return {
-        ...offer,
-        productName: product?.name ?? offer.productId,
-        currency: product?.currency ?? "ILS",
-      };
-    }),
-  );
-  return NextResponse.json({
-    offers: enrichedOffers,
-    locations,
-    posSpots,
-  });
+  // Location Admin detail: scoped spots + request-time hold repair on that set only.
+  if (partnerId) {
+    const payload = await loadAdminPosSpotsForLocation(partnerId);
+    return NextResponse.json({
+      offers: payload.offers,
+      spotOffers: payload.spotOffers,
+      posSpots: payload.posSpots,
+    });
+  }
+
+  const payload = await loadAdminPosSpotsAll();
+  return NextResponse.json(payload);
 }
 
 export async function POST(request: NextRequest) {
@@ -85,7 +88,6 @@ export async function POST(request: NextRequest) {
   const posNumber = cleanString(record.posNumber);
   const placementNotes = cleanString(record.placementNotes);
   const pocketIdRaw = cleanString(record.pocketId);
-  const offerPlacedAt = new Date().toISOString();
   const status = normalizeStatus(record.status);
 
   if (!partnerLocationId) {
@@ -107,6 +109,20 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  let occupancy;
+  try {
+    occupancy = await resolveOccupancyForPosCreate({
+      offerId: currentOfferId,
+      partnerLocationId,
+    });
+  } catch (err) {
+    if (err instanceof PosOccupancyError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+  const occupancyFields = occupancyToSpotFields(occupancy);
   if (!posNumber) {
     return NextResponse.json({ error: "posNumber is required" }, { status: 400 });
   }
@@ -149,17 +165,47 @@ export async function POST(request: NextRequest) {
     ...(spotDescription ? { spotDescription } : {}),
     ...(placementNotes ? { placementNotes } : {}),
     spotSlug,
-    currentOfferId,
-    status,
+    ...(occupancyFields.currentOfferId
+      ? { currentOfferId: occupancyFields.currentOfferId }
+      : {}),
+    ...(occupancyFields.plantVariantId
+      ? { plantVariantId: occupancyFields.plantVariantId }
+      : {}),
+    ...(occupancyFields.potId ? { potId: occupancyFields.potId } : {}),
+    status: occupancy.forceAvailable ? "available" : status,
     checkStatus: false as const,
-    offerPlacedAt,
+    ...(occupancyFields.offerPlacedAt
+      ? { offerPlacedAt: occupancyFields.offerPlacedAt }
+      : {}),
     createdAt,
   };
 
   try {
-    await appendPosSpot(posSpot);
-  } catch {
-    return NextResponse.json({ error: "POS Spot spot name or spot slug already exists" }, { status: 409 });
+    await writePosCreate({
+      occupancyAction: occupancy.action,
+      inventorySource: record.inventorySource,
+      posSpot,
+      variantId: occupancy.plantVariantId,
+      potId: occupancy.potId,
+    });
+  } catch (err) {
+    if (err instanceof PosSpotSlugConflictError) {
+      return NextResponse.json(
+        { error: "POS Spot spot name or spot slug already exists" },
+        { status: 409 },
+      );
+    }
+    const mapped = posCentralStockHttpError(err);
+    if (mapped) {
+      return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    }
+    if (err instanceof Error && /already exists/i.test(err.message)) {
+      return NextResponse.json(
+        { error: "POS Spot spot name or spot slug already exists" },
+        { status: 409 },
+      );
+    }
+    throw err;
   }
 
   await appendEvent({

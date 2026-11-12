@@ -19,15 +19,27 @@ const CARDCOM_CREATE_DOCUMENT_URL_ENDPOINT =
 const CARDCOM_DOCUMENTS_TIMEOUT_MS = 30_000;
 const CARDCOM_PDF_FETCH_TIMEOUT_MS = 30_000;
 
+export type CardcomDocumentProductLine = {
+  description: string;
+  quantity: number;
+  unitCost: number;
+};
+
 export type CreateCardcomDocumentInput = {
   dealNumber: number;
   name: string;
-  email: string;
+  /** Optional: documents are created without a customer email when none was provided. */
+  email?: string;
   phone: string;
   addressLine1?: string;
   productDescription: string;
   unitCost: number;
   externalId: string;
+  /**
+   * Catalog multi-line orders pass one product per purchased line.
+   * POS and Flowers omit this and keep a single Quantity=1 line.
+   */
+  products?: CardcomDocumentProductLine[];
 };
 
 export type CardcomDocumentInfo = {
@@ -40,6 +52,38 @@ export type CardcomPdfBytes = {
   bytes: Buffer;
   filename: string;
 };
+
+function documentProductLines(
+  input: CreateCardcomDocumentInput,
+): Array<{ Description: string; Quantity: number; UnitCost: number }> {
+  if (!input.products || input.products.length === 0) {
+    return [
+      {
+        Description: input.productDescription,
+        Quantity: 1,
+        UnitCost: input.unitCost,
+      },
+    ];
+  }
+
+  return input.products.map((product) => {
+    const description = product.description.trim();
+    if (!description) {
+      throw new CardcomError("Document line is missing a product name.", "validation");
+    }
+    if (!Number.isInteger(product.quantity) || product.quantity <= 0) {
+      throw new CardcomError("Document line quantity is invalid.", "validation");
+    }
+    if (!Number.isFinite(product.unitCost)) {
+      throw new CardcomError("Document line unit cost is invalid.", "validation");
+    }
+    return {
+      Description: description,
+      Quantity: product.quantity,
+      UnitCost: product.unitCost,
+    };
+  });
+}
 
 function parseResponseCode(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -119,15 +163,9 @@ export function buildCreateDocumentRequest(
     DocumentTypeToCreate: "Auto",
     IsSendByEmail: false,
     Name: input.name,
-    Email: input.email,
+    ...(input.email?.trim() ? { Email: input.email.trim() } : {}),
     Phone: input.phone,
-    Products: [
-      {
-        Description: input.productDescription,
-        Quantity: 1,
-        UnitCost: input.unitCost,
-      },
-    ],
+    Products: documentProductLines(input),
     ExternalId: input.externalId,
   };
 

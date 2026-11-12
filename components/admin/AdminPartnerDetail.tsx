@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -27,6 +26,14 @@ import {
 import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
+import {
+  countPlantSpots,
+  groupPlantSpotsByType,
+  isCountedPlantSpot,
+  type PartnerPlantOffer,
+  type PlantCounts,
+} from "@/lib/partnerPlantSummary";
+import type { Partner } from "@/lib/partnerStorage";
 import type { Pocket } from "@/lib/pocketTypes";
 import { resolvePosSpotPocketLabel } from "@/lib/posSpotPocket";
 import type { PosSpot, PosSpotStatus } from "@/lib/posSpotTypes";
@@ -36,6 +43,19 @@ import {
   suggestNextPosNumber,
 } from "@/lib/posSpotSlugUtils";
 import { absoluteAppUrl, getClientOrigin, posSpotPath, routes } from "@/lib/routes";
+import {
+  adminSaveNeedsInventorySource,
+  type InventorySource,
+} from "@/lib/inventorySource";
+
+type OfferSellableOption = {
+  sellableVariantId: string;
+  plantSizeId: string;
+  plantSizeLabel: string;
+  potId: string | null;
+  potName: string | null;
+  potDiameterCm: number | null;
+};
 
 type OfferOption = {
   id: string;
@@ -44,10 +64,33 @@ type OfferOption = {
   consumerPrice: number;
   currency: "ILS" | "USD" | "EUR";
   status: "active" | "inactive";
+  inventoryType?: "plants" | "flowers" | null;
+  sellableVariantId?: string | null;
+  sellableVariant?: OfferSellableOption | null;
 };
 
+function offerOptionLabel(offer: OfferOption): string {
+  const name = offer.productName;
+  const sv = offer.sellableVariant;
+  if (!sv) return name;
+  const bits = [name, sv.plantSizeLabel].filter((part) => part.trim());
+  if (sv.potName) {
+    const diameter = sv.potDiameterCm != null ? `${sv.potDiameterCm} cm` : "";
+    bits.push([sv.potName, diameter].filter(Boolean).join(" "));
+  }
+  return bits.join(" · ");
+}
+
 type AdminPartnerDetailProps = {
+  /** Partner location id. */
   partnerId: string;
+  /** Partner brand that owns the location. */
+  partner: Partner;
+  initialLocation: PartnerLocation;
+  initialPockets: Pocket[];
+  initialPosSpots: PosSpot[];
+  initialOffers: OfferOption[];
+  initialSpotOffers: PartnerPlantOffer[];
 };
 
 function subscribeToNothing(): () => void {
@@ -153,12 +196,68 @@ function PocketSpotRow({
   );
 }
 
+function plantCountLabel({ active, total }: PlantCounts): string {
+  return `${active}/${total}`;
+}
+
+function PlantTypeGroup({
+  locale,
+  name,
+  spots,
+  offerNameById,
+  onEditSpot,
+  onArchiveSpot,
+}: {
+  locale: Locale;
+  name: string;
+  spots: PosSpot[];
+  offerNameById: Map<string, string>;
+  onEditSpot: (spot: PosSpot) => void | Promise<void>;
+  onArchiveSpot: (spot: PosSpot) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <li className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-slate-50"
+        aria-expanded={isOpen}
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-emerald-950">
+          {name}
+        </span>
+        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+          {plantCountLabel(countPlantSpots(spots))}
+        </span>
+        <IconChevron className="h-4 w-4 shrink-0 text-slate-500" open={isOpen} />
+      </button>
+      {isOpen ? (
+        <ul className="space-y-2 border-t border-slate-100 p-3">
+          {spots.map((spot) => (
+            <PocketSpotRow
+              key={spot.id}
+              locale={locale}
+              spot={spot}
+              offerName={offerNameById.get(spot.currentOfferId ?? "") ?? name}
+              onEdit={() => onEditSpot(spot)}
+              onArchive={() => onArchiveSpot(spot)}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
 function ExpandablePocketCard({
   locale,
   title,
   subtitle,
   spots,
   offerNameById,
+  offerById,
   actions,
   onEditSpot,
   onArchiveSpot,
@@ -168,11 +267,16 @@ function ExpandablePocketCard({
   subtitle: string;
   spots: PosSpot[];
   offerNameById: Map<string, string>;
+  offerById: Map<string, PartnerPlantOffer>;
   actions?: ReactNode;
   onEditSpot: (spot: PosSpot) => void | Promise<void>;
   onArchiveSpot: (spot: PosSpot) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const groups = useMemo(
+    () => groupPlantSpotsByType(spots, offerById),
+    [offerById, spots],
+  );
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-100 bg-slate-50/40">
@@ -198,18 +302,19 @@ function ExpandablePocketCard({
         <div className="border-t border-slate-100 px-3 pb-3 pt-3">
           {spots.length === 0 ? (
             <p className="text-sm text-slate-500">
-              {t(locale, "admin.partners.detail.noPocketsInPocket")}
+              {t(locale, "admin.partners.detail.noActivePlantsInPocket")}
             </p>
           ) : (
             <ul className="space-y-2">
-              {spots.map((spot) => (
-                <PocketSpotRow
-                  key={spot.id}
+              {groups.map((group) => (
+                <PlantTypeGroup
+                  key={group.id}
                   locale={locale}
-                  spot={spot}
-                  offerName={offerNameById.get(spot.currentOfferId) ?? "—"}
-                  onEdit={() => onEditSpot(spot)}
-                  onArchive={() => onArchiveSpot(spot)}
+                  name={group.name}
+                  spots={group.spots}
+                  offerNameById={offerNameById}
+                  onEditSpot={onEditSpot}
+                  onArchiveSpot={onArchiveSpot}
                 />
               ))}
             </ul>
@@ -220,17 +325,26 @@ function ExpandablePocketCard({
   );
 }
 
-export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
+export function AdminPartnerDetail({
+  partnerId,
+  partner: brand,
+  initialLocation,
+  initialPockets,
+  initialPosSpots,
+  initialOffers,
+  initialSpotOffers,
+}: AdminPartnerDetailProps) {
   const locale = useLocale();
   const origin = useClientOrigin();
   const qrHostRef = useRef<HTMLDivElement>(null);
 
-  const [partner, setPartner] = useState<PartnerLocation | null>(null);
-  const [pockets, setPockets] = useState<Pocket[]>([]);
-  const [posSpots, setPosSpots] = useState<PosSpot[]>([]);
-  const [offers, setOffers] = useState<OfferOption[]>([]);
+  const [partner, setPartner] = useState<PartnerLocation | null>(initialLocation);
+  const [pockets, setPockets] = useState<Pocket[]>(initialPockets);
+  const [posSpots, setPosSpots] = useState<PosSpot[]>(initialPosSpots);
+  const [offers, setOffers] = useState<OfferOption[]>(initialOffers);
+  const [spotOffers, setSpotOffers] = useState<PartnerPlantOffer[]>(initialSpotOffers);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const [pocketModal, setPocketModal] = useState<"create" | "edit" | null>(null);
   const [editingPocket, setEditingPocket] = useState<Pocket | null>(null);
@@ -248,6 +362,8 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   const [posNumber, setPosNumber] = useState("");
   const [pocketId, setPocketId] = useState("");
   const [currentOfferId, setCurrentOfferId] = useState("");
+  const [sameVariantReplace, setSameVariantReplace] = useState(false);
+  const [inventorySource, setInventorySource] = useState<InventorySource | "">("");
   const [spotDescription, setSpotDescription] = useState("");
   const [placementNotes, setPlacementNotes] = useState("");
   const [spotStatus, setSpotStatus] = useState<PosSpotStatus>("available");
@@ -255,6 +371,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [copyHint, setCopyHint] = useState<string | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
 
   const pocketNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -265,13 +385,60 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
   const offerNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const offer of offers) map.set(offer.id, offer.productName);
+    for (const offer of spotOffers) map.set(offer.id, offer.productName);
     return map;
-  }, [offers]);
+  }, [offers, spotOffers]);
+
+  /** Per-row plant metadata for counting/grouping; independent of offer status. */
+  const offerById = useMemo(() => {
+    const map = new Map<string, PartnerPlantOffer>();
+    for (const offer of spotOffers) map.set(offer.id, offer);
+    return map;
+  }, [spotOffers]);
 
   const activeOffers = useMemo(
     () => offers.filter((offer) => offer.status === "active"),
     [offers],
   );
+  const offerChoices = useMemo(() => {
+    const list = [...activeOffers];
+    const occupyingId = editSpot?.currentOfferId;
+    if (occupyingId && !list.some((offer) => offer.id === occupyingId)) {
+      const occupying = offers.find((offer) => offer.id === occupyingId);
+      if (occupying) list.unshift(occupying);
+    }
+    return list;
+  }, [activeOffers, editSpot?.currentOfferId, offers]);
+  const selectedOffer = useMemo(
+    () => offers.find((offer) => offer.id === currentOfferId),
+    [offers, currentOfferId],
+  );
+  const selectedIsPlant = Boolean(selectedOffer) && selectedOffer?.inventoryType !== "flowers";
+  const derivedPlantSizeId = selectedOffer?.sellableVariant?.plantSizeId?.trim() || "";
+  const derivedPotId = selectedOffer?.sellableVariant?.potId?.trim() || "";
+  const occupiedVariantId = editSpot?.plantVariantId ?? "";
+  const occupiedPotId = editSpot?.potId ?? "";
+  const introducesNewPot =
+    selectedIsPlant && Boolean(derivedPotId) && derivedPotId !== occupiedPotId;
+  const showSameVariantReplace = Boolean(
+    editSpot && occupiedVariantId && derivedPlantSizeId === occupiedVariantId,
+  );
+  const existingOfferIsFlower = (() => {
+    const offerId = editSpot?.currentOfferId;
+    if (!offerId) return false;
+    const fromOffers = offers.find((offer) => offer.id === offerId);
+    if (fromOffers) return fromOffers.inventoryType === "flowers";
+    return offerById.get(offerId)?.inventoryType === "flowers";
+  })();
+  const showInventorySource = adminSaveNeedsInventorySource({
+    selectedIsPlant,
+    creating: !editSpot,
+    occupiedVariantId,
+    selectedVariantId: derivedPlantSizeId,
+    sameVariantReplace,
+    existingOfferIsFlower,
+    introducesNewPotColor: introducesNewPot,
+  });
 
   const loadAll = useCallback(async () => {
     setLoadError(null);
@@ -311,6 +478,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       const spotsData = (await spotsRes.json()) as {
         posSpots?: PosSpot[];
         offers?: OfferOption[];
+        spotOffers?: PartnerPlantOffer[];
       };
 
       const found = (partnersData.partners ?? []).find((p) => p.id === partnerId) ?? null;
@@ -324,16 +492,13 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       setPockets(pocketsData.pockets ?? []);
       setPosSpots(spotsData.posSpots ?? []);
       setOffers(spotsData.offers ?? []);
+      setSpotOffers(spotsData.spotOffers ?? []);
     } catch {
       setLoadError(displayApiError(locale, undefined, "admin.partners.detail.loadFailed"));
     } finally {
       setLoading(false);
     }
   }, [partnerId, locale]);
-
-  useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
 
   const assignedCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -344,26 +509,32 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     return counts;
   }, [posSpots]);
 
+  const countedPlantSpots = useMemo(
+    () =>
+      posSpots.filter((spot) => isCountedPlantSpot(spot, offerById.get(spot.currentOfferId ?? ""))),
+    [offerById, posSpots],
+  );
+
+  const locationCounts = useMemo(() => countPlantSpots(countedPlantSpots), [countedPlantSpots]);
+
   const spotsByPocketId = useMemo(() => {
     const map = new Map<string, PosSpot[]>();
-    for (const spot of posSpots) {
+    for (const spot of countedPlantSpots) {
       if (!spot.pocketId) continue;
       const list = map.get(spot.pocketId) ?? [];
       list.push(spot);
       map.set(spot.pocketId, list);
     }
     return map;
-  }, [posSpots]);
+  }, [countedPlantSpots]);
 
   const unassignedSpots = useMemo(
-    () => posSpots.filter((spot) => !spot.pocketId),
-    [posSpots],
+    () => countedPlantSpots.filter((spot) => !spot.pocketId),
+    [countedPlantSpots],
   );
 
-  function spotCountSubtitle(count: number): string {
-    return count === 1
-      ? t(locale, "admin.partners.detail.spotCountOne")
-      : t(locale, "admin.partners.detail.spotCountMany", { count });
+  function spotCountSubtitle(spots: PosSpot[]): string {
+    return t(locale, "admin.partners.detail.activeOfTotalPlants", countPlantSpots(spots));
   }
 
   function openCreatePocket() {
@@ -371,6 +542,48 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     setPocketNameDraft("");
     setPocketError(null);
     setPocketModal("create");
+  }
+
+  function openProfile() {
+    if (!partner) return;
+    setNotesDraft(partner.notes);
+    setProfileError(null);
+    setProfileOpen(true);
+  }
+
+  async function saveProfile() {
+    if (!partner) return;
+    setProfileBusy(true);
+    setProfileError(null);
+    try {
+      const res = await fetch(routes.api.partner(partner.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: partner.name,
+          address: partner.address,
+          type: partner.type,
+          payments: partner.payments,
+          pickupDisabled: partner.pickupDisabled,
+          notes: notesDraft,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        partner?: PartnerLocation;
+        error?: string;
+      };
+      if (!res.ok) {
+        setProfileError(displayApiError(locale, data.error, "admin.partners.saveFailed"));
+        return;
+      }
+      if (data.partner) setPartner(data.partner);
+      else setPartner({ ...partner, notes: notesDraft });
+      setProfileOpen(false);
+    } catch {
+      setProfileError(displayApiError(locale, undefined, "admin.partners.saveFailed"));
+    } finally {
+      setProfileBusy(false);
+    }
   }
 
   function openEditPocket(pocket: Pocket) {
@@ -444,6 +657,8 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     setPosNumber(suggestNextPosNumber(posSpots.map((s) => s.posNumber)));
     setPocketId("");
     setCurrentOfferId(activeOffers[0]?.id ?? "");
+    setSameVariantReplace(false);
+    setInventorySource("");
     setSpotDescription("");
     setPlacementNotes("");
     setSpotStatus("available");
@@ -455,7 +670,9 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     setEditSpot(spot);
     setPosNumber(spot.posNumber ?? "");
     setPocketId(spot.pocketId ?? "");
-    setCurrentOfferId(spot.currentOfferId);
+    setCurrentOfferId(spot.currentOfferId ?? "");
+    setSameVariantReplace(false);
+    setInventorySource("");
     setSpotDescription(spot.spotDescription ?? "");
     setPlacementNotes(spot.placementNotes ?? "");
     setSpotStatus(
@@ -476,6 +693,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       const res = await fetch(routes.api.posSpot(spot.id), { cache: "no-store" });
       const data = (await res.json().catch(() => ({}))) as {
         posSpot?: PosSpot;
+        offers?: OfferOption[];
         error?: string;
       };
       if (!res.ok || !data.posSpot) {
@@ -484,6 +702,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
       }
       const fresh = data.posSpot;
       setPosSpots((prev) => prev.map((s) => (s.id === fresh.id ? fresh : s)));
+      if (data.offers) setOffers(data.offers);
       applySpotToEditForm(fresh);
       setCreateSpotOpen(true);
     } catch {
@@ -538,6 +757,8 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
             posNumber: posNumber.trim(),
             pocketId: pocketId || null,
             currentOfferId,
+            ...(showSameVariantReplace && sameVariantReplace ? { sameVariantReplace: true } : {}),
+            ...(showInventorySource && inventorySource ? { inventorySource } : {}),
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -557,6 +778,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
             posNumber: posNumber.trim(),
             ...(pocketId ? { pocketId } : {}),
             currentOfferId,
+            ...(showInventorySource && inventorySource ? { inventorySource } : {}),
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -567,6 +789,35 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
           setSpotError(displayApiError(locale, data.error, "admin.partners.detail.posCreateFailed"));
           return;
         }
+      }
+      setCreateSpotOpen(false);
+      setEditSpot(null);
+      await loadAll();
+    } catch {
+      setSpotError(displayApiError(locale, undefined, "admin.partners.detail.posSaveFailed"));
+    } finally {
+      setSpotBusy(false);
+    }
+  }
+
+  async function removePlantFromSpot() {
+    if (!partner || !editSpot) return;
+    setSpotBusy(true);
+    setSpotError(null);
+    try {
+      const res = await fetch(routes.api.posSpot(editSpot.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          partnerLocationId: partner.id,
+          posNumber: posNumber.trim() || editSpot.posNumber || "",
+          occupancyIntent: "remove",
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setSpotError(displayApiError(locale, data.error, "admin.partners.detail.posUpdateFailed"));
+        return;
       }
       setCreateSpotOpen(false);
       setEditSpot(null);
@@ -590,7 +841,6 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
           partnerLocationId: partner.id,
           partnerLocationAddress: partner.address,
           posNumber: archiveTarget.posNumber ?? "",
-          currentOfferId: archiveTarget.currentOfferId,
           pocketId: archiveTarget.pocketId ?? null,
           status: "inactive",
         }),
@@ -655,10 +905,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
           {loadError ?? t(locale, "admin.partners.detail.notFound")}
         </p>
         <Link
-          href={routes.admin.partners()}
+          href={routes.admin.partner(brand.id)}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          {t(locale, "admin.partners.detail.back")}
+          {t(locale, "admin.partners.detail.backToPartner", { name: brand.name })}
         </Link>
       </div>
     );
@@ -668,41 +918,57 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
-            {t(locale, "admin.common.partner")}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-emerald-950">{partner.name}</h1>
+          <h1 className="text-2xl font-semibold text-emerald-950">{partner.name}</h1>
           <p className="mt-1 text-sm text-slate-600">
-            {formatStoredDeliveryAddressDisplay(partner.address, locale)}
+            {formatStoredDeliveryAddressDisplay(partner.address, "en")}
           </p>
           <p className="mt-0.5 text-sm text-slate-500">{partner.type}</p>
         </div>
         <Link
-          href={routes.admin.partners()}
+          href={routes.admin.partner(brand.id)}
           className="text-sm font-medium text-emerald-700 underline underline-offset-2"
         >
-          {t(locale, "admin.partners.detail.allPartners")}
+          {t(locale, "admin.partners.detail.backToPartner", { name: brand.name })}
         </Link>
       </div>
 
       {loadError ? <p className="text-sm text-red-700">{loadError}</p> : null}
 
-      <div className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-        <p className="text-sm text-slate-600">
-          {t(locale, "admin.partners.detail.editHintBefore")}
-          <Link
-            href={routes.admin.partners()}
-            className="font-medium text-emerald-700 underline underline-offset-2"
+      <AdminManagementSection
+        id="notes"
+        title={t(locale, "admin.partners.detail.notes")}
+        collapsible
+        defaultOpen={false}
+        actions={
+          <button
+            type="button"
+            onClick={openProfile}
+            className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
-            {t(locale, "admin.partners.detail.editHintLink")}
-          </Link>
-          {t(locale, "admin.partners.detail.editHintAfter")}
-          <span className="font-semibold text-emerald-950">{partner.name}</span>.
+            {t(locale, "admin.common.edit")}
+          </button>
+        }
+      >
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          {t(locale, "admin.partners.detail.visitChecklist")}
         </p>
-      </div>
+        <ul className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+          <li>• {t(locale, "admin.partners.detail.checklistWatering")}</li>
+          <li>• {t(locale, "admin.partners.detail.checklistCleaning")}</li>
+          <li>• {t(locale, "admin.partners.detail.checklistHealth")}</li>
+          <li>• {t(locale, "admin.partners.detail.checklistInventory")}</li>
+        </ul>
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <p className="whitespace-pre-wrap text-sm text-slate-700">
+            {partner.notes || t(locale, "admin.partners.detail.noNotes")}
+          </p>
+        </div>
+      </AdminManagementSection>
 
       <AdminManagementSection
         id="pockets"
+        collapsible
+        defaultOpen={false}
         title={t(locale, "admin.partners.detail.pockets")}
         description={t(locale, "admin.partners.detail.pocketsDesc", { name: partner.name })}
         actions={
@@ -739,9 +1005,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                   <ExpandablePocketCard
                     locale={locale}
                     title={pocket.name}
-                    subtitle={spotCountSubtitle(spots.length)}
+                    subtitle={spotCountSubtitle(spots)}
                     spots={spots}
                     offerNameById={offerNameById}
+                    offerById={offerById}
                     onEditSpot={openEditSpot}
                     onArchiveSpot={(spot) => {
                       setArchiveError(null);
@@ -777,9 +1044,10 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                 <ExpandablePocketCard
                   locale={locale}
                   title={t(locale, "admin.partners.detail.unassigned")}
-                  subtitle={spotCountSubtitle(unassignedSpots.length)}
+                  subtitle={spotCountSubtitle(unassignedSpots)}
                   spots={unassignedSpots}
                   offerNameById={offerNameById}
+                  offerById={offerById}
                   onEditSpot={openEditSpot}
                   onArchiveSpot={(spot) => {
                     setArchiveError(null);
@@ -792,9 +1060,33 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         )}
       </AdminManagementSection>
 
+      <AdminFormModal
+        open={profileOpen}
+        title={t(locale, "admin.partners.detail.editProfile")}
+        onCancel={() => setProfileOpen(false)}
+        onSubmit={() => void saveProfile()}
+        busy={profileBusy}
+        error={profileError}
+      >
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-slate-700">
+            {t(locale, "admin.partners.detail.notes")}
+          </span>
+          <textarea
+            rows={6}
+            value={notesDraft}
+            onChange={(event) => setNotesDraft(event.target.value)}
+            className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+          />
+        </label>
+      </AdminFormModal>
+
       <AdminManagementSection
         id="pos-spots"
+        collapsible
+        defaultOpen={false}
         title={t(locale, "admin.partners.detail.posSpots")}
+        titleMeta={`${t(locale, "admin.partners.detail.activePlants")} ${plantCountLabel(locationCounts)}`}
         description={t(locale, "admin.partners.detail.posSpotsDesc", { name: partner.name })}
         actions={
           <button
@@ -838,7 +1130,7 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
                   <div className="flex flex-wrap gap-x-2">
                     <dt className="font-medium text-slate-500">{t(locale, "admin.common.offer")}</dt>
                     <dd className="text-slate-900">
-                      {offerNameById.get(spot.currentOfferId) ?? "—"}
+                      {offerNameById.get(spot.currentOfferId ?? "") ?? "—"}
                     </dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
@@ -949,7 +1241,11 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
         onSubmit={() => void saveSpot()}
         busy={spotBusy}
         error={spotError}
-        canSubmit={Boolean(posNumber.trim() && currentOfferId.trim())}
+        canSubmit={Boolean(
+          posNumber.trim() &&
+            currentOfferId.trim() &&
+            (!showInventorySource || inventorySource),
+        )}
         submitLabel={
           editSpot ? t(locale, "admin.shared.save") : t(locale, "admin.shared.create")
         }
@@ -987,17 +1283,87 @@ export function AdminPartnerDetail({ partnerId }: AdminPartnerDetailProps) {
           <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.offer")}</span>
           <select
             value={currentOfferId}
-            onChange={(e) => setCurrentOfferId(e.target.value)}
+            onChange={(e) => {
+              setCurrentOfferId(e.target.value);
+              setSameVariantReplace(false);
+            }}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
             <option value="">{t(locale, "admin.partners.detail.selectOffer")}</option>
-            {activeOffers.map((offer) => (
+            {offerChoices.map((offer) => (
               <option key={offer.id} value={offer.id}>
-                {offer.productName}
+                {offerOptionLabel(offer)}
               </option>
             ))}
           </select>
+          {selectedIsPlant && offerChoices.length === 0 ? (
+            <span className="text-xs text-amber-700">
+              {t(locale, "admin.partners.detail.noEligibleOffers")}
+            </span>
+          ) : null}
         </label>
+        {selectedIsPlant && selectedOffer?.sellableVariant ? (
+          <p className="text-sm text-slate-600">
+            {t(locale, "admin.partners.detail.derivedPlantSize", {
+              size: selectedOffer.sellableVariant.plantSizeLabel || "—",
+            })}
+            {selectedOffer.sellableVariant.potId
+              ? ` · ${[selectedOffer.sellableVariant.potName, selectedOffer.sellableVariant.potDiameterCm != null ? `${selectedOffer.sellableVariant.potDiameterCm} cm` : ""]
+                  .filter(Boolean)
+                  .join(" ")}`
+              : ` · ${t(locale, "admin.partners.detail.noPot")}`}
+          </p>
+        ) : selectedIsPlant && selectedOffer ? (
+          <p className="text-xs text-amber-700">{t(locale, "admin.partners.detail.legacyOfferHint")}</p>
+        ) : null}
+        {showSameVariantReplace ? (
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={sameVariantReplace}
+              onChange={(e) => setSameVariantReplace(e.target.checked)}
+            />
+            <span>{t(locale, "admin.partners.detail.sameVariantReplace")}</span>
+          </label>
+        ) : null}
+        {showInventorySource ? (
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-slate-700">
+              {t(locale, "admin.pos.inventorySource.label")}
+            </legend>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="partner-inventory-source"
+                className="mt-1"
+                checked={inventorySource === "central"}
+                onChange={() => setInventorySource("central")}
+              />
+              <span>{t(locale, "admin.pos.inventorySource.central")}</span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="partner-inventory-source"
+                className="mt-1"
+                checked={inventorySource === "already_at_partner"}
+                onChange={() => setInventorySource("already_at_partner")}
+              />
+              <span>{t(locale, "admin.pos.inventorySource.alreadyAtPartner")}</span>
+            </label>
+          </fieldset>
+        ) : null}
+        {editSpot && (editSpot.plantVariantId || editSpot.currentOfferId) && selectedIsPlant ? (
+          <button
+            type="button"
+            onClick={() => void removePlantFromSpot()}
+            className="text-sm font-medium text-amber-800 underline underline-offset-2"
+            disabled={spotBusy}
+          >
+            {t(locale, "admin.partners.detail.removePlant")}
+          </button>
+        ) : null}
         <label className="block space-y-1">
           <span className="text-sm font-medium text-slate-700">{t(locale, "admin.common.status")}</span>
           <select

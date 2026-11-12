@@ -26,6 +26,10 @@ interface CheckoutCustomerFieldsProps {
   errors: CheckoutCustomerFieldErrors;
   onChange: (field: CustomerFieldKey, value: string) => void;
   onFieldBlur: (field: CheckoutFieldKey) => void;
+  /** Fields to render. Omitted keys default to shown. */
+  show?: Partial<Record<CustomerFieldKey, boolean>>;
+  /** Fields marked required (asterisk + aria-required). Omitted keys default to required. */
+  required?: Partial<Record<CustomerFieldKey, boolean>>;
 }
 
 export function CheckoutCustomerFields({
@@ -33,101 +37,99 @@ export function CheckoutCustomerFields({
   errors,
   onChange,
   onFieldBlur,
+  show,
+  required,
 }: CheckoutCustomerFieldsProps) {
   const locale = useLocale();
+  const shown = (field: CustomerFieldKey) => show?.[field] !== false;
+  const isRequired = (field: CustomerFieldKey) => required?.[field] !== false;
   return (
     <>
-      <div className="space-y-2">
-        <label className="text-body font-medium text-slate-700" htmlFor="fullName">
-          {t(locale, "checkout.field.fullName")}
-          <span aria-hidden="true" className="text-red-700">
-            {" "}
-            *
-          </span>
-        </label>
-        <input
-          id="fullName"
-          name="fullName"
-          type="text"
-          autoComplete="name"
-          autoCapitalize="words"
-          aria-required="true"
-          aria-invalid={errors.fullName ? true : undefined}
-          aria-describedby={errors.fullName ? "fullName-error" : undefined}
-          className={`${baseInputClass} ${errors.fullName ? invalidInputClass : ""}`}
-          value={values.fullName}
-          onChange={(event) => onChange("fullName", event.target.value)}
-          onBlur={() => onFieldBlur("fullName")}
-          placeholder={t(locale, "checkout.placeholder.fullName")}
-        />
-        {errors.fullName ? (
-          <p id="fullName-error" className="text-caption text-red-700">
-            {errors.fullName}
-          </p>
-        ) : null}
-      </div>
-      <div className="space-y-2">
-        <label className="text-body font-medium text-slate-700" htmlFor="email">
-          {t(locale, "checkout.field.email")}
-          <span aria-hidden="true" className="text-red-700">
-            {" "}
-            *
-          </span>
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          inputMode="email"
-          aria-required="true"
-          aria-invalid={errors.email ? true : undefined}
-          aria-describedby={errors.email ? "email-error" : undefined}
-          className={`${baseInputClass} ${errors.email ? invalidInputClass : ""}`}
-          value={values.email}
-          onChange={(event) => onChange("email", event.target.value)}
-          onBlur={() => onFieldBlur("email")}
-          placeholder={t(locale, "checkout.placeholder.email")}
-        />
-        {errors.email ? (
-          <p id="email-error" className="text-caption text-red-700">
-            {errors.email}
-          </p>
-        ) : null}
-      </div>
-      <div className="space-y-2">
-        <label className="text-body font-medium text-slate-700" htmlFor="phone">
-          {t(locale, "checkout.field.phone")}
-          <span aria-hidden="true" className="text-red-700">
-            {" "}
-            *
-          </span>
-        </label>
-        <input
-          id="phone"
-          name="phone"
-          type="tel"
-          inputMode="numeric"
-          autoComplete="tel"
-          aria-required="true"
-          aria-invalid={errors.phone ? true : undefined}
-          aria-describedby={errors.phone ? "phone-error" : undefined}
-          className={`${baseInputClass} ${errors.phone ? invalidInputClass : ""}`}
-          value={values.phone}
-          onChange={(event) => {
-            const normalized = normalizeIsraeliMobilePhoneInput(event.target.value);
-            onChange("phone", normalized);
-          }}
-          onBlur={() => onFieldBlur("phone")}
-          placeholder="0521234567"
-          maxLength={10}
-        />
-        {errors.phone ? (
-          <p id="phone-error" className="text-caption text-red-700">
-            {errors.phone}
-          </p>
-        ) : null}
-      </div>
+      {shown("fullName") ? (
+        <div className="space-y-2">
+          <label className="sr-only" htmlFor="fullName">
+            {t(locale, "checkout.field.fullName")}
+          </label>
+          <input
+            id="fullName"
+            name="fullName"
+            type="text"
+            autoComplete="name"
+            autoCapitalize="words"
+            aria-required={isRequired("fullName") ? "true" : undefined}
+            aria-invalid={errors.fullName ? true : undefined}
+            aria-describedby={errors.fullName ? "fullName-error" : undefined}
+            className={`${baseInputClass} ${errors.fullName ? invalidInputClass : ""}`}
+            value={values.fullName}
+            onChange={(event) => onChange("fullName", event.target.value)}
+            onBlur={() => onFieldBlur("fullName")}
+            placeholder={t(locale, "checkout.field.fullName")}
+          />
+          {errors.fullName ? (
+            <p id="fullName-error" className="text-caption text-red-700">
+              {errors.fullName}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {shown("email") ? (
+        <div className="space-y-2">
+          <label className="sr-only" htmlFor="email">
+            {t(locale, "checkout.field.email")}
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            inputMode="email"
+            aria-required={isRequired("email") ? "true" : undefined}
+            aria-invalid={errors.email ? true : undefined}
+            aria-describedby={errors.email ? "email-error" : undefined}
+            className={`${baseInputClass} ${errors.email ? invalidInputClass : ""}`}
+            value={values.email}
+            onChange={(event) => onChange("email", event.target.value)}
+            onBlur={() => onFieldBlur("email")}
+            placeholder={t(locale, "checkout.field.email")}
+          />
+          {errors.email ? (
+            <p id="email-error" className="text-caption text-red-700">
+              {errors.email}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {shown("phone") ? (
+        <div className="space-y-2">
+          <label className="sr-only" htmlFor="phone">
+            {t(locale, "checkout.field.phone")}
+          </label>
+          <input
+            id="phone"
+            name="phone"
+            type="tel"
+            inputMode="numeric"
+            autoComplete="tel"
+            aria-required={isRequired("phone") ? "true" : undefined}
+            aria-invalid={errors.phone ? true : undefined}
+            aria-describedby={errors.phone ? "phone-error" : undefined}
+            className={`${baseInputClass} ${errors.phone ? invalidInputClass : ""}`}
+            value={values.phone}
+            onChange={(event) => {
+              const normalized = normalizeIsraeliMobilePhoneInput(event.target.value);
+              onChange("phone", normalized);
+            }}
+            onBlur={() => onFieldBlur("phone")}
+            placeholder={t(locale, "checkout.field.phone")}
+            maxLength={10}
+          />
+          {errors.phone ? (
+            <p id="phone-error" className="text-caption text-red-700">
+              {errors.phone}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }

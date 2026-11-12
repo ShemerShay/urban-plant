@@ -16,12 +16,64 @@ import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import type { PlantProduct } from "@/lib/types";
 import type { Pocket } from "@/lib/pocketTypes";
 
+export type PosPlacementDisplay = {
+  plantSizeLabel: string | null;
+  potName: string | null;
+  potSizeLabel: string | null;
+  potColor: string | null;
+  potColorHe: string | null;
+};
+
 export type PosLandingDetails = {
   offer: Offer | undefined;
   plant: PlantProduct | undefined;
   partner: PartnerLocation | undefined;
   pocket: Pocket | undefined;
+  placement: PosPlacementDisplay;
 };
+
+function emptyPlacement(): PosPlacementDisplay {
+  return {
+    plantSizeLabel: null,
+    potName: null,
+    potSizeLabel: null,
+    potColor: null,
+    potColorHe: null,
+  };
+}
+
+async function loadPlacementDisplay(posSpot: PosSpot): Promise<PosPlacementDisplay> {
+  const plantVariantId = posSpot.plantVariantId?.trim() || null;
+  const potId = posSpot.potId?.trim() || null;
+  if (!plantVariantId && !potId) return emptyPlacement();
+
+  const rows = (await sql`
+    SELECT
+      pv.size_label AS plant_size_label,
+      CASE WHEN ${potId}::uuid IS NULL THEN NULL ELSE pot.color END AS pot_color,
+      NULL::text AS pot_color_he,
+      NULL::text AS pot_size_label,
+      CASE WHEN ${potId}::uuid IS NULL THEN NULL ELSE pot.name END AS pot_name
+    FROM (SELECT 1) AS dummy
+    LEFT JOIN plant_variants pv ON pv.id = ${plantVariantId}::uuid
+    LEFT JOIN pots pot ON pot.id = ${potId}::uuid
+  `) as {
+    plant_size_label: string | null;
+    pot_color: string | null;
+    pot_color_he: string | null;
+    pot_size_label: string | null;
+    pot_name: string | null;
+  }[];
+  const row = rows[0];
+  if (!row) return emptyPlacement();
+  return {
+    plantSizeLabel: row.plant_size_label?.trim() || null,
+    potName: potId ? row.pot_name?.trim() || null : null,
+    potSizeLabel: null,
+    potColor: potId ? row.pot_color?.trim() || null : null,
+    potColorHe: null,
+  };
+}
 
 type LandingJoinRow = {
   offer: OfferRow | null;
@@ -31,11 +83,14 @@ type LandingJoinRow = {
 };
 
 async function loadPosLandingDetailsFallback(posSpot: PosSpot): Promise<PosLandingDetails> {
-  const offer = await getOfferById(posSpot.currentOfferId);
+  const offer = posSpot.currentOfferId
+    ? await getOfferById(posSpot.currentOfferId)
+    : undefined;
   const plant = offer ? await getPlantById(offer.productId) : undefined;
   const partner = await getLocationById(posSpot.partnerLocationId);
   const pocket = posSpot.pocketId ? await getPocketById(posSpot.pocketId) : undefined;
-  return { offer, plant, partner, pocket };
+  const placement = await loadPlacementDisplay(posSpot);
+  return { offer, plant, partner, pocket, placement };
 }
 
 /**
@@ -43,7 +98,7 @@ async function loadPosLandingDetailsFallback(posSpot: PosSpot): Promise<PosLandi
  * Does not re-read `pos_spots` (keeps the post-expiry snapshot used for CTA/gates).
  */
 export async function getPosLandingDetails(posSpot: PosSpot): Promise<PosLandingDetails> {
-  const offerId = posSpot.currentOfferId.trim();
+  const offerId = posSpot.currentOfferId?.trim() ?? "";
   const partnerId = posSpot.partnerLocationId.trim();
   const pocketId = posSpot.pocketId?.trim() || null;
   if (!offerId) {
@@ -82,5 +137,6 @@ export async function getPosLandingDetails(posSpot: PosSpot): Promise<PosLanding
       ? await getPocketById(pocketId)
       : undefined;
 
-  return { offer, plant, partner, pocket };
+  const placement = await loadPlacementDisplay(posSpot);
+  return { offer, plant, partner, pocket, placement };
 }

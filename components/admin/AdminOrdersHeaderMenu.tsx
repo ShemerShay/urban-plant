@@ -1,13 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { AdminOrdersExportButton } from "@/components/admin/AdminOrdersExportButton";
 import { useLocale } from "@/components/locale/LocaleProvider";
+import type { AdminCatalogLineView } from "@/lib/adminOrderDisplay";
 import { t } from "@/lib/messages";
 import type { SavedOrder } from "@/lib/orderTypes";
-import { routes } from "@/lib/routes";
 
 function IconMoreVertical({ className }: { className?: string }) {
   return (
@@ -28,9 +27,13 @@ function IconMoreVertical({ className }: { className?: string }) {
 
 interface AdminOrdersHeaderMenuProps {
   filteredOrders: SavedOrder[];
+  catalogItemsByOrderId?: Record<string, AdminCatalogLineView[]>;
 }
 
-export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuProps) {
+export function AdminOrdersHeaderMenu({
+  filteredOrders,
+  catalogItemsByOrderId = {},
+}: AdminOrdersHeaderMenuProps) {
   const locale = useLocale();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -72,28 +75,12 @@ export function AdminOrdersHeaderMenu({ filteredOrders }: AdminOrdersHeaderMenuP
           role="menu"
           aria-orientation="vertical"
         >
-          <Link
-            href={routes.admin.index()}
-            role="menuitem"
-            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-            onClick={() => setOpen(false)}
-          >
-            {t(locale, "admin.orders.adminRoutes")}
-          </Link>
-          <Link
-            href={routes.admin.ordersNew()}
-            role="menuitem"
-            className="block px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-            onClick={() => setOpen(false)}
-          >
-            {t(locale, "admin.orders.addNew")}
-          </Link>
           <AdminOrdersExportButton
             orders={filteredOrders}
+            catalogItemsByOrderId={catalogItemsByOrderId}
             menuItem
             onExport={() => setOpen(false)}
           />
-          <div className="my-1 border-t border-slate-100" />
         </div>
       ) : null}
     </div>

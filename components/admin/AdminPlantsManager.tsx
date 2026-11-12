@@ -4,21 +4,17 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { PlantImagePicker } from "@/components/admin/PlantImagePicker";
+import { AdminPlantVariantsPanel } from "@/components/admin/AdminPlantVariantsPanel";
+import { AdminSellableVariantsSection } from "@/components/admin/AdminSellableVariantsSection";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { useLocale } from "@/components/locale/LocaleProvider";
-import {
-  careLabel,
-  displayApiError,
-  lightLabel,
-  sizeLabel,
-  yesNoLabel,
-} from "@/lib/displayLabels";
+import { displayApiError, lightLabel, yesNoLabel } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 import type { InventoryType } from "@/lib/inventoryType";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel, PlantProduct } from "@/lib/types";
 
 type PlantsApiResponse = {
   plants?: PlantProduct[];
@@ -36,20 +32,19 @@ type PlantDraft = {
   subtitleHe: string;
   description: string;
   descriptionHe: string;
-  price: string;
+  supplierPrice: string;
   currency: PlantProduct["currency"];
   imagesText: string;
   labelsText: string;
   light: LightLevel;
   water: string;
   waterHe: string;
-  averageSize: PlantProduct["averageSize"] | "";
   supplierName: string;
   baseSupplierPrice: string;
-  difficulty: CareLevel;
   location: string;
   petFriendly: boolean;
   careInstructionsText: string;
+  catalogPublished: boolean;
 };
 
 const LIGHT_OPTIONS: LightLevel[] = [
@@ -59,16 +54,7 @@ const LIGHT_OPTIONS: LightLevel[] = [
   "Direct sun",
 ];
 
-const DIFFICULTY_OPTIONS: CareLevel[] = ["Easy", "Moderate", "Advanced"];
-
 const CURRENCY_OPTIONS: PlantProduct["currency"][] = ["ILS", "USD", "EUR"];
-
-const SIZE_VALUES: NonNullable<PlantProduct["averageSize"]>[] = [
-  "small",
-  "medium",
-  "large",
-  "x-large",
-];
 
 function linesFromArray(values: string[]): string {
   return values.join("\n");
@@ -91,21 +77,20 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     subtitleHe: plant.subtitleHe ?? "",
     description: plant.description ?? "",
     descriptionHe: plant.descriptionHe ?? "",
-    price: String(plant.price),
+    supplierPrice: String(plant.supplierPrice),
     currency: plant.currency,
     imagesText: linesFromArray(plant.images ?? []),
     labelsText: linesFromArray(plant.labels ?? []),
     light: plant.light ?? "Bright indirect light",
     water: plant.water ?? "",
     waterHe: plant.waterHe ?? "",
-    averageSize: plant.averageSize ?? "",
     supplierName: plant.supplierName ?? "",
     baseSupplierPrice:
       typeof plant.baseSupplierPrice === "number" ? String(plant.baseSupplierPrice) : "",
-    difficulty: plant.difficulty ?? "Easy",
     location: plant.location ?? "",
     petFriendly: plant.petFriendly ?? false,
     careInstructionsText: linesFromArray(plant.careInstructions ?? []),
+    catalogPublished: plant.catalogPublished === true,
   };
 }
 
@@ -119,20 +104,19 @@ function emptyDraft(): PlantDraft {
     subtitleHe: "",
     description: "",
     descriptionHe: "",
-    price: "",
+    supplierPrice: "",
     currency: "ILS",
     imagesText: "",
     labelsText: "",
     light: "Bright indirect light",
     water: "",
     waterHe: "",
-    averageSize: "",
     supplierName: "",
     baseSupplierPrice: "",
-    difficulty: "Easy",
     location: "",
     petFriendly: false,
     careInstructionsText: "",
+    catalogPublished: false,
   };
 }
 
@@ -140,13 +124,13 @@ function draftToPayload(
   draft: PlantDraft,
   options?: { omitId?: boolean; inventoryType?: InventoryType },
 ): Record<string, unknown> {
-  const price = Number(draft.price);
+  const supplierPrice = Number(draft.supplierPrice);
   const inventoryType = options?.inventoryType ?? "plants";
   if (inventoryType === "flowers") {
     return {
       ...(options?.omitId ? {} : { id: draft.id.trim() }),
       name: draft.name.trim(),
-      price,
+      supplierPrice,
       currency: draft.currency,
       inventoryType: "flowers",
     };
@@ -163,23 +147,22 @@ function draftToPayload(
     subtitleHe: draft.subtitleHe.trim(),
     description: draft.description.trim(),
     descriptionHe: draft.descriptionHe.trim(),
-    price,
+    supplierPrice,
     currency: draft.currency,
     images: arrayFromLines(draft.imagesText),
     labels: arrayFromLines(draft.labelsText),
     light: draft.light,
     water: draft.water.trim(),
     waterHe: draft.waterHe.trim(),
-    ...(draft.averageSize ? { averageSize: draft.averageSize } : {}),
     ...(draft.supplierName.trim() ? { supplierName: draft.supplierName.trim() } : {}),
     ...(baseSupplierPrice !== undefined && Number.isFinite(baseSupplierPrice)
       ? { baseSupplierPrice }
       : {}),
-    difficulty: draft.difficulty,
     location: draft.location.trim(),
     petFriendly: draft.petFriendly,
     careInstructions: arrayFromLines(draft.careInstructionsText),
     inventoryType: "plants",
+    catalogPublished: draft.catalogPublished,
   };
 }
 
@@ -256,11 +239,10 @@ function plantMatchesSearch(plant: PlantProduct, query: string): boolean {
     plant.description,
     plant.descriptionHe,
     plant.currency,
-    String(plant.price),
+    String(plant.supplierPrice),
     plant.light,
     plant.water,
     plant.waterHe,
-    plant.difficulty,
     plant.location,
     plant.supplierName,
     ...(plant.labels ?? []),
@@ -369,6 +351,19 @@ function PlantFieldsForm({
           />
         </label>
         {!isFlowers ? (
+        <label className="flex items-center gap-2 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={draft.catalogPublished}
+            onChange={(e) => patch({ catalogPublished: e.target.checked })}
+            className={adminCheckboxClassName}
+          />
+          <span className="text-sm text-slate-800">
+            {t(locale, "admin.plants.catalogPublished")}
+          </span>
+        </label>
+        ) : null}
+        {!isFlowers ? (
         <>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.plants.nameHe")}</span>
@@ -424,14 +419,14 @@ function PlantFieldsForm({
         </>
         ) : null}
         <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.common.price")}</span>
+          <span className={labelClassName}>{t(locale, "admin.plants.supplierCost")}</span>
           <input
             className={inputClassName}
             type="number"
             min={0}
             step={1}
-            value={draft.price}
-            onChange={(e) => patch({ price: e.target.value })}
+            value={draft.supplierPrice}
+            onChange={(e) => patch({ supplierPrice: e.target.value })}
           />
         </label>
         <label className="block">
@@ -489,37 +484,37 @@ function PlantFieldsForm({
             dir="rtl"
           />
         </label>
-        <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.plants.difficulty")}</span>
-          <select
-            className={inputClassName}
-            value={draft.difficulty}
-            onChange={(e) => patch({ difficulty: e.target.value as CareLevel })}
+        <div className="block">
+          <span className={labelClassName}>{t(locale, "admin.plants.petFriendly")}</span>
+          <div
+            className="mt-1 inline-flex rounded-full bg-slate-100 p-0.5"
+            role="radiogroup"
+            aria-label={t(locale, "admin.plants.petFriendly")}
           >
-            {DIFFICULTY_OPTIONS.map((difficulty) => (
-              <option key={difficulty} value={difficulty}>
-                {careLabel(locale, difficulty)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.plants.averageSizeOptional")}</span>
-          <select
-            className={inputClassName}
-            value={draft.averageSize}
-            onChange={(e) =>
-              patch({ averageSize: e.target.value as PlantDraft["averageSize"] })
-            }
-          >
-            <option value="">—</option>
-            {SIZE_VALUES.map((size) => (
-              <option key={size} value={size}>
-                {sizeLabel(locale, size)}
-              </option>
-            ))}
-          </select>
-        </label>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={draft.petFriendly}
+              onClick={() => patch({ petFriendly: true })}
+              className={`rounded-full px-3 py-1 text-sm font-medium ${
+                draft.petFriendly ? "bg-emerald-800 text-white" : "text-slate-600"
+              }`}
+            >
+              {t(locale, "admin.common.yes")}
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!draft.petFriendly}
+              onClick={() => patch({ petFriendly: false })}
+              className={`rounded-full px-3 py-1 text-sm font-medium ${
+                !draft.petFriendly ? "bg-emerald-800 text-white" : "text-slate-600"
+              }`}
+            >
+              {t(locale, "admin.common.no")}
+            </button>
+          </div>
+        </div>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.common.location")}</span>
           <input
@@ -527,15 +522,6 @@ function PlantFieldsForm({
             value={draft.location}
             onChange={(e) => patch({ location: e.target.value })}
           />
-        </label>
-        <label className="flex items-center gap-2 sm:col-span-2">
-          <input
-            type="checkbox"
-            checked={draft.petFriendly}
-            onChange={(e) => patch({ petFriendly: e.target.checked })}
-            className={adminCheckboxClassName}
-          />
-          <span className="text-sm text-slate-800">{t(locale, "admin.plants.petFriendly")}</span>
         </label>
         <label className="block sm:col-span-2">
           <span className={labelClassName}>{t(locale, "admin.plants.careInstructionsHint")}</span>
@@ -582,6 +568,18 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
         <dt className="font-medium text-slate-500">{t(locale, "admin.common.name")}</dt>
         <dd className="text-slate-900">{plant.name}</dd>
       </div>
+      {plant.inventoryType !== "flowers" ? (
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">
+            {t(locale, "admin.plants.catalogPublished")}
+          </dt>
+          <dd className="text-slate-900">
+            {plant.catalogPublished
+              ? t(locale, "admin.plants.catalogPublishedBadge")
+              : t(locale, "admin.plants.catalogUnpublishedBadge")}
+          </dd>
+        </div>
+      ) : null}
       {plant.nameHe ? (
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.nameHe")}</dt>
@@ -625,8 +623,8 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
         </div>
       ) : null}
       <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">{t(locale, "admin.common.price")}</dt>
-        <dd className="text-slate-900">{formatPrice(plant.price, plant.currency, locale)}</dd>
+        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.supplierCost")}</dt>
+        <dd className="text-slate-900">{formatPrice(plant.supplierPrice, plant.currency, locale)}</dd>
       </div>
       {plant.labels && plant.labels.length > 0 ? (
       <div>
@@ -652,18 +650,6 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           <dd className="text-slate-900" dir="rtl">
             {plant.waterHe}
           </dd>
-        </div>
-      ) : null}
-      {plant.difficulty ? (
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.difficulty")}</dt>
-        <dd className="text-slate-900">{careLabel(locale, plant.difficulty)}</dd>
-      </div>
-      ) : null}
-      {plant.averageSize ? (
-        <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.averageSize")}</dt>
-          <dd className="text-slate-900">{sizeLabel(locale, plant.averageSize)}</dd>
         </div>
       ) : null}
       {plant.location ? (
@@ -814,7 +800,20 @@ function AdminPlantCard({
             </span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">{plant.subtitle}</span>
             <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{formatPrice(plant.price, plant.currency, locale)}</span>
+              <span>{formatPrice(plant.supplierPrice, plant.currency, locale)}</span>
+              {plant.inventoryType !== "flowers" ? (
+                <span
+                  className={
+                    plant.catalogPublished
+                      ? "rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800"
+                      : "rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600"
+                  }
+                >
+                  {plant.catalogPublished
+                    ? t(locale, "admin.plants.catalogPublishedBadge")
+                    : t(locale, "admin.plants.catalogUnpublishedBadge")}
+                </span>
+              ) : null}
             </span>
           </span>
           <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={isOpen} />
@@ -881,6 +880,12 @@ function AdminPlantCard({
           ) : (
             <PlantDetailView plant={plant} />
           )}
+          {plant.inventoryType !== "flowers" ? (
+            <AdminPlantVariantsPanel plant={plant} />
+          ) : null}
+          {plant.inventoryType !== "flowers" ? (
+            <AdminSellableVariantsSection plant={plant} />
+          ) : null}
         </div>
       ) : null}
 
@@ -903,8 +908,10 @@ function AdminPlantCard({
 
 export function AdminPlantsManager({
   inventoryType,
+  initialPlants,
 }: {
   inventoryType: InventoryType;
+  initialPlants: PlantProduct[];
 }) {
   const locale = useLocale();
   const isFlowers = inventoryType === "flowers";
@@ -929,9 +936,9 @@ export function AdminPlantsManager({
   const createFailedKey = isFlowers
     ? "admin.flowers.createFailed"
     : "admin.plants.createFailed";
-  const [plants, setPlants] = useState<PlantProduct[]>([]);
+  const [plants, setPlants] = useState<PlantProduct[]>(initialPlants);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState(emptyDraft);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -968,12 +975,6 @@ export function AdminPlantsManager({
       if (!signal?.aborted) setIsLoading(false);
     }
   }, [inventoryType, locale, loadFailedKey, loadNetworkKey]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadPlants(controller.signal);
-    return () => controller.abort();
-  }, [loadPlants]);
 
   async function handleCreate() {
     setIsCreating(true);
@@ -1019,12 +1020,6 @@ export function AdminPlantsManager({
             className="text-sm font-medium text-emerald-700 underline underline-offset-2"
           >
             {t(locale, "admin.inventoryTypes.title")}
-          </Link>
-           <Link
-            href={routes.admin.index()}
-            className="text-sm font-medium text-emerald-700 underline underline-offset-2"
-          >
-            {t(locale, "admin.common.admin")}
           </Link>
           <button
             type="button"

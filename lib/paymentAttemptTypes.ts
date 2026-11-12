@@ -1,3 +1,4 @@
+import type { CatalogPaymentSnapshot } from "./catalogCheckoutSnapshot";
 import type { FulfillmentMethod, OrderCardcomEnv, OrderSnapshot } from "./orderTypes";
 
 /**
@@ -34,11 +35,26 @@ export function parsePaymentAttemptStatus(value: unknown): PaymentAttemptStatus 
   return isPaymentAttemptStatus(value) ? value : null;
 }
 
+/** Partner attempts are POS checkout. Catalog attempts have no POS spot. */
+export type PaymentAttemptChannel = "partner" | "catalog";
+
+export function isPaymentAttemptChannel(value: unknown): value is PaymentAttemptChannel {
+  return value === "partner" || value === "catalog";
+}
+
 /** Persisted payment attempt shape (pre-Order Cardcom correlation). */
 export interface SavedPaymentAttempt {
   id: string;
   status: PaymentAttemptStatus;
-  posSpotId: string;
+  /** Required for partner attempts. Null for catalog attempts. */
+  posSpotId: string | null;
+  /**
+   * Omitted on write means partner, so existing POS inserts stay partner checkout.
+   * Reads always include the stored channel.
+   */
+  channel?: PaymentAttemptChannel;
+  /** Catalog line snapshot, including supplier cost captured at attempt creation. */
+  catalogSnapshot?: CatalogPaymentSnapshot;
   offerId?: string;
   productId: string;
   productName: string;
@@ -58,6 +74,8 @@ export interface SavedPaymentAttempt {
   failureReason?: string;
   finalizedOrderId?: string;
   cardcomTransactionId?: number;
+  /** Staff browser. Omitted on write means false. */
+  isInternal?: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -9,9 +9,24 @@ import { sql } from "@/lib/db";
 import { paymentResumeTokensEqual } from "@/lib/paymentResume";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
-import type { FulfillmentMethod, OrderSnapshot, SavedOrder } from "./orderTypes";
-import type { PaymentAttemptStatus, SavedPaymentAttempt } from "./paymentAttemptTypes";
-import { isPaymentAttemptStatus } from "./paymentAttemptTypes";
+import {
+  parseOptionalCommissionRate,
+  syncOpenMonthPlantCommission,
+} from "@/lib/orderCommission";
+import { saleIdentityFromRow } from "@/lib/orderSaleIdentity";
+import {
+  parseCatalogPaymentSnapshot,
+  snapshotCatalogPaymentPlantCosts,
+  type CatalogPaymentSnapshot,
+} from "./catalogCheckoutSnapshot";
+import { parseStoredPartnerSupplierCost } from "@/lib/partnerSupplierCost";
+import { saleTimeSnapshotFields, type FulfillmentMethod, type OrderSnapshot, type SavedOrder } from "./orderTypes";
+import type {
+  PaymentAttemptChannel,
+  PaymentAttemptStatus,
+  SavedPaymentAttempt,
+} from "./paymentAttemptTypes";
+import { isPaymentAttemptChannel, isPaymentAttemptStatus } from "./paymentAttemptTypes";
 
 function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -61,6 +76,8 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       : {}),
     ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
+    ...saleTimeSnapshotFields(o),
+    ...parseStoredPartnerSupplierCost(o),
   };
 }
 
@@ -98,7 +115,9 @@ function isUniqueViolation(error: unknown): boolean {
 type PaymentAttemptRow = {
   id: string;
   status: string;
-  pos_spot_id: string;
+  pos_spot_id: string | null;
+  channel: string;
+  catalog_snapshot: unknown;
   offer_id: string | null;
   product_id: string;
   product_name: string;
@@ -118,6 +137,7 @@ type PaymentAttemptRow = {
   failure_reason: string | null;
   finalized_order_id: string | null;
   cardcom_transaction_id: string | number | bigint | null;
+  is_internal: boolean;
   created_at: string | Date;
   updated_at: string | Date;
 };
@@ -129,11 +149,16 @@ function mapPaymentAttemptRow(row: PaymentAttemptRow): SavedPaymentAttempt {
   const fulfillmentMethod: FulfillmentMethod =
     row.fulfillment_method === "pickup" ? "pickup" : "delivery";
   const snapshot = normalizeSnapshot(row.snapshot);
+  const channel: PaymentAttemptChannel = isPaymentAttemptChannel(row.channel)
+    ? row.channel
+    : "partner";
+  const catalogSnapshot = parseCatalogPaymentSnapshot(row.catalog_snapshot);
 
   return {
     id: String(row.id),
     status,
-    posSpotId: row.pos_spot_id,
+    posSpotId: row.pos_spot_id ? String(row.pos_spot_id) : null,
+    channel,
     ...(row.offer_id ? { offerId: row.offer_id } : {}),
     productId: row.product_id,
     productName: row.product_name,
@@ -145,6 +170,7 @@ function mapPaymentAttemptRow(row: PaymentAttemptRow): SavedPaymentAttempt {
     fulfillmentMethod,
     amount: parseNumeric(row.amount),
     ...(snapshot ? { snapshot } : {}),
+    ...(catalogSnapshot ? { catalogSnapshot } : {}),
     ...(row.checkout_session_id ? { checkoutSessionId: row.checkout_session_id } : {}),
     ...(row.cardcom_env === "test" || row.cardcom_env === "production"
       ? { cardcomEnv: row.cardcom_env }
@@ -159,6 +185,7 @@ function mapPaymentAttemptRow(row: PaymentAttemptRow): SavedPaymentAttempt {
     ...(parseOptionalBigInt(row.cardcom_transaction_id) !== undefined
       ? { cardcomTransactionId: parseOptionalBigInt(row.cardcom_transaction_id) }
       : {}),
+    isInternal: row.is_internal === true,
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     updatedAt: toIsoString(row.updated_at) ?? new Date().toISOString(),
   };
@@ -168,6 +195,8 @@ const PAYMENT_ATTEMPT_ROW_SQL = sql`
   id,
   status,
   pos_spot_id,
+  channel,
+  catalog_snapshot,
   offer_id,
   product_id,
   product_name,
@@ -187,6 +216,7 @@ const PAYMENT_ATTEMPT_ROW_SQL = sql`
   failure_reason,
   finalized_order_id,
   cardcom_transaction_id,
+  is_internal,
   created_at,
   updated_at
 `;
@@ -212,6 +242,9 @@ type OrderRow = {
   fulfillment_method: string;
   order_status: string;
   source: string | null;
+  channel: string | null;
+  partner_id: string | null;
+  commission_rate?: string | number | null;
   cancelled_at: string | Date | null;
   cancelled_by: string | null;
   cancellation_reason: string | null;
@@ -249,6 +282,7 @@ function mapOrderRowLite(row: OrderRow): SavedOrder {
     row.source === "manual" || row.source === "admin" || row.source === "online"
       ? row.source
       : undefined;
+  const identity = saleIdentityFromRow(row);
   const orderStatus =
     row.order_status === "pending_payment" ||
     row.order_status === "sold" ||
@@ -283,6 +317,9 @@ function mapOrderRowLite(row: OrderRow): SavedOrder {
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     orderStatus,
     ...(source ? { source } : {}),
+    ...(identity.channel ? { channel: identity.channel } : {}),
+    partnerId: identity.partnerId,
+    commissionRate: parseOptionalCommissionRate(row.commission_rate),
     ...(toIsoString(row.cancelled_at) ? { cancelledAt: toIsoString(row.cancelled_at) } : {}),
     ...(row.cancelled_by ? { cancelledBy: row.cancelled_by } : {}),
     ...(row.cancellation_reason ? { cancellationReason: row.cancellation_reason } : {}),
@@ -301,7 +338,8 @@ function mapOrderRowLite(row: OrderRow): SavedOrder {
     ...(row.purchase_email_status === "pending" ||
     row.purchase_email_status === "processing" ||
     row.purchase_email_status === "sent" ||
-    row.purchase_email_status === "failed"
+    row.purchase_email_status === "failed" ||
+    row.purchase_email_status === "skipped"
       ? { purchaseEmailStatus: row.purchase_email_status }
       : {}),
     ...(toIsoString(row.purchase_email_sent_at)
@@ -343,13 +381,40 @@ export async function getPaymentAttemptByCheckoutSessionId(
   return row ? mapPaymentAttemptRow(row) : null;
 }
 
-/** Insert a payment attempt row. */
+/** Catalog attempts with verified payment and no order. Newest first. */
+export async function listCatalogPaymentAttemptsNeedingReconciliation(): Promise<
+  SavedPaymentAttempt[]
+> {
+  const rows = await sql`
+    SELECT ${PAYMENT_ATTEMPT_ROW_SQL}
+    FROM payment_attempts
+    WHERE channel = 'catalog'
+      AND status = 'needs_reconciliation'
+    ORDER BY created_at DESC, id DESC
+  `;
+  return (rows as PaymentAttemptRow[]).map(mapPaymentAttemptRow);
+}
+
+/** Insert a payment attempt row. Omitted channel is partner. */
 export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promise<void> {
+  const channel: PaymentAttemptChannel = attempt.channel ?? "partner";
+  const posSpotId = attempt.posSpotId?.trim() ? attempt.posSpotId.trim() : null;
+  let catalogSnapshot: CatalogPaymentSnapshot | null = null;
+  if (channel === "catalog" && attempt.catalogSnapshot) {
+    const normalized = parseCatalogPaymentSnapshot(attempt.catalogSnapshot);
+    if (!normalized) {
+      throw new Error("Catalog payment snapshot is invalid");
+    }
+    catalogSnapshot = await snapshotCatalogPaymentPlantCosts(normalized);
+  }
+
   await sql`
     INSERT INTO payment_attempts (
       id,
       status,
       pos_spot_id,
+      channel,
+      catalog_snapshot,
       offer_id,
       product_id,
       product_name,
@@ -369,13 +434,16 @@ export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promis
       failure_reason,
       finalized_order_id,
       cardcom_transaction_id,
+      is_internal,
       created_at,
       updated_at
     )
     VALUES (
       ${attempt.id}::uuid,
       ${attempt.status},
-      ${attempt.posSpotId}::uuid,
+      ${posSpotId}::uuid,
+      ${channel},
+      ${catalogSnapshot ? JSON.stringify(catalogSnapshot) : null}::jsonb,
       ${attempt.offerId ?? null},
       ${attempt.productId},
       ${attempt.productName},
@@ -395,6 +463,7 @@ export async function insertPaymentAttempt(attempt: SavedPaymentAttempt): Promis
       ${attempt.failureReason ?? null},
       ${attempt.finalizedOrderId ?? null}::uuid,
       ${attempt.cardcomTransactionId ?? null},
+      ${attempt.isInternal === true},
       ${attempt.createdAt}::timestamptz,
       ${attempt.updatedAt}::timestamptz
     )
@@ -620,6 +689,48 @@ export async function rotateCheckoutSessionIdForAttemptResume(input: {
 }
 
 /**
+ * Verified Partner payment that lost the plant sale: retain evidence, no Order.
+ * Only an awaiting partner attempt can take this transition.
+ */
+export async function markPartnerLostSaleNeedsReconciliation(input: {
+  attemptId: string;
+  checkoutSessionId: string;
+  cardcomTransactionId?: number;
+  reason: string;
+}): Promise<SavedPaymentAttempt | null> {
+  const attemptId = input.attemptId.trim();
+  const sessionId = input.checkoutSessionId.trim();
+  const reason = input.reason.trim() || "verified_payment_lost_pos_sale";
+  if (!attemptId || !sessionId) return null;
+
+  const txId =
+    typeof input.cardcomTransactionId === "number" &&
+    Number.isFinite(input.cardcomTransactionId)
+      ? Math.trunc(input.cardcomTransactionId)
+      : null;
+
+  const rows = await sql`
+    UPDATE payment_attempts
+    SET
+      status = 'needs_reconciliation',
+      failure_reason = ${reason},
+      cardcom_transaction_id = COALESCE(
+        cardcom_transaction_id,
+        ${txId}::bigint
+      ),
+      payment_retry_lock_at = NULL,
+      updated_at = now()
+    WHERE id = ${attemptId}::uuid
+      AND checkout_session_id = ${sessionId}
+      AND channel = 'partner'
+      AND status = 'awaiting_payment'
+    RETURNING ${PAYMENT_ATTEMPT_ROW_SQL}
+  `;
+  const row = (rows as PaymentAttemptRow[])[0];
+  return row ? mapPaymentAttemptRow(row) : null;
+}
+
+/**
  * Late Cardcom success after local expiry/cancel/fail: retain evidence, no Order.
  */
 export async function markPaymentAttemptNeedsReconciliation(input: {
@@ -659,6 +770,48 @@ export async function markPaymentAttemptNeedsReconciliation(input: {
   return row ? mapPaymentAttemptRow(row) : null;
 }
 
+/**
+ * Catalog-only late success: first transition from expired/cancelled/failed.
+ * Already-reconciled rows are left unchanged so duplicate webhooks cannot claim the alert.
+ */
+export async function markCatalogLateSuccessNeedsReconciliation(input: {
+  attemptId: string;
+  checkoutSessionId: string;
+  cardcomTransactionId?: number;
+  reason: string;
+}): Promise<SavedPaymentAttempt | null> {
+  const attemptId = input.attemptId.trim();
+  const sessionId = input.checkoutSessionId.trim();
+  const reason = input.reason.trim() || "late_cardcom_success";
+  if (!attemptId || !sessionId) return null;
+
+  const txId =
+    typeof input.cardcomTransactionId === "number" &&
+    Number.isFinite(input.cardcomTransactionId)
+      ? Math.trunc(input.cardcomTransactionId)
+      : null;
+
+  const rows = await sql`
+    UPDATE payment_attempts
+    SET
+      status = 'needs_reconciliation',
+      failure_reason = ${reason},
+      cardcom_transaction_id = COALESCE(
+        ${txId}::bigint,
+        cardcom_transaction_id
+      ),
+      payment_retry_lock_at = NULL,
+      updated_at = now()
+    WHERE id = ${attemptId}::uuid
+      AND channel = 'catalog'
+      AND checkout_session_id = ${sessionId}
+      AND status IN ('expired', 'cancelled', 'failed')
+    RETURNING ${PAYMENT_ATTEMPT_ROW_SQL}
+  `;
+  const row = (rows as PaymentAttemptRow[])[0];
+  return row ? mapPaymentAttemptRow(row) : null;
+}
+
 export type FinalizeVerifiedPaymentAttemptResult =
   | {
       ok: true;
@@ -670,8 +823,9 @@ export type FinalizeVerifiedPaymentAttemptResult =
   | { ok: false; reason: "ineligible" | "conflict" };
 
 /**
- * Atomic: awaiting attempt + eligible POS → insert Order + plant POS sold + attempt finalized.
- * Flowers do not update POS. Single SQL statement (Postgres CTE).
+ * Atomic: lock an available plant POS, mark it sold, close its cycle and segment,
+ * insert one order, and finalize the attempt. Only the transaction that wins the
+ * sold update inserts the order. Flowers do not update POS. Single SQL statement.
  * Email/document run after commit by caller.
  */
 export async function finalizeVerifiedPaymentAttemptAtomic(input: {
@@ -720,6 +874,7 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         a.cardcom_env,
         a.payment_resume_token,
         a.created_at,
+        a.is_internal,
         COALESCE(
           a.snapshot->>'partnerLocationId',
           NULL
@@ -728,25 +883,42 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
           a.snapshot->>'partnerLocationName',
           NULL
         ) AS partner_location_name,
+        loc.partner_id,
         COALESCE(pl.inventory_type, 'plants') AS inventory_type
       FROM payment_attempts a
       INNER JOIN pos_spots p ON p.id = a.pos_spot_id
+      INNER JOIN partner_locations loc
+        ON loc.id = COALESCE(
+          NULLIF(btrim(a.snapshot->>'partnerLocationId'), ''),
+          p.partner_location_id
+        )
       LEFT JOIN plants pl ON pl.id = a.product_id
       WHERE a.id = ${attemptId}::uuid
         AND a.status = 'awaiting_payment'
         AND a.checkout_session_id = ${checkoutSessionId}
         AND a.pos_spot_id = ${posSpotId}::uuid
-        AND (
-          (
-            COALESCE(pl.inventory_type, 'plants') = 'flowers'
-            AND p.status = 'available'
-          )
-          OR (
-            COALESCE(pl.inventory_type, 'plants') <> 'flowers'
-            AND p.status = 'held_for_payment'
-            AND p.payment_hold_attempt_id = a.id
-          )
-        )
+        AND p.status = 'available'
+    ),
+    plant_lock AS (
+      SELECT p.id
+      FROM pos_spots p
+      INNER JOIN eligible e ON e.pos_spot_id = p.id
+      WHERE e.inventory_type <> 'flowers'
+        AND p.status = 'available'
+      FOR UPDATE OF p
+    ),
+    pos_upd AS (
+      UPDATE pos_spots p
+      SET
+        status = 'sold',
+        payment_hold_started_at = NULL,
+        payment_hold_attempt_id = NULL,
+        plant_variant_id = NULL,
+        pot_id = NULL
+      FROM plant_lock l
+      WHERE p.id = l.id
+        AND p.status = 'available'
+      RETURNING p.id, p.status
     ),
     order_ins AS (
       INSERT INTO orders (
@@ -770,8 +942,14 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
+        commission_rate,
         picked_up_at,
         snapshot,
+        supplier_unit_cost,
+        supplier_unit_cost_source,
+        is_internal,
         created_at,
         cardcom_transaction_id,
         purchase_email_status
@@ -797,12 +975,32 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         e.fulfillment_method,
         ${nextStatus},
         'online',
+        'partner',
+        e.partner_id,
+        NULL,
         ${pickedUpAt}::timestamptz,
         e.snapshot,
+        CASE
+          WHEN e.snapshot->>'supplierUnitCostSource' = 'plants.supplier_price@sale'
+            AND jsonb_typeof(e.snapshot->'supplierUnitCost') = 'number'
+            AND (e.snapshot->>'supplierUnitCost')::numeric >= 0
+          THEN round((e.snapshot->>'supplierUnitCost')::numeric, 2)
+          ELSE NULL
+        END,
+        CASE
+          WHEN e.snapshot->>'supplierUnitCostSource' = 'plants.supplier_price@sale'
+            AND jsonb_typeof(e.snapshot->'supplierUnitCost') = 'number'
+            AND (e.snapshot->>'supplierUnitCost')::numeric >= 0
+          THEN 'plants.supplier_price@sale'
+          ELSE NULL
+        END,
+        e.is_internal,
         now(),
         ${cardcomTransactionId}::bigint,
         'pending'
       FROM eligible e
+      WHERE e.inventory_type = 'flowers'
+         OR EXISTS (SELECT 1 FROM pos_upd)
       RETURNING
         order_id,
         checkout_session_id,
@@ -824,6 +1022,9 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
+        commission_rate,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -838,18 +1039,32 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         purchase_email_sent_at,
         purchase_email_last_error
     ),
-    pos_upd AS (
-      UPDATE pos_spots p
+    cycle_close AS (
+      UPDATE placement_cycles c
       SET
-        status = 'sold',
-        payment_hold_started_at = NULL,
-        payment_hold_attempt_id = NULL
-      FROM eligible e
-      WHERE p.id = e.pos_spot_id
-        AND e.inventory_type <> 'flowers'
-        AND p.status = 'held_for_payment'
-        AND p.payment_hold_attempt_id = e.attempt_id
-      RETURNING p.id, p.status
+        ended_at = now(),
+        end_reason = 'sold',
+        order_id = o.order_id
+      FROM pos_upd p
+      INNER JOIN order_ins o ON true
+      WHERE c.pos_spot_id = p.id
+        AND c.ended_at IS NULL
+      RETURNING c.id
+    ),
+    segment_close AS (
+      UPDATE placement_segments s
+      SET ended_at = now()
+      FROM cycle_close cc
+      WHERE s.placement_cycle_id = cc.id
+        AND s.ended_at IS NULL
+      RETURNING s.id
+    ),
+    segment_guard AS (
+      SELECT 1 / CASE
+        WHEN (SELECT COUNT(*) FROM cycle_close) = (SELECT COUNT(*) FROM segment_close)
+        THEN 1
+        ELSE 0
+      END AS seg_ok
     ),
     attempt_upd AS (
       UPDATE payment_attempts a
@@ -890,6 +1105,9 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       o.fulfillment_method,
       o.order_status,
       o.source,
+      o.channel,
+      o.partner_id,
+      o.commission_rate,
       o.cancelled_at,
       o.cancelled_by,
       o.cancellation_reason,
@@ -906,7 +1124,9 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
       (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
       (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
       (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type,
-      (SELECT id FROM attempt_upd LIMIT 1) AS finalized_attempt_id
+      (SELECT id FROM attempt_upd LIMIT 1) AS finalized_attempt_id,
+      (SELECT COUNT(*)::int FROM cycle_close) AS cycles_closed,
+      (SELECT seg_ok FROM segment_guard) AS segment_guard_ok
     FROM order_ins o
   `;
 
@@ -932,9 +1152,17 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
     return { ok: false, reason: "conflict" };
   }
 
+  let order = mapOrderRowLite(row);
+  if (isFlower) {
+    order = { ...order, commissionRate: null };
+  } else if (order.channel === "partner" && order.partnerId) {
+    const rate = await syncOpenMonthPlantCommission(order.partnerId);
+    order = { ...order, commissionRate: rate };
+  }
+
   return {
     ok: true,
-    order: mapOrderRowLite(row),
+    order,
     attempt,
     finalized: true,
     posStatus: isFlower ? "available" : row.pos_status === "available" ? "available" : "sold",

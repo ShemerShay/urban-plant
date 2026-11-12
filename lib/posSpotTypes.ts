@@ -35,7 +35,12 @@ export interface PosSpot {
   placementNotes?: string;
   /** Public URL segment for /pos/{spotSlug} and QR codes. */
   spotSlug: string;
-  currentOfferId: string;
+  /** Commercial offer. Null/omitted when the POS is empty after Remove. */
+  currentOfferId?: string;
+  /** Physical plant SKU occupying this POS. Null for empty, sold leftover, flowers, and legacy rows. */
+  plantVariantId?: string;
+  /** Actual physical Catalog Pot on the occupying plant. Null when no pot is placed. */
+  potId?: string;
   status: PosSpotStatus;
   /** When the current offer was placed on this POS (timestamptz). */
   offerPlacedAt?: string;

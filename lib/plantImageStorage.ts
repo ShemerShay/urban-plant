@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+
+import { deletePlantLibraryBlob, readPlantLibraryBlob, writePlantLibraryBlob } from "@/lib/plantImageBlobs";
 
 import {
   MAX_PLANT_IMAGE_UPLOAD_BYTES,
@@ -12,10 +14,12 @@ import {
 } from "@/lib/plantImageUpload";
 import { routes } from "@/lib/routes";
 
-/** Public URL prefix for the plant image library (filesystem folder name matches). */
+/** Public URL prefix for the plant image library. */
 export const PLANT_LIBRARY_PUBLIC_PREFIX = "/plant-library";
 
-const LIBRARY_DIR = path.join(process.cwd(), "public", "plant-library");
+// Not under public/: a same-path file there is served by Next with the filename
+// extension as Content-Type, and 30 stored JPEGs use .png names.
+const LIBRARY_DIR = path.join(process.cwd(), "data", "plant-library");
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": ".jpg",
@@ -123,12 +127,23 @@ export async function savePlantLibraryImage(
   const storedBuffer = optimized.data;
   const storedMime = optimized.mimeType;
   const filename = buildFilename(storedMime, originalName);
+  await writePlantLibraryBlob(filename, storedBuffer);
 
   if (useDatabaseStorage()) {
     try {
       const { savePlantLibraryImageToDb } = await import("@/lib/plantImageDbStorage");
       return await savePlantLibraryImageToDb(storedBuffer, storedMime, filename);
     } catch (error) {
+      try {
+        await deletePlantLibraryBlob(filename);
+      } catch (cleanupError) {
+        const archiveMessage = error instanceof Error ? error.message : "Image archive insert failed";
+        const cleanupMessage =
+          cleanupError instanceof Error ? cleanupError.message : "blob delete failed";
+        throw new Error(
+          `${archiveMessage}. The uploaded image blob ${filename} could not be removed: ${cleanupMessage}`,
+        );
+      }
       if (isMissingPlantLibraryTableError(error)) {
         throw new Error(
           "Plant image library table is missing. Run: npm run db:migrate:plant-images",
@@ -138,10 +153,6 @@ export async function savePlantLibraryImage(
     }
   }
 
-  await ensurePlantLibraryDir();
-  const filePath = path.join(LIBRARY_DIR, filename);
-  await writeFile(filePath, storedBuffer);
-
   return {
     url: routes.plantLibrary(filename),
     filename,
@@ -149,38 +160,53 @@ export async function savePlantLibraryImage(
   };
 }
 
+function mimeTypeForImageBytes(filename: string, data: Buffer): string {
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    data.length >= 8 &&
+    data[0] === 0x89 &&
+    data[1] === 0x50 &&
+    data[2] === 0x4e &&
+    data[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (data.length >= 6) {
+    const gif = data.subarray(0, 6).toString("ascii");
+    if (gif === "GIF87a" || gif === "GIF89a") return "image/gif";
+  }
+  if (
+    data.length >= 12 &&
+    data.subarray(0, 4).toString("ascii") === "RIFF" &&
+    data.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  return "image/jpeg";
+}
+
 export async function getPlantLibraryImageBytes(
   filename: string,
 ): Promise<{ mimeType: string; data: Buffer } | null> {
   if (!isSafePlantLibraryFilename(filename)) return null;
 
-  if (useDatabaseStorage()) {
-    try {
-      const { getPlantLibraryImageFromDb } = await import("@/lib/plantImageDbStorage");
-      return await getPlantLibraryImageFromDb(filename);
-    } catch (error) {
-      if (isMissingPlantLibraryTableError(error)) return null;
+  const filePath = path.join(LIBRARY_DIR, filename);
+  try {
+    const data = await readFile(filePath);
+    return { mimeType: mimeTypeForImageBytes(filename, data), data };
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
       throw error;
     }
   }
 
-  const filePath = path.join(LIBRARY_DIR, filename);
-  try {
-    const data = await readFile(filePath);
-    const ext = path.extname(filename).toLowerCase();
-    const mimeType =
-      ext === ".png"
-        ? "image/png"
-        : ext === ".webp"
-          ? "image/webp"
-          : ext === ".gif"
-            ? "image/gif"
-            : "image/jpeg";
-    return { mimeType, data };
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
+  const blob = await readPlantLibraryBlob(filename);
+  if (!blob) return null;
+  return { mimeType: mimeTypeForImageBytes(filename, blob), data: blob };
 }

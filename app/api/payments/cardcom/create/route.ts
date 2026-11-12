@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { INTERNAL_COOKIE_NAME, isInternalAnalyticsSignal } from "@/lib/internalTraffic";
 import type { FulfillmentMethod } from "@/lib/orderTypes";
 import { startCardcomPaymentPrep } from "@/lib/startCardcomPaymentPrep";
 
@@ -36,6 +37,8 @@ export async function POST(request: NextRequest) {
     customerEmail: cleanString(record.customerEmail),
     phone: cleanString(record.phone),
     fulfillmentMethod,
+    // Absent/non-boolean -> legacy validation (all customer fields required).
+    ...(typeof record.emailOptIn === "boolean" ? { emailOptIn: record.emailOptIn } : {}),
     ...(fulfillmentMethod === "delivery"
       ? {
           deliveryStreet: cleanString(record.deliveryStreet),
@@ -43,6 +46,11 @@ export async function POST(request: NextRequest) {
           apartmentOrNotes: cleanString(record.apartmentOrNotes),
         }
       : {}),
+    isInternal:
+      record.isInternal === true ||
+      isInternalAnalyticsSignal({
+        cookieValue: request.cookies.get(INTERNAL_COOKIE_NAME)?.value ?? null,
+      }),
   });
 
   if (!result.ok) {

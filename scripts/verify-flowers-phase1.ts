@@ -9,7 +9,6 @@ import { join } from "node:path";
 import {
   CARDCOM_FLOWER_LINE_ITEM_NAME,
   cardcomLineItemName,
-  posRequiresPaymentHold,
   posStatusAfterSuccessfulPayment,
 } from "../lib/inventoryType";
 import {
@@ -36,7 +35,6 @@ const plantRequired = {
   labels: ["indoor"],
   light: "Medium light",
   water: "Weekly",
-  difficulty: "Easy",
   location: "Indoor",
   petFriendly: false,
   careInstructions: ["Water weekly"],
@@ -114,8 +112,6 @@ const flowerNullOk = parsePlantBody(
 );
 assert.equal(flowerNullOk.ok, true);
 
-assert.equal(posRequiresPaymentHold("plants"), true);
-assert.equal(posRequiresPaymentHold("flowers"), false);
 assert.equal(posStatusAfterSuccessfulPayment("plants"), "sold");
 assert.equal(posStatusAfterSuccessfulPayment("flowers"), null);
 assert.equal(cardcomLineItemName("flowers", "internal sku"), CARDCOM_FLOWER_LINE_ITEM_NAME);
@@ -157,10 +153,18 @@ assert.equal(
 assert.equal(
   posAllowsVerifiedPaymentFinalize(
     "plants",
-    { status: "held_for_payment", paymentHoldAttemptId: "attempt-1" },
+    { status: "available" },
     "attempt-1",
   ),
   true,
+);
+assert.equal(
+  posAllowsVerifiedPaymentFinalize(
+    "plants",
+    { status: "held_for_payment", paymentHoldAttemptId: "attempt-1" },
+    "attempt-1",
+  ),
+  false,
 );
 
 const nextConfig = read("next.config.ts");
@@ -257,12 +261,14 @@ assert.match(offersPlants, /inventoryType="plants"/);
 const offersFlowers = read("app/admin/offers/flowers/page.tsx");
 assert.match(offersFlowers, /inventoryType="flowers"/);
 const offersManager = read("components/admin/AdminOffersManager.tsx");
-assert.match(offersManager, /function AdminOffersManager\(\{ inventoryType \}/);
+assert.match(offersManager, /function AdminOffersManager\(\{/);
+assert.match(offersManager, /initialOffers/);
+assert.match(offersManager, /inventoryType/);
 assert.match(offersManager, /inventoryType=\$\{inventoryType\}/);
 
 const prep = read("lib/startCardcomPaymentPrep.ts");
 assert.match(prep, /Flower orders must be picked up/);
-assert.match(prep, /posRequiresPaymentHold/);
+assert.doesNotMatch(prep, /acquirePosSpotHoldForPayment/);
 assert.match(prep, /cardcomLineItemName/);
 assert.match(prep, /inventoryType !== "flowers"/);
 
@@ -308,7 +314,6 @@ async function assertNullableFlowerStorage(): Promise<void> {
       id: flowerId,
       name: "באנץ פרחים ירוקים",
       supplierPrice: 20,
-      price: 20,
       currency: "ILS",
       inventoryType: "flowers",
     });
@@ -318,7 +323,7 @@ async function assertNullableFlowerStorage(): Promise<void> {
     assert.equal(created.description, undefined);
 
     const rows = (await sql`
-      SELECT subtitle, description, images, labels, light, water, difficulty,
+      SELECT subtitle, description, images, labels, light, water,
              location, pet_friendly, care_instructions
       FROM plants
       WHERE id = ${flowerId}
@@ -332,7 +337,6 @@ async function assertNullableFlowerStorage(): Promise<void> {
       "labels",
       "light",
       "water",
-      "difficulty",
       "location",
       "pet_friendly",
       "care_instructions",

@@ -2,7 +2,8 @@
  * Abandoned Cardcom payment hold expiry (17 minutes).
  * Owned holds: expire awaiting attempt + release only that attempt's hold (no Order).
  * Legacy holds (null owner): cancel pending_payment Orders + release as before.
- * Flowers: expire awaiting attempts by expires_at (same TTL); never update POS.
+ * Flowers and Partner plants: expire awaiting attempts by expires_at (same TTL)
+ * without changing an available or sold POS.
  *
  * Canonical rule: a held_for_payment hold is active only while its hold timestamp
  * is less than {@link PAYMENT_HOLD_TTL_MS} old (DB `now()` for SQL comparisons).
@@ -167,11 +168,50 @@ export async function expireStalePaymentHold(
     };
   }
   if (row.current_status !== "held_for_payment") {
+    const plantExpiredId =
+      row.current_status === "available"
+        ? await expireStalePlantPaymentAttempts(id)
+        : null;
     await expireStaleFlowerPaymentAttempts(id);
+    if (plantExpiredId) {
+      return {
+        expired: true,
+        posSpotId: id,
+        cancelledOrderId: null,
+        expiredAttemptId: plantExpiredId,
+      };
+    }
     return { expired: false, reason: "not_held" };
   }
   await expireStaleFlowerPaymentAttempts(id);
   return { expired: false, reason: "not_stale" };
+}
+
+/**
+ * Expire awaiting Partner plant attempts past TTL. Does not update pos_spots.
+ * Sold spots are left to payment finalization / reconciliation.
+ */
+async function expireStalePlantPaymentAttempts(posSpotId: string): Promise<string | null> {
+  const rows = await sql`
+    UPDATE payment_attempts a
+    SET
+      status = 'expired',
+      failure_reason = 'Payment hold expired',
+      payment_retry_lock_at = NULL,
+      updated_at = now()
+    FROM plants pl
+    WHERE a.pos_spot_id = ${posSpotId}::uuid
+      AND a.status = 'awaiting_payment'
+      AND COALESCE(a.channel, 'partner') = 'partner'
+      AND pl.id = a.product_id
+      AND COALESCE(pl.inventory_type, 'plants') <> 'flowers'
+      AND COALESCE(
+        a.expires_at,
+        a.created_at + (${PAYMENT_HOLD_TTL_MS} * interval '1 millisecond')
+      ) <= now()
+    RETURNING a.id
+  `;
+  return (rows as { id: string }[])[0]?.id ?? null;
 }
 
 /** Expire awaiting flower attempts past TTL. Does not update pos_spots. */
@@ -243,6 +283,18 @@ export async function expireAllStalePaymentHolds(): Promise<ExpireAllStalePaymen
           ) * 1000
         ) >= ${PAYMENT_HOLD_TTL_MS}
       )
+    UNION
+    SELECT DISTINCT a.pos_spot_id AS id
+    FROM payment_attempts a
+    INNER JOIN plants pl ON pl.id = a.product_id
+    WHERE a.status = 'awaiting_payment'
+      AND a.pos_spot_id IS NOT NULL
+      AND COALESCE(a.channel, 'partner') = 'partner'
+      AND COALESCE(pl.inventory_type, 'plants') <> 'flowers'
+      AND COALESCE(
+        a.expires_at,
+        a.created_at + (${PAYMENT_HOLD_TTL_MS} * interval '1 millisecond')
+      ) <= now()
     UNION
     SELECT DISTINCT a.pos_spot_id AS id
     FROM payment_attempts a

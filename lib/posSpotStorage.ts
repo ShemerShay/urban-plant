@@ -3,6 +3,9 @@
  */
 
 import { sql } from "@/lib/db";
+import { cycleEffectForPosWrite, cycleSqlFlags } from "@/lib/placementCycle";
+import { placementBoundaryCtes } from "@/lib/placementSegment";
+import type { OccupancyIntent } from "@/lib/posOccupancy";
 import { addCalendarDaysUtc, toIsoDateString, toIsoString, utcCalendarDateString } from "@/lib/storageUtils";
 
 import { normalizePosSpotSlug } from "./posSpotSlugUtils";
@@ -25,6 +28,8 @@ const POS_SPOT_ROW_SQL = sql`
   placement_notes,
   spot_slug,
   current_offer_id,
+  plant_variant_id,
+  pot_id,
   status,
   offer_placed_at,
   check_status,
@@ -48,7 +53,9 @@ type PosSpotRow = {
   spot_description: string | null;
   placement_notes: string | null;
   spot_slug: string;
-  current_offer_id: string;
+  current_offer_id: string | null;
+  plant_variant_id: string | null;
+  pot_id: string | null;
   status: string;
   offer_placed_at: string | Date | null;
   check_status: boolean;
@@ -151,7 +158,15 @@ function mapPosSpotRow(row: PosSpotRow): PosSpot {
     ...(spotDescription ? { spotDescription } : {}),
     ...(placementNotes ? { placementNotes } : {}),
     spotSlug: row.spot_slug,
-    currentOfferId: row.current_offer_id,
+    ...(typeof row.current_offer_id === "string" && row.current_offer_id.trim()
+      ? { currentOfferId: row.current_offer_id.trim() }
+      : {}),
+    ...(typeof row.plant_variant_id === "string" && row.plant_variant_id.trim()
+      ? { plantVariantId: row.plant_variant_id.trim() }
+      : {}),
+    ...(typeof row.pot_id === "string" && row.pot_id.trim()
+      ? { potId: row.pot_id.trim() }
+      : {}),
     status: normalizeStatus(row.status),
     ...(offerPlacedAt ? { offerPlacedAt } : {}),
     checkStatus,
@@ -185,57 +200,192 @@ export async function savePosSpots(spots: PosSpot[]): Promise<void> {
   }
 }
 
-async function insertPosSpot(posSpot: PosSpot): Promise<void> {
+export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boolean }) {
   const holdStartedAt =
     posSpot.status === "held_for_payment"
       ? (posSpot.paymentHoldStartedAt ?? new Date().toISOString())
       : null;
-  await sql`
-    INSERT INTO pos_spots (
-      id,
-      spot_name,
-      partner_location_id,
-      pos_number,
-      pocket_id,
-      pocket,
-      pocket_other,
-      pos_name,
-      spot_description,
-      placement_notes,
-      spot_slug,
-      current_offer_id,
-      status,
-      payment_hold_started_at,
-      offer_placed_at,
-      check_status,
-      check_by,
-      next_check,
-      pos_weekly_note,
-      created_at
+  const openCycle = Boolean(options?.openCycle) && Boolean(posSpot.plantVariantId?.trim());
+  if (!openCycle) {
+    return sql`
+      INSERT INTO pos_spots (
+        id,
+        spot_name,
+        partner_location_id,
+        pos_number,
+        pocket_id,
+        pocket,
+        pocket_other,
+        pos_name,
+        spot_description,
+        placement_notes,
+        spot_slug,
+        current_offer_id,
+        plant_variant_id,
+        pot_id,
+        status,
+        payment_hold_started_at,
+        offer_placed_at,
+        check_status,
+        check_by,
+        next_check,
+        pos_weekly_note,
+        created_at
+      )
+      VALUES (
+        ${posSpot.id}::uuid,
+        ${posSpot.spotName},
+        ${posSpot.partnerLocationId},
+        ${posSpot.posNumber ?? null},
+        ${posSpot.pocketId ?? null}::uuid,
+        ${posSpot.pocket ?? null},
+        ${posSpot.pocketOther ?? null},
+        ${posSpot.posName},
+        ${posSpot.spotDescription ?? null},
+        ${posSpot.placementNotes ?? null},
+        ${posSpot.spotSlug},
+        ${posSpot.currentOfferId ?? null},
+        ${posSpot.plantVariantId ?? null}::uuid,
+        ${posSpot.potId ?? null}::uuid,
+        ${posSpot.status},
+        ${holdStartedAt}::timestamptz,
+        ${posSpot.offerPlacedAt ?? null}::timestamptz,
+        ${posSpot.checkStatus},
+        ${posSpot.checkBy ?? null},
+        ${posSpot.nextCheck ?? null}::date,
+        ${posSpot.posWeeklyNote ?? null},
+        ${posSpot.createdAt}::timestamptz
+      )
+    `;
+  }
+  return sql`
+    WITH written AS (
+      INSERT INTO pos_spots (
+        id,
+        spot_name,
+        partner_location_id,
+        pos_number,
+        pocket_id,
+        pocket,
+        pocket_other,
+        pos_name,
+        spot_description,
+        placement_notes,
+        spot_slug,
+        current_offer_id,
+        plant_variant_id,
+        pot_id,
+        status,
+        payment_hold_started_at,
+        offer_placed_at,
+        check_status,
+        check_by,
+        next_check,
+        pos_weekly_note,
+        created_at
+      )
+      VALUES (
+        ${posSpot.id}::uuid,
+        ${posSpot.spotName},
+        ${posSpot.partnerLocationId},
+        ${posSpot.posNumber ?? null},
+        ${posSpot.pocketId ?? null}::uuid,
+        ${posSpot.pocket ?? null},
+        ${posSpot.pocketOther ?? null},
+        ${posSpot.posName},
+        ${posSpot.spotDescription ?? null},
+        ${posSpot.placementNotes ?? null},
+        ${posSpot.spotSlug},
+        ${posSpot.currentOfferId ?? null},
+        ${posSpot.plantVariantId ?? null}::uuid,
+        ${posSpot.potId ?? null}::uuid,
+        ${posSpot.status},
+        ${holdStartedAt}::timestamptz,
+        ${posSpot.offerPlacedAt ?? null}::timestamptz,
+        ${posSpot.checkStatus},
+        ${posSpot.checkBy ?? null},
+        ${posSpot.nextCheck ?? null}::date,
+        ${posSpot.posWeeklyNote ?? null},
+        ${posSpot.createdAt}::timestamptz
+      )
+      RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_id
     )
-    VALUES (
-      ${posSpot.id}::uuid,
-      ${posSpot.spotName},
-      ${posSpot.partnerLocationId},
-      ${posSpot.posNumber ?? null},
-      ${posSpot.pocketId ?? null}::uuid,
-      ${posSpot.pocket ?? null},
-      ${posSpot.pocketOther ?? null},
-      ${posSpot.posName},
-      ${posSpot.spotDescription ?? null},
-      ${posSpot.placementNotes ?? null},
-      ${posSpot.spotSlug},
-      ${posSpot.currentOfferId},
-      ${posSpot.status},
-      ${holdStartedAt}::timestamptz,
-      ${posSpot.offerPlacedAt ?? null}::timestamptz,
-      ${posSpot.checkStatus},
-      ${posSpot.checkBy ?? null},
-      ${posSpot.nextCheck ?? null}::date,
-      ${posSpot.posWeeklyNote ?? null},
-      ${posSpot.createdAt}::timestamptz
-    )
+    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
+    SELECT segment_guard.seg_ok AS cycle_ok
+    FROM written
+    CROSS JOIN segment_guard
   `;
+}
+
+/** INSERT plus same-statement 1/0 if the occupying variant was not written. */
+export function insertPosSpotWithOccupancyGuardQuery(posSpot: PosSpot, variantId: string) {
+  const holdStartedAt =
+    posSpot.status === "held_for_payment"
+      ? (posSpot.paymentHoldStartedAt ?? new Date().toISOString())
+      : null;
+  const expectedVariantId = variantId.trim();
+  return sql`
+    WITH written AS (
+      INSERT INTO pos_spots (
+        id,
+        spot_name,
+        partner_location_id,
+        pos_number,
+        pocket_id,
+        pocket,
+        pocket_other,
+        pos_name,
+        spot_description,
+        placement_notes,
+        spot_slug,
+        current_offer_id,
+        plant_variant_id,
+        pot_id,
+        status,
+        payment_hold_started_at,
+        offer_placed_at,
+        check_status,
+        check_by,
+        next_check,
+        pos_weekly_note,
+        created_at
+      )
+      VALUES (
+        ${posSpot.id}::uuid,
+        ${posSpot.spotName},
+        ${posSpot.partnerLocationId},
+        ${posSpot.posNumber ?? null},
+        ${posSpot.pocketId ?? null}::uuid,
+        ${posSpot.pocket ?? null},
+        ${posSpot.pocketOther ?? null},
+        ${posSpot.posName},
+        ${posSpot.spotDescription ?? null},
+        ${posSpot.placementNotes ?? null},
+        ${posSpot.spotSlug},
+        ${posSpot.currentOfferId ?? null},
+        ${expectedVariantId}::uuid,
+        ${posSpot.potId ?? null}::uuid,
+        ${posSpot.status},
+        ${holdStartedAt}::timestamptz,
+        ${posSpot.offerPlacedAt ?? null}::timestamptz,
+        ${posSpot.checkStatus},
+        ${posSpot.checkBy ?? null},
+        ${posSpot.nextCheck ?? null}::date,
+        ${posSpot.posWeeklyNote ?? null},
+        ${posSpot.createdAt}::timestamptz
+      )
+      RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_id
+    )
+    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
+    SELECT 1 / COUNT(*)::integer AS occupancy_ok
+    FROM written
+    CROSS JOIN segment_guard
+    WHERE plant_variant_id IS NOT DISTINCT FROM ${expectedVariantId}::uuid
+  `;
+}
+
+async function insertPosSpot(posSpot: PosSpot, options?: { openCycle?: boolean }): Promise<void> {
+  await insertPosSpotQuery(posSpot, options);
 }
 
 export async function getPosSpotById(id: string): Promise<PosSpot | undefined> {
@@ -341,150 +491,10 @@ export async function setPosSpotStatus(id: string, status: PosSpotStatus): Promi
   return mapPosSpotRow(row);
 }
 
-export type PosSpotHoldMutationResult =
-  | { ok: true; outcome: "acquired" | "released" | "sold"; posSpot: PosSpot }
-  | { ok: false; outcome: "not_found" | "unavailable" };
-
-/**
- * Atomically: available → held_for_payment owned by payment_attempt.
- * Succeeds only when the spot is still available (conditional UPDATE).
- */
-export async function acquirePosSpotHoldForPayment(
-  id: string,
-  paymentAttemptId: string,
-): Promise<PosSpotHoldMutationResult> {
-  const trimmed = id.trim();
-  const attemptId = paymentAttemptId.trim();
-  if (!trimmed) return { ok: false, outcome: "not_found" };
-  if (!attemptId) return { ok: false, outcome: "unavailable" };
-
-  const existing = await sql`
-    SELECT id FROM pos_spots WHERE id = ${trimmed}::uuid LIMIT 1
-  `;
-  if ((existing as { id: string }[]).length === 0) {
-    return { ok: false, outcome: "not_found" };
-  }
-
-  const rows = await sql`
-    UPDATE pos_spots
-    SET
-      status = 'held_for_payment',
-      payment_hold_started_at = now(),
-      payment_hold_attempt_id = ${attemptId}::uuid
-    WHERE id = ${trimmed}::uuid
-      AND status = 'available'
-    RETURNING ${POS_SPOT_ROW_SQL}
-  `;
-  const row = (rows as PosSpotRow[])[0];
-  if (!row) return { ok: false, outcome: "unavailable" };
-  return { ok: true, outcome: "acquired", posSpot: mapPosSpotRow(row) };
-}
-
-/**
- * Atomically: held_for_payment → available, only when this attempt owns the hold.
- * Never releases sold/inactive or another attempt's hold.
- */
-export async function releasePosSpotHoldForPayment(
-  id: string,
-  paymentAttemptId: string,
-): Promise<PosSpotHoldMutationResult> {
-  const trimmed = id.trim();
-  const attemptId = paymentAttemptId.trim();
-  if (!trimmed) return { ok: false, outcome: "not_found" };
-  if (!attemptId) return { ok: false, outcome: "unavailable" };
-
-  const existing = await sql`
-    SELECT id FROM pos_spots WHERE id = ${trimmed}::uuid LIMIT 1
-  `;
-  if ((existing as { id: string }[]).length === 0) {
-    return { ok: false, outcome: "not_found" };
-  }
-
-  const rows = await sql`
-    UPDATE pos_spots
-    SET
-      status = 'available',
-      payment_hold_started_at = NULL,
-      payment_hold_attempt_id = NULL
-    WHERE id = ${trimmed}::uuid
-      AND status = 'held_for_payment'
-      AND payment_hold_attempt_id = ${attemptId}::uuid
-    RETURNING ${POS_SPOT_ROW_SQL}
-  `;
-  const row = (rows as PosSpotRow[])[0];
-  if (!row) return { ok: false, outcome: "unavailable" };
-  return { ok: true, outcome: "released", posSpot: mapPosSpotRow(row) };
-}
-
-/**
- * Atomically: held_for_payment → sold for plants only.
- * Flowers do not use POS holds; this no-ops if the catalog row is flowers.
- * Clears hold clock + owner. Used by verify scripts; production finalize uses attempt CTE.
- */
-export async function completePosSpotSaleFromHold(
-  id: string,
-  paymentAttemptId?: string,
-): Promise<PosSpotHoldMutationResult> {
-  const trimmed = id.trim();
-  if (!trimmed) return { ok: false, outcome: "not_found" };
-
-  const existing = await sql`
-    SELECT id FROM pos_spots WHERE id = ${trimmed}::uuid LIMIT 1
-  `;
-  if ((existing as { id: string }[]).length === 0) {
-    return { ok: false, outcome: "not_found" };
-  }
-
-  const attemptId = paymentAttemptId?.trim() ?? "";
-  const rows = attemptId
-    ? await sql`
-        WITH e AS (
-          SELECT a.product_id
-          FROM payment_attempts a
-          WHERE a.id = ${attemptId}::uuid
-        )
-        UPDATE pos_spots
-        SET
-          status = 'sold',
-          payment_hold_started_at = NULL,
-          payment_hold_attempt_id = NULL
-        FROM e
-        WHERE pos_spots.id = ${trimmed}::uuid
-          AND pos_spots.status = 'held_for_payment'
-          AND pos_spots.payment_hold_attempt_id = ${attemptId}::uuid
-          AND COALESCE(
-            (SELECT pl.inventory_type FROM plants pl WHERE pl.id = e.product_id),
-            'plants'
-          ) <> 'flowers'
-        RETURNING ${POS_SPOT_ROW_SQL}
-      `
-    : await sql`
-        WITH e AS (
-          SELECT o.product_id
-          FROM pos_spots p
-          LEFT JOIN offers o ON o.id = p.current_offer_id
-          WHERE p.id = ${trimmed}::uuid
-        )
-        UPDATE pos_spots
-        SET
-          status = 'sold',
-          payment_hold_started_at = NULL,
-          payment_hold_attempt_id = NULL
-        FROM e
-        WHERE pos_spots.id = ${trimmed}::uuid
-          AND pos_spots.status = 'held_for_payment'
-          AND COALESCE(
-            (SELECT pl.inventory_type FROM plants pl WHERE pl.id = e.product_id),
-            'plants'
-          ) <> 'flowers'
-        RETURNING ${POS_SPOT_ROW_SQL}
-      `;
-  const row = (rows as PosSpotRow[])[0];
-  if (!row) return { ok: false, outcome: "unavailable" };
-  return { ok: true, outcome: "sold", posSpot: mapPosSpotRow(row) };
-}
-
-export async function appendPosSpot(posSpot: PosSpot): Promise<PosSpot> {
+export async function appendPosSpot(
+  posSpot: PosSpot,
+  options?: { openCycle?: boolean },
+): Promise<PosSpot> {
   const existing = await sql`
     SELECT id FROM pos_spots
     WHERE spot_slug = ${posSpot.spotSlug} OR spot_name = ${posSpot.spotName}
@@ -493,7 +503,7 @@ export async function appendPosSpot(posSpot: PosSpot): Promise<PosSpot> {
   if ((existing as { id: string }[]).length > 0) {
     throw new Error("POS Spot spot name or spot slug already exists");
   }
-  await insertPosSpot(posSpot);
+  await insertPosSpot(posSpot, options);
   return posSpot;
 }
 
@@ -555,39 +565,64 @@ function computeNextCheckAfterMarkChecked(prev: PosSpotCheckDbRow | undefined): 
   return prevNext ?? addCalendarDaysUtc(today, 7);
 }
 
+export type OccupancyWriteGuard =
+  | { kind: "place" }
+  | { kind: "replace"; plantVariantId: string | null; offerPlacedAt: string | null };
+
+export type PosSpotUpdatePatch = {
+  partnerLocationId: string;
+  posNumber: string;
+  posName: string;
+  /** When omitted, existing spot_name is preserved (pocket moves must not rewrite identity). */
+  spotName?: string;
+  spotDescription?: string;
+  /** When omitted, existing spot_slug is preserved. */
+  spotSlug?: string;
+  pocketId?: string | null;
+  updatePocketId?: boolean;
+  /** @deprecated Legacy columns; only written when explicitly provided. */
+  pocket?: string | null;
+  pocketOther?: string | null;
+  updateLegacyPocket?: boolean;
+  currentOfferId?: string | null;
+  plantVariantId?: string | null;
+  potId?: string | null;
+  checkStatus?: boolean;
+  checkBy?: string | null;
+  updateCheckFields?: boolean;
+  posWeeklyNote?: string | null;
+  updatePosWeeklyNote?: boolean;
+  offerPlacedAt?: string | null;
+  updateOfferPlacedAt?: boolean;
+  status?: PosSpotStatus;
+  updateStatus?: boolean;
+  /** Occupancy action that produced this patch; used to open/close Placement Cycles. */
+  occupancyAction?: OccupancyIntent;
+  /** When set, the UPDATE matches only if occupancy is still in this state. */
+  occupancyWriteGuard?: OccupancyWriteGuard;
+};
+
+export type PreparedPosSpotUpdate = {
+  query: ReturnType<typeof sql>;
+  leavingHeldForPayment: boolean;
+  previousAttemptId: string | null;
+};
+
+export async function finalizePreparedPosSpotUpdate(
+  prepared: PreparedPosSpotUpdate,
+): Promise<void> {
+  if (prepared.leavingHeldForPayment && prepared.previousAttemptId) {
+    await expireAwaitingAttemptForAdminRelease(prepared.previousAttemptId);
+  }
+}
+
 /**
- * Updates editable POS fields. Keeps the same row `id` (UUID) so orders and FKs stay valid
- * when `spotSlug` changes (QR URL is derived from `spot_slug`, not from `id`).
+ * Builds the POS UPDATE query without executing it, so callers can put it in a Neon batch.
  */
-export async function updatePosSpot(
+export async function preparePosSpotUpdate(
   id: string,
-  patch: {
-    partnerLocationId: string;
-    posNumber: string;
-    posName: string;
-    /** When omitted, existing spot_name is preserved (pocket moves must not rewrite identity). */
-    spotName?: string;
-    spotDescription?: string;
-    /** When omitted, existing spot_slug is preserved. */
-    spotSlug?: string;
-    pocketId?: string | null;
-    updatePocketId?: boolean;
-    /** @deprecated Legacy columns; only written when explicitly provided. */
-    pocket?: string | null;
-    pocketOther?: string | null;
-    updateLegacyPocket?: boolean;
-    currentOfferId: string;
-    checkStatus?: boolean;
-    checkBy?: string | null;
-    updateCheckFields?: boolean;
-    posWeeklyNote?: string | null;
-    updatePosWeeklyNote?: boolean;
-    offerPlacedAt?: string | null;
-    updateOfferPlacedAt?: boolean;
-    status?: PosSpotStatus;
-    updateStatus?: boolean;
-  },
-): Promise<PosSpot | null> {
+  patch: PosSpotUpdatePatch,
+): Promise<PreparedPosSpotUpdate | null> {
   const trimmedId = id.trim();
   if (!trimmedId) return null;
 
@@ -677,65 +712,221 @@ export async function updatePosSpot(
     checkByForSql = by || null;
   }
 
-  const rows = await sql`
-    UPDATE pos_spots
-    SET
-      partner_location_id = ${patch.partnerLocationId.trim()},
-      pos_number = ${posNumber},
-      spot_name = ${spotName},
-      pocket_id = ${pocketIdForSql}::uuid,
-      pocket = ${legacyPocketForSql},
-      pocket_other = ${legacyPocketOtherForSql},
-      pos_name = ${posName},
-      spot_description = ${spotDescription},
-      spot_slug = ${spotSlug},
-      current_offer_id = ${patch.currentOfferId.trim()},
-      check_status = CASE
-        WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
-        ELSE check_status
-      END,
-      check_by = CASE
-        WHEN ${clearingCheck} THEN NULL
-        WHEN ${settingCheck} THEN ${checkByForSql ?? null}
-        ELSE check_by
-      END,
-      next_check = CASE
-        WHEN ${clearingCheck} THEN next_check
-        WHEN ${settingCheck} THEN ${nextCheckForSql}::date
-        ELSE next_check
-      END,
-      pos_weekly_note = CASE
-        WHEN ${patch.updatePosWeeklyNote ?? false} THEN ${patch.posWeeklyNote ?? null}
-        ELSE pos_weekly_note
-      END,
-      offer_placed_at = CASE
-        WHEN ${patch.updateOfferPlacedAt ?? false} THEN ${patch.offerPlacedAt ?? null}::timestamptz
-        ELSE offer_placed_at
-      END,
-      status = CASE
-        WHEN ${updateStatus} THEN ${statusForSql}
-        ELSE status
-      END,
-      payment_hold_started_at = CASE
-        WHEN ${enteringHeldFromNonHeld} THEN now()
-        WHEN ${leavingHeldForPayment} THEN NULL
-        ELSE payment_hold_started_at
-      END,
-      payment_hold_attempt_id = CASE
-        WHEN ${enteringHeldFromNonHeld} THEN NULL
-        WHEN ${leavingHeldForPayment} THEN NULL
-        ELSE payment_hold_attempt_id
-      END
-    WHERE id = ${trimmedId}::uuid
-    RETURNING ${POS_SPOT_ROW_SQL}
+  const updateCurrentOffer = patch.currentOfferId !== undefined;
+  const currentOfferIdForSql =
+    typeof patch.currentOfferId === "string" && patch.currentOfferId.trim()
+      ? patch.currentOfferId.trim()
+      : null;
+  const updatePlantVariant = patch.plantVariantId !== undefined;
+  const plantVariantIdForSql =
+    typeof patch.plantVariantId === "string" && patch.plantVariantId.trim()
+      ? patch.plantVariantId.trim()
+      : null;
+  const updatePotColor = patch.potId !== undefined;
+  const potIdForSql =
+    typeof patch.potId === "string" && patch.potId.trim()
+      ? patch.potId.trim()
+      : null;
+
+  const skipOccupancyGuard = !patch.occupancyWriteGuard;
+  const applyPlaceGuard = patch.occupancyWriteGuard?.kind === "place";
+  const applyReplaceGuard = patch.occupancyWriteGuard?.kind === "replace";
+  const replaceVariantId =
+    patch.occupancyWriteGuard?.kind === "replace" ? patch.occupancyWriteGuard.plantVariantId : null;
+  const replacePlacedAt =
+    patch.occupancyWriteGuard?.kind === "replace" ? patch.occupancyWriteGuard.offerPlacedAt : null;
+
+  const existingStatus = normalizeStatus(existingRow.status);
+  const nextStatus: PosSpotStatus =
+    updateStatus && patch.status ? patch.status : existingStatus;
+  const occupancyAction: OccupancyIntent | undefined =
+    patch.occupancyWriteGuard?.kind === "replace"
+      ? "replace"
+      : patch.occupancyWriteGuard?.kind === "place"
+        ? "place"
+        : patch.occupancyAction;
+  const { shouldClose, shouldOpen, closeReason } = cycleSqlFlags(
+    cycleEffectForPosWrite({
+      occupancyAction,
+      existingStatus,
+      nextStatus,
+      existingVariantId: existingRow.plant_variant_id,
+      nextVariantId: updatePlantVariant ? plantVariantIdForSql : existingRow.plant_variant_id,
+    }),
+  );
+
+  const occupancyWhere = sql`
+    id = ${trimmedId}::uuid
+    AND CASE
+      WHEN ${skipOccupancyGuard} THEN true
+      WHEN ${applyPlaceGuard} THEN plant_variant_id IS NULL
+      WHEN ${applyReplaceGuard} THEN
+        plant_variant_id IS NOT DISTINCT FROM ${replaceVariantId}::uuid
+        AND offer_placed_at IS NOT DISTINCT FROM ${replacePlacedAt}::timestamptz
+      ELSE true
+    END
   `;
 
+  const query = skipOccupancyGuard
+    ? sql`
+        WITH written AS (
+          UPDATE pos_spots
+          SET
+            partner_location_id = ${patch.partnerLocationId.trim()},
+            pos_number = ${posNumber},
+            spot_name = ${spotName},
+            pocket_id = ${pocketIdForSql}::uuid,
+            pocket = ${legacyPocketForSql},
+            pocket_other = ${legacyPocketOtherForSql},
+            pos_name = ${posName},
+            spot_description = ${spotDescription},
+            spot_slug = ${spotSlug},
+            current_offer_id = CASE
+              WHEN ${updateCurrentOffer} THEN ${currentOfferIdForSql}
+              ELSE current_offer_id
+            END,
+            plant_variant_id = CASE
+              WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
+              ELSE plant_variant_id
+            END,
+            pot_id = CASE
+              WHEN ${updatePotColor} THEN ${potIdForSql}::uuid
+              ELSE pot_id
+            END,
+            check_status = CASE
+              WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
+              ELSE check_status
+            END,
+            check_by = CASE
+              WHEN ${clearingCheck} THEN NULL
+              WHEN ${settingCheck} THEN ${checkByForSql ?? null}
+              ELSE check_by
+            END,
+            next_check = CASE
+              WHEN ${clearingCheck} THEN next_check
+              WHEN ${settingCheck} THEN ${nextCheckForSql}::date
+              ELSE next_check
+            END,
+            pos_weekly_note = CASE
+              WHEN ${patch.updatePosWeeklyNote ?? false} THEN ${patch.posWeeklyNote ?? null}
+              ELSE pos_weekly_note
+            END,
+            offer_placed_at = CASE
+              WHEN ${patch.updateOfferPlacedAt ?? false} THEN ${patch.offerPlacedAt ?? null}::timestamptz
+              ELSE offer_placed_at
+            END,
+            status = CASE
+              WHEN ${updateStatus} THEN ${statusForSql}
+              ELSE status
+            END,
+            payment_hold_started_at = CASE
+              WHEN ${enteringHeldFromNonHeld} THEN now()
+              WHEN ${leavingHeldForPayment} THEN NULL
+              ELSE payment_hold_started_at
+            END,
+            payment_hold_attempt_id = CASE
+              WHEN ${enteringHeldFromNonHeld} THEN NULL
+              WHEN ${leavingHeldForPayment} THEN NULL
+              ELSE payment_hold_attempt_id
+            END
+          WHERE ${occupancyWhere}
+          RETURNING ${POS_SPOT_ROW_SQL}
+        )
+        ${placementBoundaryCtes({ shouldClose, shouldOpen, closeReason })}
+        SELECT ${POS_SPOT_ROW_SQL}
+        FROM written
+        CROSS JOIN segment_guard
+      `
+    : sql`
+        WITH written AS (
+          UPDATE pos_spots
+          SET
+            partner_location_id = ${patch.partnerLocationId.trim()},
+            pos_number = ${posNumber},
+            spot_name = ${spotName},
+            pocket_id = ${pocketIdForSql}::uuid,
+            pocket = ${legacyPocketForSql},
+            pocket_other = ${legacyPocketOtherForSql},
+            pos_name = ${posName},
+            spot_description = ${spotDescription},
+            spot_slug = ${spotSlug},
+            current_offer_id = CASE
+              WHEN ${updateCurrentOffer} THEN ${currentOfferIdForSql}
+              ELSE current_offer_id
+            END,
+            plant_variant_id = CASE
+              WHEN ${updatePlantVariant} THEN ${plantVariantIdForSql}::uuid
+              ELSE plant_variant_id
+            END,
+            pot_id = CASE
+              WHEN ${updatePotColor} THEN ${potIdForSql}::uuid
+              ELSE pot_id
+            END,
+            check_status = CASE
+              WHEN ${updateCheck} THEN ${patch.checkStatus ?? false}
+              ELSE check_status
+            END,
+            check_by = CASE
+              WHEN ${clearingCheck} THEN NULL
+              WHEN ${settingCheck} THEN ${checkByForSql ?? null}
+              ELSE check_by
+            END,
+            next_check = CASE
+              WHEN ${clearingCheck} THEN next_check
+              WHEN ${settingCheck} THEN ${nextCheckForSql}::date
+              ELSE next_check
+            END,
+            pos_weekly_note = CASE
+              WHEN ${patch.updatePosWeeklyNote ?? false} THEN ${patch.posWeeklyNote ?? null}
+              ELSE pos_weekly_note
+            END,
+            offer_placed_at = CASE
+              WHEN ${patch.updateOfferPlacedAt ?? false} THEN ${patch.offerPlacedAt ?? null}::timestamptz
+              ELSE offer_placed_at
+            END,
+            status = CASE
+              WHEN ${updateStatus} THEN ${statusForSql}
+              ELSE status
+            END,
+            payment_hold_started_at = CASE
+              WHEN ${enteringHeldFromNonHeld} THEN now()
+              WHEN ${leavingHeldForPayment} THEN NULL
+              ELSE payment_hold_started_at
+            END,
+            payment_hold_attempt_id = CASE
+              WHEN ${enteringHeldFromNonHeld} THEN NULL
+              WHEN ${leavingHeldForPayment} THEN NULL
+              ELSE payment_hold_attempt_id
+            END
+          WHERE ${occupancyWhere}
+          RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_id
+        )
+        ${placementBoundaryCtes({ shouldClose, shouldOpen, closeReason })}
+        SELECT 1 / COUNT(*)::integer AS occupancy_ok
+        FROM written
+        CROSS JOIN segment_guard
+        WHERE written.plant_variant_id IS NOT DISTINCT FROM ${plantVariantIdForSql}::uuid
+      `;
+
+  return { query, leavingHeldForPayment, previousAttemptId };
+}
+
+/**
+ * Updates editable POS fields. Keeps the same row `id` (UUID) so orders and FKs stay valid
+ * when `spotSlug` changes (QR URL is derived from `spot_slug`, not from `id`).
+ */
+export async function updatePosSpot(
+  id: string,
+  patch: PosSpotUpdatePatch,
+): Promise<PosSpot | null> {
+  const prepared = await preparePosSpotUpdate(id, patch);
+  if (!prepared) return null;
+
+  const rows = await prepared.query;
   const row = (rows as PosSpotRow[])[0];
   if (!row) return null;
 
-  if (leavingHeldForPayment && previousAttemptId) {
-    await expireAwaitingAttemptForAdminRelease(previousAttemptId);
-  }
+  await finalizePreparedPosSpotUpdate(prepared);
   return mapPosSpotRow(row);
 }
 
@@ -746,6 +937,23 @@ export async function readPosSpotsByPartner(partnerLocationId: string): Promise<
     SELECT ${POS_SPOT_ROW_SQL}
     FROM pos_spots
     WHERE partner_location_id = ${trimmed}
+    ORDER BY created_at ASC
+  `;
+  return sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
+}
+
+/** Spots for many Partner Locations in one query (brand Admin pages). */
+export async function readPosSpotsByPartnerLocationIds(
+  partnerLocationIds: readonly string[],
+): Promise<PosSpot[]> {
+  const ids = [
+    ...new Set(partnerLocationIds.map((id) => id.trim()).filter(Boolean)),
+  ];
+  if (ids.length === 0) return [];
+  const rows = await sql`
+    SELECT ${POS_SPOT_ROW_SQL}
+    FROM pos_spots
+    WHERE partner_location_id = ANY(${ids}::text[])
     ORDER BY created_at ASC
   `;
   return sortPosSpotsByPosNumberAsc((rows as PosSpotRow[]).map(mapPosSpotRow));
