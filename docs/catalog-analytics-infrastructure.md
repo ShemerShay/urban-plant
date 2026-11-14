@@ -1,6 +1,6 @@
 # Catalog / Analytics / Infrastructure architecture plan
 
-Preserved planning for Urban Plant catalog commerce, admin shell, inventory, and analytics. **Not implemented.** Same repository, application, database, Cardcom, and orders. Do not split systems. Do not replace the physical QR flow.
+Preserved planning for Urban Plant catalog commerce, admin shell, inventory, and analytics. **Implemented on this branch.** Same repository, application, database, Cardcom, and orders. Do not split systems. Do not replace the physical QR flow.
 
 Parent branch: `catalog-analytics-infrastructure-changes`
 
