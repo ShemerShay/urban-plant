@@ -82,8 +82,18 @@ async function main(): Promise<void> {
   const { loadEnvLocal } = await import("./load-env-local.mjs");
   await loadEnvLocal();
   const host = new URL(process.env.DATABASE_URL ?? "").hostname;
-  if (!host.startsWith("ep-snowy-credit-alavcarh")) {
-    throw new Error("Refusing to verify against a database that is not the dev branch");
+  // Allow only known non-production hosts. Refuse production (twilight-truth).
+  const allowedNonProdHosts = [
+    "ep-patient-river-alv2cow4", // prod-migration-rehearsal-031-059
+    "ep-snowy-credit-alavcarh", // legacy archived non-prod
+  ];
+  if (host.includes("twilight-truth")) {
+    throw new Error("Refusing to verify against production");
+  }
+  if (!allowedNonProdHosts.some((prefix) => host.startsWith(prefix))) {
+    throw new Error(
+      "Refusing to verify against an unrecognized Neon host; use a known non-production branch",
+    );
   }
 
   const { sql } = await import("../lib/db");

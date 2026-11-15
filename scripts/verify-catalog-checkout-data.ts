@@ -155,9 +155,12 @@ async function main(): Promise<void> {
   );
   assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_variant_key"), false);
   assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_plant_key"), true);
-  assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_color_key"), true);
+  // Post-056 Pot SKU: pot holds use pot_id indexes; pre-056 color indexes are gone.
+  assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_color_key"), false);
+  assert.equal(holdIndexNames.has("catalog_stock_holds_attempt_pot_key"), true);
   assert.equal(holdIndexNames.has("catalog_stock_holds_active_variant_idx"), true);
-  assert.equal(holdIndexNames.has("catalog_stock_holds_active_color_idx"), true);
+  assert.equal(holdIndexNames.has("catalog_stock_holds_active_color_idx"), false);
+  assert.equal(holdIndexNames.has("catalog_stock_holds_active_pot_idx"), true);
 
   const itemCols = await sql`
     SELECT column_name

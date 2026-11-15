@@ -2,6 +2,8 @@
 
 Preserved planning for Urban Plant catalog commerce, admin shell, inventory, and analytics. **Implemented on this branch.** Same repository, application, database, Cardcom, and orders. Do not split systems. Do not replace the physical QR flow.
 
+Note: some sections below still describe intermediate design stages. Current runtime source and migrations through `059` are authoritative where they differ. Removed concepts such as `pot_variants` are not current architecture.
+
 Parent branch: `catalog-analytics-infrastructure-changes`
 
 ---

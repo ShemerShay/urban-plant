@@ -15,7 +15,7 @@ Status as of 2026-09-26: all Partner work is uncommitted, compiles, and passes t
 3. **"Old page showing" diagnosis.** The browser was on the Desktop checkout (port 3001), and the draft `/api/partners` returned 500 because `monthly_revenue` / `notes` columns did not exist in the DB.
 4. **Mock profile.** Migration renamed to `031_partner_profile_fields.sql`; UI temporarily showed mock revenue/notes (later removed).
 5. **Neon dev branch.** A dev branch was created from production; only this worktree's `.env.local` points at it. Migrations 031 and 032 applied there only.
-6. **Partner → Locations hierarchy, counts, logo.**
+6. **Partner → Locations hierarchy and counts.**
 7. **UI tweaks.** Removed the "Alon Shabo · Location" eyebrow; made Notes / Pockets / POS spots collapsible accordions, folded by default.
 8. **Finishing pass.** Added manual `setup_cost`, fixed the slice's new lint issues, reviewed `GET /api/pos-spots`.
 9. **Offer-status concern.** An attempt to add an `includeInactiveOffers` option was interrupted mid-edit and left `tsc` broken.
@@ -48,14 +48,13 @@ Other locked decisions:
 - Existing location IDs and brand-prefixed location names stay unchanged (analytics filters on `%alon shabo%` and on IDs).
 - Monthly revenue and setup cost are manual, persisted values.
 - Notes is one editable field, updated in place; the visit checklist is fixed read-only copy.
-- Partner logo lives on `partners.image`; `partner_locations.image` is left untouched and unused.
 - API names unchanged: `/api/partners` = locations, `/api/partner-brands` = partners.
 
 ---
 
 ## 3. Data model
 
-- **New table `partners`** (brand): `id`, `name` (non-blank), `image`, `created_at`.
+- **New table `partners`** (brand): `id`, `name` (non-blank), `created_at`.
 - **`partner_locations.partner_id`** — required FK to `partners`, indexed.
 - Migration 032 creates partner `alon-shabo` and links both Alon Shabo locations by ID (no name parsing). Every other location becomes its own partner with the same ID, so old single-location links still land correctly.
 - **`partner_locations`** also gains `monthly_revenue`, `setup_cost` (both `numeric(12,2)`, default 0, non-negative checks) and `notes` (text, default `''`) in migration 031.
@@ -76,19 +75,17 @@ npm scripts: `db:migrate:partner-profile`, `db:migrate:partners`, `verify:partne
 
 | URL | Shows |
 |---|---|
-| `/admin/partners` | Partner list (logo, location count, location names), create partner |
-| `/admin/partners/{partnerId}` | Partner header (logo, name, edit name + logo) and its Locations list |
+| `/admin/partners` | Partner list (location count, location names), create partner |
+| `/admin/partners/{partnerId}` | Partner header (name, edit name) and its Locations list |
 | `/admin/partners/{partnerId}/locations/{locationId}` | Location detail |
 | `/admin/partners/{locationId}` (legacy) | Redirects to the nested location URL |
 
 Location detail page:
 
-- Header: partner logo, location name, address, type, "Back to {partner}" link.
+- Header: location name, address, type, "Back to {partner}" link.
 - Cards: Monthly revenue, Setup cost, Active plants (`available/total`).
 - Accordions (folded by default): Notes (fixed checklist + editable note), Pockets (→ Plant groups → POS rows), POS spots (full list).
 - One profile modal edits monthly revenue, setup cost, and notes via `PATCH /api/partners/{locationId}`.
-
-Partner logo upload reuses the existing `PlantImagePicker` + `/api/plant-images`; image must be a site path or `https://` URL.
 
 ---
 
@@ -116,7 +113,7 @@ Partner logo upload reuses the existing `PlantImagePicker` + `/api/plant-images`
 
 `verify:partner-page` covers available, sold, inactive, held, flower, POS rows on an **inactive offer** (still counted and grouped), and rows with a missing product or offer (excluded). Expected: location 3/7, pocket 3/6, Dracaena 2/5 (active + inactive offers grouped together), Ficus 1/1; opened groups contain available, sold, inactive, never held.
 
-Earlier live checks on the dev branch: Chlenov = 51/64 (6 flower POS excluded), setup cost round-trip and negative rejection, brand logo PATCH, page routes and legacy redirect all worked. The latest `spotOffers` change has not yet been checked live (port 3000 currently serves the Desktop checkout).
+Earlier live checks on the dev branch: Chlenov = 51/64 (6 flower POS excluded), setup cost round-trip and negative rejection, page routes and legacy redirect all worked. The latest `spotOffers` change has not yet been checked live (port 3000 currently serves the Desktop checkout).
 
 ---
 
