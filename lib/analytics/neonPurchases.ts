@@ -28,6 +28,12 @@ type CountRow = {
 };
 type NamedCountRow = { name: string | null; cnt: string | number };
 type IdRow = { id: string };
+type PartnerRow = { id: string; name: string };
+
+export type AnalyticsPartnerRef = {
+  id: string;
+  name: string;
+};
 
 function toCount(value: string | number | null | undefined): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -46,12 +52,25 @@ function asNamedCountRows(rows: unknown): NamedCountRow[] {
   return rows as NamedCountRow[];
 }
 
-/** Add partner IDs / name needles here to widen purchase KPIs without rewriting queries. */
-const ANALYTICS_PARTNER_NAME_NEEDLE = "%alon shabo%";
-const ANALYTICS_PARTNER_IDS = [
-  "0d11277b-9b47-45a5-ad80-22cf5c1ad2ef",
-  "ef33137e-fe13-4be3-84bb-1f5b80557815",
-] as const;
+/**
+ * Production partners from partner_locations (current production schema).
+ * Locations whose name contains "test" are excluded; new partners are included automatically.
+ * Does not use the unmerged catalog `partners` table.
+ */
+export async function listAnalyticsPartners(): Promise<AnalyticsPartnerRef[]> {
+  const rows = (await sql`
+    SELECT id, name
+    FROM partner_locations
+    WHERE LOWER(COALESCE(name, '')) NOT LIKE '%test%'
+    ORDER BY name ASC
+  `) as PartnerRow[];
+  return rows
+    .map((row) => ({
+      id: typeof row.id === "string" ? row.id.trim() : "",
+      name: typeof row.name === "string" ? row.name.trim() : "",
+    }))
+    .filter((row) => row.id !== "");
+}
 
 export async function listPlantIdsByInventoryType(
   inventoryType: InventoryType,
@@ -97,9 +116,15 @@ export async function getNeonPurchaseAnalytics(
       WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
         AND o.created_at >= ${startIso}::timestamptz
         AND o.created_at < ${endIso}::timestamptz
-        AND (
-          o.partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
-          OR o.partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+        AND EXISTS (
+          SELECT 1
+          FROM partner_locations loc
+          WHERE LOWER(COALESCE(loc.name, '')) NOT LIKE '%test%'
+            AND (
+              o.partner_location_id = loc.id
+              OR LOWER(TRIM(COALESCE(o.partner_location_name, ''))) = LOWER(TRIM(loc.name))
+              OR LOWER(TRIM(COALESCE(o.snapshot->>'partnerLocationName', ''))) = LOWER(TRIM(loc.name))
+            )
         )
         AND LOWER(COALESCE(o.product_name, '')) NOT LIKE '%test%'
         AND LOWER(COALESCE(o.partner_location_name, '')) NOT LIKE '%test%'
@@ -130,9 +155,15 @@ export async function getNeonPurchaseAnalytics(
       WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
         AND o.created_at >= ${startIso}::timestamptz
         AND o.created_at < ${endIso}::timestamptz
-        AND (
-          o.partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
-          OR o.partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+        AND EXISTS (
+          SELECT 1
+          FROM partner_locations loc
+          WHERE LOWER(COALESCE(loc.name, '')) NOT LIKE '%test%'
+            AND (
+              o.partner_location_id = loc.id
+              OR LOWER(TRIM(COALESCE(o.partner_location_name, ''))) = LOWER(TRIM(loc.name))
+              OR LOWER(TRIM(COALESCE(o.snapshot->>'partnerLocationName', ''))) = LOWER(TRIM(loc.name))
+            )
         )
         AND LOWER(COALESCE(o.product_name, '')) NOT LIKE '%test%'
         AND LOWER(COALESCE(o.partner_location_name, '')) NOT LIKE '%test%'
@@ -166,9 +197,15 @@ export async function getNeonPurchaseAnalytics(
       WHERE o.order_status IN ('sold', 'picked_up', 'delivered')
         AND o.created_at >= ${startIso}::timestamptz
         AND o.created_at < ${endIso}::timestamptz
-        AND (
-          o.partner_location_name ILIKE ${ANALYTICS_PARTNER_NAME_NEEDLE}
-          OR o.partner_location_id = ANY(${[...ANALYTICS_PARTNER_IDS]})
+        AND EXISTS (
+          SELECT 1
+          FROM partner_locations loc
+          WHERE LOWER(COALESCE(loc.name, '')) NOT LIKE '%test%'
+            AND (
+              o.partner_location_id = loc.id
+              OR LOWER(TRIM(COALESCE(o.partner_location_name, ''))) = LOWER(TRIM(loc.name))
+              OR LOWER(TRIM(COALESCE(o.snapshot->>'partnerLocationName', ''))) = LOWER(TRIM(loc.name))
+            )
         )
         AND LOWER(COALESCE(o.product_name, '')) NOT LIKE '%test%'
         AND LOWER(COALESCE(o.partner_location_name, '')) NOT LIKE '%test%'

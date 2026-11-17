@@ -3,7 +3,9 @@ import "server-only";
 import type { AnalyticsFilterState, AnalyticsInventoryFilter } from "@/lib/analytics/analyticsQuery";
 import {
   getNeonPurchaseAnalytics,
+  listAnalyticsPartners,
   listPlantIdsByInventoryType,
+  type AnalyticsPartnerRef,
 } from "@/lib/analytics/neonPurchases";
 import { ANALYTICS_EVENTS } from "@/lib/analyticsEvents";
 import {
@@ -185,19 +187,30 @@ function hogqlExcludeInternalDevices(internalDistinctIds: string[]): string {
   return `distinct_id NOT IN (${quoted.join(", ")})`;
 }
 
-/** Add partner IDs / name needles here to widen the dashboard without rewriting queries. */
-const ANALYTICS_PARTNER_NAME_NEEDLE = "alon shabo";
-const ANALYTICS_PARTNER_IDS = [
-  "0d11277b-9b47-45a5-ad80-22cf5c1ad2ef",
-  "ef33137e-fe13-4be3-84bb-1f5b80557815",
-] as const;
-
-const POSTHOG_INCLUDE_PARTNERS = `
-(
-  position(lower(toString(properties.partner_name)), '${ANALYTICS_PARTNER_NAME_NEEDLE}') > 0
-  OR toString(properties.partner_id) IN (${ANALYTICS_PARTNER_IDS.map((id) => `'${id}'`).join(", ")})
-)
-`.trim();
+/**
+ * Include scans attributed to current partner_locations rows (id or exact name).
+ * Empty directory matches nothing so a failed lookup cannot silently count everyone.
+ */
+function hogqlIncludePartners(partners: AnalyticsPartnerRef[]): string {
+  const ids = [...new Set(partners.map((p) => p.id.trim()).filter((id) => id !== ""))];
+  const names = [
+    ...new Set(
+      partners
+        .map((p) => p.name.trim().toLowerCase())
+        .filter((name) => name !== ""),
+    ),
+  ];
+  if (ids.length === 0 && names.length === 0) return "1 = 0";
+  const idPred =
+    ids.length > 0
+      ? `toString(properties.partner_id) IN (${ids.map((id) => hogqlQuote(id)).join(", ")})`
+      : "1 = 0";
+  const namePred =
+    names.length > 0
+      ? `lower(trim(toString(properties.partner_name))) IN (${names.map((name) => hogqlQuote(name)).join(", ")})`
+      : "1 = 0";
+  return `(${idPred} OR ${namePred})`;
+}
 
 const POSTHOG_EXCLUDE_TEST = `
 position(lower(concat(
@@ -221,10 +234,13 @@ const POSTHOG_EXCLUDE_ACCIDENTAL_SCANS = `
 toString(distinct_id) NOT IN (${POSTHOG_EXCLUDE_ACCIDENTAL_DISTINCT_IDS.map((id) => `'${id}'`).join(", ")})
 `.trim();
 
-function posthogCustomerScope(internalDistinctIds: string[]): string {
+function posthogCustomerScope(
+  internalDistinctIds: string[],
+  includePartners: string,
+): string {
   return `
 ${hogqlExcludeInternalDevices(internalDistinctIds)}
-AND ${POSTHOG_INCLUDE_PARTNERS}
+AND ${includePartners}
 AND ${POSTHOG_EXCLUDE_TEST}
 AND ${POSTHOG_EXCLUDE_LOCALHOST}
 AND ${POSTHOG_EXCLUDE_ACCIDENTAL_SCANS}
@@ -348,6 +364,13 @@ async function loadBusinessAnalyticsInner(
             error: err instanceof Error ? err.message : "Catalog lookup failed",
           }));
 
+  const partnersPromise = listAnalyticsPartners()
+    .then((partners) => ({ ok: true as const, partners }))
+    .catch((err: unknown) => ({
+      ok: false as const,
+      error: err instanceof Error ? err.message : "Partner directory failed",
+    }));
+
   const neonPromise = getNeonPurchaseAnalytics({
     startInclusive: bounds.startInclusive,
     endExclusive: bounds.endExclusive,
@@ -359,13 +382,15 @@ async function loadBusinessAnalyticsInner(
       error: err instanceof Error ? err.message : "Neon purchase query failed",
     }));
 
-  const [internalTimed, plantIdsResult, neonTimed] = await Promise.all([
+  const [internalTimed, plantIdsResult, neonTimed, partnersTimed] = await Promise.all([
     withDuration(listInternalDistinctIds()),
     plantIdsPromise,
     withDuration(neonPromise),
+    withDuration(partnersPromise),
   ]);
   const internalIdsResult = internalTimed.value;
   const neonResult = neonTimed.value;
+  const partnersResult = partnersTimed.value;
 
   logAnalyticsEvent(loadId, "op", {
     op: "internal_ids",
@@ -381,6 +406,13 @@ async function loadBusinessAnalyticsInner(
     ok: neonResult.ok,
     timeout: neonResult.ok ? false : looksLikeTimeout(neonResult.error),
     code: neonResult.ok ? null : "neon_failed",
+  });
+  logAnalyticsEvent(loadId, "op", {
+    op: "partners",
+    ms: partnersTimed.ms,
+    ok: partnersResult.ok,
+    timeout: partnersResult.ok ? false : looksLikeTimeout(partnersResult.error),
+    code: partnersResult.ok ? null : "partners_failed",
   });
 
   const neonError = neonResult.ok ? null : neonResult.error;
@@ -423,11 +455,29 @@ async function loadBusinessAnalyticsInner(
     };
   }
 
+  if (!partnersResult.ok) {
+    return {
+      ...emptySnapshot(filters, granularity, {
+        posthogError: partnersResult.error,
+        neonError,
+      }),
+      purchases,
+      purchasesPlants,
+      purchasesFlowers,
+      purchasesMissingCatalog,
+      topPlantsByPurchases,
+      purchasesByPartner,
+    };
+  }
+
   const inventoryPredicate =
     filters.inventoryType === "all"
       ? "1 = 1"
       : hogqlInventoryPredicate(filters.inventoryType, plantIdsResult.ids);
-  const customerScope = posthogCustomerScope(internalIdsResult.ids);
+  const customerScope = posthogCustomerScope(
+    internalIdsResult.ids,
+    hogqlIncludePartners(partnersResult.partners),
+  );
 
   // Scan-level: a pos_scan converts if a purchase_completed exists in the same
   // $session_id + pos_spot_id with timestamp >= the scan.
