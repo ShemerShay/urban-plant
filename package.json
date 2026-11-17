@@ -58,6 +58,7 @@
     "verify:pos-central-inventory": "npx tsx scripts/verify-pos-central-inventory.ts",
     "verify:placement-cycles": "npx tsx scripts/verify-placement-cycles.ts",
     "verify:placement-segments": "npx tsx scripts/verify-placement-segments.ts",
+    "verify:placement-history": "npx tsx scripts/verify-placement-history-snapshots.ts",
     "verify:partner-page": "node --experimental-strip-types scripts/verify-partner-page.mjs",
     "verify:commission-tiers": "npx tsx scripts/verify-commission-tiers.ts",
     "verify:admin-catalog-inventory": "npx tsx scripts/verify-admin-catalog-inventory.ts",

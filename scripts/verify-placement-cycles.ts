@@ -90,16 +90,24 @@ async function main(): Promise<void> {
     "removed",
   );
   assert.equal(
-    (
-      cycleEffectForPosWrite({
-        occupancyAction: "update",
-        existingStatus: "available",
-        nextStatus: "inactive",
-        existingVariantId: "v1",
-        nextVariantId: "v1",
-      }) as { kind: "close"; reason: string }
-    ).reason,
-    "deactivated",
+    cycleEffectForPosWrite({
+      occupancyAction: "update",
+      existingStatus: "available",
+      nextStatus: "inactive",
+      existingVariantId: "v1",
+      nextVariantId: "v1",
+    }).kind,
+    "pause_segment",
+  );
+  assert.equal(
+    cycleEffectForPosWrite({
+      occupancyAction: "deactivate",
+      existingStatus: "available",
+      nextStatus: "inactive",
+      existingVariantId: "v1",
+      nextVariantId: "v1",
+    }).kind,
+    "pause_segment",
   );
   assert.equal(
     cycleEffectForPosWrite({
@@ -109,7 +117,7 @@ async function main(): Promise<void> {
       existingVariantId: "v1",
       nextVariantId: "v1",
     }).kind,
-    "open",
+    "resume_segment",
   );
   console.log("verify-placement-cycles: effect matrix ok");
 
@@ -460,9 +468,10 @@ async function main(): Promise<void> {
     });
     const afterDeactivate = await cyclesFor(created.id);
     const deactivatedRow = afterDeactivate.find((row) => row.id === reopenId);
-    assert.equal(deactivatedRow?.end_reason, "deactivated");
+    assert.equal(deactivatedRow?.end_reason, null);
+    assert.equal(deactivatedRow?.ended_at, null);
     assert.equal((await getPosSpotById(created.id))?.plantVariantId, variantA);
-    assert.equal((await openCycles(created.id)).length, 0);
+    assert.equal((await openCycles(created.id)).length, 1);
     const inactiveOccupied = await getPosSpotById(created.id);
     assert.ok(inactiveOccupied);
     await assert.rejects(
@@ -479,8 +488,9 @@ async function main(): Promise<void> {
     });
     const afterReactivate = await openCycles(created.id);
     assert.equal(afterReactivate.length, 1);
-    assert.notEqual(afterReactivate[0].id, reopenId);
+    assert.equal(afterReactivate[0].id, reopenId);
     assert.equal(afterReactivate[0].plant_variant_id, variantA);
+    assert.equal(afterReactivate[0].end_reason, null);
 
     const flowerSwitchExisting = await getPosSpotById(created.id);
     assert.ok(flowerSwitchExisting);

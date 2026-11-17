@@ -308,9 +308,9 @@ export function insertPosSpotQuery(posSpot: PosSpot, options?: { openCycle?: boo
         ${posSpot.posWeeklyNote ?? null},
         ${posSpot.createdAt}::timestamptz
       )
-      RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_id
+      RETURNING id, partner_location_id, plant_variant_id, pocket_id, current_offer_id, pot_id
     )
-    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
+    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed", placementKind: "initial" })}
     SELECT segment_guard.seg_ok AS cycle_ok
     FROM written
     CROSS JOIN segment_guard
@@ -374,9 +374,9 @@ export function insertPosSpotWithOccupancyGuardQuery(posSpot: PosSpot, variantId
         ${posSpot.posWeeklyNote ?? null},
         ${posSpot.createdAt}::timestamptz
       )
-      RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_id
+      RETURNING id, partner_location_id, plant_variant_id, pocket_id, current_offer_id, pot_id
     )
-    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed" })}
+    ${placementBoundaryCtes({ shouldClose: false, shouldOpen: true, closeReason: "removed", placementKind: "initial" })}
     SELECT 1 / COUNT(*)::integer AS occupancy_ok
     FROM written
     CROSS JOIN segment_guard
@@ -514,6 +514,13 @@ export class PosSpotSlugConflictError extends Error {
   }
 }
 
+export class PosSpotPartnerLocationImmutableError extends Error {
+  constructor() {
+    super("A POS cannot be moved to another Partner Location");
+    this.name = "PosSpotPartnerLocationImmutableError";
+  }
+}
+
 /**
  * @deprecated Admin may override attempt-owned holds. Kept for callers that still
  * catch this error type; writers no longer throw it.
@@ -635,6 +642,11 @@ export async function preparePosSpotUpdate(
   const existingRow = (existingRows as PosSpotRow[])[0];
   if (!existingRow) return null;
 
+  const requestedLocationId = patch.partnerLocationId.trim();
+  if (requestedLocationId && requestedLocationId !== existingRow.partner_location_id) {
+    throw new PosSpotPartnerLocationImmutableError();
+  }
+
   const spotSlugRaw =
     typeof patch.spotSlug === "string" && patch.spotSlug.trim()
       ? patch.spotSlug
@@ -745,7 +757,8 @@ export async function preparePosSpotUpdate(
       : patch.occupancyWriteGuard?.kind === "place"
         ? "place"
         : patch.occupancyAction;
-  const { shouldClose, shouldOpen, closeReason } = cycleSqlFlags(
+  const { shouldClose, shouldOpen, pauseSegment, resumeSegment, closeReason, placementKind } =
+    cycleSqlFlags(
     cycleEffectForPosWrite({
       occupancyAction,
       existingStatus,
@@ -772,7 +785,6 @@ export async function preparePosSpotUpdate(
         WITH written AS (
           UPDATE pos_spots
           SET
-            partner_location_id = ${patch.partnerLocationId.trim()},
             pos_number = ${posNumber},
             spot_name = ${spotName},
             pocket_id = ${pocketIdForSql}::uuid,
@@ -832,7 +844,14 @@ export async function preparePosSpotUpdate(
           WHERE ${occupancyWhere}
           RETURNING ${POS_SPOT_ROW_SQL}
         )
-        ${placementBoundaryCtes({ shouldClose, shouldOpen, closeReason })}
+        ${placementBoundaryCtes({
+          shouldClose,
+          shouldOpen,
+          closeReason,
+          placementKind,
+          pauseSegment,
+          resumeSegment,
+        })}
         SELECT ${POS_SPOT_ROW_SQL}
         FROM written
         CROSS JOIN segment_guard
@@ -841,7 +860,6 @@ export async function preparePosSpotUpdate(
         WITH written AS (
           UPDATE pos_spots
           SET
-            partner_location_id = ${patch.partnerLocationId.trim()},
             pos_number = ${posNumber},
             spot_name = ${spotName},
             pocket_id = ${pocketIdForSql}::uuid,
@@ -899,9 +917,16 @@ export async function preparePosSpotUpdate(
               ELSE payment_hold_attempt_id
             END
           WHERE ${occupancyWhere}
-          RETURNING id, plant_variant_id, pocket_id, current_offer_id, pot_id
+          RETURNING id, partner_location_id, plant_variant_id, pocket_id, current_offer_id, pot_id
         )
-        ${placementBoundaryCtes({ shouldClose, shouldOpen, closeReason })}
+        ${placementBoundaryCtes({
+          shouldClose,
+          shouldOpen,
+          closeReason,
+          placementKind,
+          pauseSegment,
+          resumeSegment,
+        })}
         SELECT 1 / COUNT(*)::integer AS occupancy_ok
         FROM written
         CROSS JOIN segment_guard

@@ -21,6 +21,7 @@ import {
 } from "@/lib/posOccupancy";
 import {
   getPosSpotById,
+  PosSpotPartnerLocationImmutableError,
   PosSpotSlugConflictError,
 } from "@/lib/posSpotStorage";
 import { formatPosSpotDisplayName } from "@/lib/posSpotSlugUtils";
@@ -109,7 +110,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const record = body as Record<string, unknown>;
-  const partnerLocationId = cleanString(record.partnerLocationId) || existing.partnerLocationId;
+  const requestedLocationId = cleanString(record.partnerLocationId);
+  if (requestedLocationId && requestedLocationId !== existing.partnerLocationId) {
+    return NextResponse.json(
+      { error: "A POS cannot be moved to another Partner Location" },
+      { status: 409 },
+    );
+  }
+  const partnerLocationId = existing.partnerLocationId;
   const partnerLocationAddress = cleanString(record.partnerLocationAddress);
   const spotDescription = cleanString(record.spotDescription);
   const posNumber = cleanString(record.posNumber) || existing.posNumber || "";
@@ -297,6 +305,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
     if (err instanceof PosSpotSlugConflictError) {
       return NextResponse.json({ error: "Spot slug is already used by another POS Spot" }, { status: 409 });
+    }
+    if (err instanceof PosSpotPartnerLocationImmutableError) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
     }
     if (err instanceof PosOccupancyError) {
       return NextResponse.json({ error: err.message }, { status: 400 });

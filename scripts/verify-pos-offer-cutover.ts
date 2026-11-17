@@ -440,7 +440,10 @@ async function main(): Promise<void> {
     assert.equal(deactivated?.status, "inactive");
     assert.equal(deactivated?.plantVariantId, fixture.variantS);
     const deactCycles = await cycles(emptyForPlace.id);
-    assert.equal(deactCycles.filter((row) => row.end_reason === "deactivated").length, 1);
+    assert.equal(deactCycles.filter((row) => row.end_reason === "deactivated").length, 0);
+    assert.equal(deactCycles.filter((row) => !row.ended_at).length, 1);
+    const cycleIdWhileInactive = deactCycles.find((row) => !row.ended_at)?.id;
+    assert.ok(cycleIdWhileInactive);
     const reactivated = await writePosUpdate({
       occupancyAction: "update",
       inventorySource: undefined,
@@ -460,6 +463,7 @@ async function main(): Promise<void> {
     assert.equal(reactivated?.currentOfferId, fixture.offerS);
     const reactCycles = await cycles(emptyForPlace.id);
     assert.equal(reactCycles.filter((row) => !row.ended_at).length, 1);
+    assert.equal(reactCycles.find((row) => !row.ended_at)?.id, cycleIdWhileInactive);
 
     const salePlantBefore = await getInventoryQuantity(fixture.variantS);
     const salePotBefore = await getPotInventoryQuantity(fixture.potId);

@@ -438,6 +438,10 @@ async function main(): Promise<void> {
     assert.equal(openSegments(rows).length, 0);
 
     await placeOn((await getPosSpotById(created.id))!, variantA, offerA);
+    const beforeDeactivate = openSegments(await segmentsFor(created.id));
+    assert.equal(beforeDeactivate.length, 1);
+    const continuedSegmentId = beforeDeactivate[0].id;
+    const continuedCycleId = beforeDeactivate[0].placement_cycle_id;
     await updatePosSpot(created.id, {
       partnerLocationId,
       posNumber: "9101",
@@ -447,6 +451,11 @@ async function main(): Promise<void> {
     });
     rows = await segmentsFor(created.id);
     assert.equal(openSegments(rows).length, 0);
+    assert.equal(rows.find((row) => row.id === continuedSegmentId)?.ended_at != null, true);
+    assert.equal(
+      rows.filter((row) => row.placement_cycle_id === continuedCycleId).length,
+      1,
+    );
     assert.equal((await getPosSpotById(created.id))?.plantVariantId, variantA);
 
     await updatePosSpot(created.id, {
@@ -459,8 +468,14 @@ async function main(): Promise<void> {
     rows = await segmentsFor(created.id);
     assert.equal(openSegments(rows).length, 1);
     const reactivated = openSegments(rows)[0];
+    assert.notEqual(reactivated.id, continuedSegmentId);
+    assert.equal(reactivated.placement_cycle_id, continuedCycleId);
     assert.equal(reactivated.offer_id, offerA);
     assert.equal(priceOf(reactivated), 40);
+    assert.equal(
+      rows.filter((row) => row.placement_cycle_id === continuedCycleId).length,
+      2,
+    );
 
     await patchSpot(created.id, { currentOfferId: offerFlower });
     rows = await segmentsFor(created.id);

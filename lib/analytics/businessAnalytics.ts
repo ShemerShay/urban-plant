@@ -92,11 +92,11 @@ function displayName(raw: string, fallback: string): string {
   return t || fallback;
 }
 
-function hogqlDateTime(instant: Date): string {
+export function hogqlDateTime(instant: Date): string {
   return `toDateTime('${instant.toISOString().slice(0, 19).replace("T", " ")}')`;
 }
 
-function hogqlQuote(value: string): string {
+export function hogqlQuote(value: string): string {
   return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
@@ -190,7 +190,7 @@ LIMIT ${INTERNAL_IDS_QUERY_LIMIT}
  * Resolve internal distinct_ids once (short TTL) and reuse across HogQL scans.
  * Failures are not cached so a later request can recover.
  */
-async function listInternalDistinctIds(signal?: AbortSignal): Promise<InternalIdsLookup> {
+export async function listInternalDistinctIds(signal?: AbortSignal): Promise<InternalIdsLookup> {
   const now = Date.now();
   if (internalIdsCache && internalIdsCache.expiresAt > now) {
     return { ...internalIdsCache.value, cache: "hit" };
@@ -235,7 +235,7 @@ const POSTHOG_EXCLUDE_ACCIDENTAL_SCANS = `
 toString(distinct_id) NOT IN (${POSTHOG_EXCLUDE_ACCIDENTAL_DISTINCT_IDS.map((id) => `'${id}'`).join(", ")})
 `.trim();
 
-function posthogCustomerScope(internalDistinctIds: string[]): string {
+export function posthogCustomerScope(internalDistinctIds: string[]): string {
   return `
 ${hogqlExcludeInternalDevices(internalDistinctIds)}
 AND ${POSTHOG_EXCLUDE_LOCALHOST}

@@ -26,6 +26,7 @@ import {
   finalizePreparedPosSpotUpdate,
   getPosSpotById,
   insertPosSpotWithOccupancyGuardQuery,
+  PosSpotPartnerLocationImmutableError,
   PosSpotSlugConflictError,
   preparePosSpotUpdate,
   updatePosSpot,
@@ -64,6 +65,7 @@ function rethrowCombinedWriteError(error: unknown): never {
   if (error instanceof InventoryChangeError) throw error;
   if (error instanceof PotInventoryChangeError) throw error;
   if (error instanceof PosSpotSlugConflictError) throw error;
+  if (error instanceof PosSpotPartnerLocationImmutableError) throw error;
   const message = error instanceof Error ? error.message : String(error);
   if (/division by zero/i.test(message) || /This pot is out of stock/i.test(message)) {
     if (/pot_inventory|This pot is out of stock/i.test(message)) {
@@ -103,6 +105,9 @@ export function posCentralStockHttpError(
   }
   if (error instanceof PosSpotSlugConflictError) {
     return { status: 409, error: "Spot slug is already used by another POS Spot" };
+  }
+  if (error instanceof PosSpotPartnerLocationImmutableError) {
+    return { status: 409, error: error.message };
   }
   return null;
 }
