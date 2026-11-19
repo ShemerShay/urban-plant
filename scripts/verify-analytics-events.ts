@@ -17,8 +17,12 @@ assert.match(helpers, /pos_scan/);
 assert.match(helpers, /checkout_started/);
 assert.match(helpers, /payment_started/);
 assert.match(helpers, /purchase_completed/);
+assert.match(helpers, /product_view/);
+assert.match(helpers, /add_to_cart/);
+assert.match(helpers, /remove_from_cart/);
 assert.match(helpers, /inventory_type/);
 assert.match(helpers, /captureOncePerSession/);
+assert.match(helpers, /captureAnalyticsEvent/);
 assert.match(helpers, /shouldCaptureBusinessAnalytics/);
 assert.match(helpers, /NODE_ENV === ["']production["']/);
 
@@ -56,7 +60,10 @@ assert.ok(
 
 const checkoutForm = read("components/checkout/CheckoutForm.tsx");
 assert.match(checkoutForm, /ANALYTICS_EVENTS\.paymentStarted/);
+assert.match(checkoutForm, /currency: "ILS"/);
+assert.match(checkoutForm, /isInternal: browserIsInternal\(\)/);
 assert.match(checkoutForm, /window\.location\.assign/);
+assert.doesNotMatch(checkoutForm, /captureOncePerSession/);
 assert.ok(
   checkoutForm.indexOf("captureAnalyticsEvent") <
     checkoutForm.indexOf("window.location.assign(data.paymentUrl)"),
@@ -67,6 +74,25 @@ const successPage = read("app/success/page.tsx");
 assert.match(successPage, /TrackPurchaseCompleted/);
 assert.match(successPage, /isVerifiedPaidOrderStatus/);
 assert.match(successPage, /trackVerifiedPurchase/);
+assert.match(successPage, /channel === "catalog"/);
+assert.match(successPage, /currency="ILS"/);
+
+const shopCheckout = read("components/shop/ShopCheckout.tsx");
+assert.match(shopCheckout, /ANALYTICS_EVENTS\.checkoutStarted/);
+assert.match(shopCheckout, /ANALYTICS_EVENTS\.paymentStarted/);
+assert.match(shopCheckout, /channel: "catalog"/);
+assert.match(shopCheckout, /currency: "ILS"/);
+assert.match(shopCheckout, /captureOncePerSession/);
+assert.ok(
+  shopCheckout.indexOf("captureAnalyticsEvent") <
+    shopCheckout.indexOf("window.location.assign(data.paymentUrl)"),
+  "catalog payment_started must be attempted before redirect",
+);
+assert.match(shopCheckout, /isInternal: browserIsInternal\(\)/);
+
+const flowerHandoffEvents = read("components/checkout/FlowerPosScanRedirect.tsx");
+assert.doesNotMatch(flowerHandoffEvents, /checkoutStarted/);
+assert.doesNotMatch(flowerHandoffEvents, /paymentStarted/);
 
 const purchaseTrack = read("components/analytics/TrackPurchaseCompleted.tsx");
 assert.match(purchaseTrack, /order_id/);
@@ -74,9 +100,30 @@ assert.match(purchaseTrack, /purchaseCompleted/);
 assert.match(purchaseTrack, /inventory_type/);
 
 const provider = read("components/PostHogProvider.tsx");
-assert.match(provider, /up_internal/);
-assert.match(provider, /up_ph_internal/);
+const internalTraffic = read("lib/internalTraffic.ts");
+assert.match(internalTraffic, /up_internal/);
+assert.match(internalTraffic, /up_ph_internal/);
+assert.match(provider, /INTERNAL_QUERY_PARAM/);
+assert.match(provider, /INTERNAL_COOKIE_NAME/);
 assert.match(provider, /is_internal:\s*true/);
 assert.match(provider, /posthog\.register/);
+
+const productView = read("components/analytics/TrackProductView.tsx");
+assert.match(productView, /captureOncePerSession/);
+assert.match(productView, /ANALYTICS_EVENTS\.productView/);
+assert.doesNotMatch(productView, /add_to_cart/);
+assert.doesNotMatch(productView, /remove_from_cart/);
+
+const plantDetail = read("components/shop/ShopPlantDetail.tsx");
+assert.match(plantDetail, /ANALYTICS_EVENTS\.addToCart/);
+assert.match(plantDetail, /captureAnalyticsEvent/);
+assert.doesNotMatch(plantDetail, /captureOncePerSession/);
+assert.doesNotMatch(plantDetail, /ANALYTICS_EVENTS\.removeFromCart/);
+
+const shopCart = read("components/shop/ShopCart.tsx");
+assert.match(shopCart, /ANALYTICS_EVENTS\.removeFromCart/);
+assert.match(shopCart, /captureAnalyticsEvent/);
+assert.doesNotMatch(shopCart, /ANALYTICS_EVENTS\.addToCart/);
+assert.doesNotMatch(shopCart, /captureOncePerSession/);
 
 console.log("OK: analytics event wiring verified");

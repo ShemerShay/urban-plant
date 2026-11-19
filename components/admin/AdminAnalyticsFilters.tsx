@@ -31,7 +31,10 @@ const DATE_PRESET_LABEL_KEY = {
 export function AdminAnalyticsFilters({
   inventoryType,
   dateFilter,
-}: AnalyticsFilterState) {
+  partnerId,
+  area,
+  partners,
+}: AnalyticsFilterState & { partners: { id: string; name: string }[] }) {
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -67,7 +70,7 @@ export function AdminAnalyticsFilters({
           onChange={(e) => {
             const value = e.target.value as AnalyticsInventoryFilter;
             setOptimisticInventoryType(value);
-            navigate({ inventoryType: value, dateFilter });
+            navigate({ inventoryType: value, dateFilter, partnerId, area });
           }}
         >
           <option value="all">{t(locale, "admin.common.all")}</option>
@@ -92,9 +95,41 @@ export function AdminAnalyticsFilters({
             label: t(locale, DATE_PRESET_LABEL_KEY[id]),
           }))}
           onChange={(next: DateFilterValue) =>
-            navigate({ inventoryType: optimisticInventoryType, dateFilter: next })
+            navigate({
+              inventoryType: optimisticInventoryType,
+              dateFilter: next,
+              partnerId,
+              area,
+            })
           }
         />
+      </label>
+
+      <label className="flex min-w-40 flex-1 flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          {t(locale, "admin.analytics.partner")}
+        </span>
+        <select
+          className={`${adminSelectTriggerClassName} disabled:cursor-not-allowed disabled:bg-slate-50`}
+          value={partnerId ?? ""}
+          disabled={isPending}
+          aria-label={t(locale, "admin.analytics.partner")}
+          onChange={(e) => {
+            navigate({
+              inventoryType: optimisticInventoryType,
+              dateFilter,
+              partnerId: e.target.value || null,
+              area,
+            });
+          }}
+        >
+          <option value="">{t(locale, "admin.analytics.scopeUrban")}</option>
+          {partners.map((partner) => (
+            <option key={partner.id} value={partner.id}>
+              {partner.name}
+            </option>
+          ))}
+        </select>
       </label>
       {isPending ? (
         <p className="w-full text-xs text-slate-500" role="status">

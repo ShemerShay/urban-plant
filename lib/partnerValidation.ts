@@ -1,5 +1,6 @@
 import type { PartnerLocation } from "@/lib/partnerLocationStorage";
 import { parsePartnerPayments } from "@/lib/partnerPayment";
+import { parsePartnerProfileFields } from "@/lib/partnerProfileValidation";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -60,15 +61,19 @@ export function parsePartnerBody(
 
   const payments = parsePayments(body.payments);
   const pickupDisabled = parsePickupDisabled(body.pickupDisabled);
+  const profile = parsePartnerProfileFields(body);
+  if (!profile.ok) return profile;
 
   const partner: PartnerLocation = {
     id: resolvedId,
+    partnerId: cleanString(body.partnerId),
     name,
     address,
     type,
     partnerType: type,
     payments,
     pickupDisabled,
+    ...profile.value,
   };
 
   return { ok: true, partner };

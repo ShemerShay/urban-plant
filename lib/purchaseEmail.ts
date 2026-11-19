@@ -12,6 +12,19 @@ import { PUBLIC_CONTACT_EMAIL } from "@/lib/publicContact";
 
 export type PurchaseEmailFulfillment = "delivery" | "pickup";
 
+/** Care lines for one purchased plant. Names stay as stored; lines are shown in English. */
+export type PurchaseEmailCareSection = {
+  plantName: string;
+  careInstructions: string[];
+};
+
+/** One purchased Catalog line. Names and quantity come from stored order items. */
+export type PurchaseEmailOrderLine = {
+  plantName: string;
+  potName?: string | null;
+  quantity: number;
+};
+
 export type BuildPurchaseEmailHtmlParams = {
   fullName: string;
   plantName: string;
@@ -19,6 +32,16 @@ export type BuildPurchaseEmailHtmlParams = {
   fulfillmentMethod: PurchaseEmailFulfillment;
   /** Existing plant care lines, shown in English. */
   careInstructions?: string[];
+  /**
+   * One care block per distinct plant.
+   * Catalog orders pass these with orderLines. POS keeps the flat care list.
+   */
+  careSections?: PurchaseEmailCareSection[];
+  /**
+   * Catalog purchased lines. When present, the email uses one summary list.
+   * POS and Flowers omit this and keep the single plant paragraph.
+   */
+  orderLines?: PurchaseEmailOrderLine[];
 };
 
 export type SendPurchaseEmailAttachment = {
@@ -35,6 +58,10 @@ export type SendPurchaseEmailParams = {
   fulfillmentMethod: PurchaseEmailFulfillment;
   /** Existing plant care lines, shown in English. */
   careInstructions?: string[];
+  /** One care block per distinct plant on a Catalog order. */
+  careSections?: PurchaseEmailCareSection[];
+  /** Catalog purchased lines. Omitted for POS and Flowers. */
+  orderLines?: PurchaseEmailOrderLine[];
   attachments?: SendPurchaseEmailAttachment[];
   /** Optional correlation id for server logs (never shown to the customer). */
   logOrderId?: string;
@@ -54,12 +81,28 @@ export type SendInternalOrderNotificationParams = {
   orderId?: string;
 };
 
+export type SendInternalCatalogReconciliationAlertParams = {
+  attemptId: string;
+  fullName: string;
+  customerEmail: string;
+  amountDisplay: string;
+  phone?: string;
+  address?: string;
+  apartmentOrNotes?: string;
+  failureReason?: string;
+  cardcomTransactionId?: number;
+  checkoutSessionId?: string;
+  lines: PurchaseEmailOrderLine[];
+};
+
 export const PURCHASE_EMAIL_SUBJECT = "Your Urban Plant order is confirmed";
 export const PURCHASE_EMAIL_REPLY_TO = PUBLIC_CONTACT_EMAIL;
 
 /** Independent Urban Plant inbox — never CC/BCC on the customer confirmation. */
 export const URBAN_PLANT_NOTIFICATION_TO = PUBLIC_CONTACT_EMAIL;
 export const URBAN_PLANT_NOTIFICATION_SUBJECT = "New Urban Plant order";
+export const URBAN_PLANT_RECONCILIATION_SUBJECT =
+  "Catalog payment needs reconciliation";
 
 function escapeHtml(text: string): string {
   return text
@@ -97,6 +140,62 @@ function buildCareInstructionsBlock(
   </ul>`;
 }
 
+function careSectionsWithLines(
+  sections: PurchaseEmailCareSection[] | undefined,
+): PurchaseEmailCareSection[] {
+  if (!sections?.length) return [];
+  return sections
+    .map((section) => ({
+      plantName: section.plantName.trim() || "Plant",
+      careInstructions: normalizeCareInstructions(section.careInstructions),
+    }))
+    .filter((section) => section.careInstructions.length > 0);
+}
+
+function buildCareSectionsBlock(sections: PurchaseEmailCareSection[]): string {
+  return sections
+    .map((section) => {
+      const care = buildCareInstructionsBlock(section.careInstructions);
+      return `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;"><strong>${escapeHtml(section.plantName)}</strong></p>
+  ${care}`;
+    })
+    .join("\n");
+}
+
+function catalogSummaryLine(line: PurchaseEmailOrderLine): string {
+  const plant = line.plantName.trim() || "Plant";
+  const pot = line.potName?.trim();
+  const name = pot ? `${plant} + ${pot}` : plant;
+  return `${name} × ${line.quantity}`;
+}
+
+function buildCatalogOrderSummaryBlock(lines: PurchaseEmailOrderLine[]): string {
+  const items = lines
+    .map(
+      (line) =>
+        `<li style="margin:0 0 4px;padding:0;">${escapeHtml(catalogSummaryLine(line))}</li>`,
+    )
+    .join("");
+  return `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">Order summary:</p>
+  <ul dir="ltr" style="margin:12px 0 0;padding:0 0 0 1.25em;font-size:15px;line-height:1.5;color:#374151;direction:ltr;text-align:left;">
+    ${items}
+  </ul>`;
+}
+
+function buildCatalogFulfillmentSentence(method: PurchaseEmailFulfillment): string {
+  const text =
+    method === "pickup"
+      ? "You may take the plant with you."
+      : "We’ll contact you within the next 1–3 business days to coordinate delivery.";
+  return `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">${text}</p>`;
+}
+
+function buildCatalogCareBlock(sections: PurchaseEmailCareSection[]): string {
+  if (sections.length === 0) return "";
+  return `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;"><strong>Care instructions</strong></p>
+  ${buildCareSectionsBlock(sections)}`;
+}
+
 /**
  * Customer confirmation HTML. English copy, left to right.
  */
@@ -106,7 +205,32 @@ export function buildPurchaseEmailHtml(params: BuildPurchaseEmailHtmlParams): st
   const priceLine = params.priceDisplay
     ? `<p style="margin:12px 0 0;font-size:15px;line-height:1.5;color:#374151;">Order total: <strong>${escapeHtml(params.priceDisplay)}</strong></p>`
     : "";
-  const careBlock = buildCareInstructionsBlock(params.careInstructions);
+  const orderLines = params.orderLines ?? [];
+  if (orderLines.length > 0) {
+    const catalogCare = buildCatalogCareBlock(careSectionsWithLines(params.careSections));
+    return `
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<body dir="ltr" style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;direction:ltr;text-align:left;">
+  <p style="margin:0 0 16px;font-size:16px;">${greeting}</p>
+  <p style="margin:0;font-size:15px;line-height:1.5;color:#374151;">
+    Thank you for your purchase from Urban Plant. Your order was received.
+  </p>
+  ${buildCatalogOrderSummaryBlock(orderLines)}
+  ${buildCatalogFulfillmentSentence(params.fulfillmentMethod)}
+  ${catalogCare}
+  ${priceLine}
+  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— Urban Plant</p>
+</body>
+</html>
+`.trim();
+  }
+
+  const labeledCare = careSectionsWithLines(params.careSections);
+  const careBlock =
+    labeledCare.length > 0 ? "" : buildCareInstructionsBlock(params.careInstructions);
+  const careSectionsBlock =
+    labeledCare.length > 0 ? buildCareSectionsBlock(labeledCare) : "";
   const plantBlock =
     params.fulfillmentMethod === "pickup"
       ? `<p style="margin:16px 0 0;font-size:15px;line-height:1.5;color:#374151;">
@@ -130,6 +254,7 @@ export function buildPurchaseEmailHtml(params: BuildPurchaseEmailHtmlParams): st
     Thank you for your purchase from Urban Plant. Your order was received.
   </p>
   ${plantBlock}
+  ${careSectionsBlock}
   ${priceLine}
   <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— Urban Plant</p>
 </body>
@@ -229,6 +354,8 @@ export async function sendPurchaseEmail(
   const fulfillmentMethod =
     params.fulfillmentMethod === "pickup" ? "pickup" : "delivery";
   const careInstructions = normalizeCareInstructions(params.careInstructions);
+  const careSections = careSectionsWithLines(params.careSections);
+  const orderLines = params.orderLines?.length ? params.orderLines : undefined;
   const logOrderId = params.logOrderId?.trim() || undefined;
 
   const transporter = nodemailer.createTransport({
@@ -251,6 +378,8 @@ export async function sendPurchaseEmail(
         priceDisplay,
         fulfillmentMethod,
         ...(careInstructions.length > 0 ? { careInstructions } : {}),
+        ...(careSections.length > 0 ? { careSections } : {}),
+        ...(orderLines ? { orderLines } : {}),
       }),
       ...(params.attachments && params.attachments.length > 0
         ? {
@@ -328,6 +457,124 @@ export async function sendInternalOrderNotificationEmail(
       role: "urban_plant",
       to,
       ...(orderId ? { orderId } : {}),
+      error: mailErrorMessage(error),
+    });
+    throw error;
+  }
+}
+
+function reconciliationLineText(line: PurchaseEmailOrderLine): string {
+  const plant = line.plantName.trim() || "Plant";
+  const pot = line.potName?.trim();
+  const name = pot ? `${plant} + ${pot}` : plant;
+  return `${name} × ${line.quantity}`;
+}
+
+/**
+ * Internal staff HTML for a Catalog payment that needs reconciliation.
+ * Never used for the customer confirmation.
+ */
+export function buildInternalCatalogReconciliationAlertHtml(
+  params: SendInternalCatalogReconciliationAlertParams,
+): string {
+  const row = (label: string, value: string): string => {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    return `<tr>
+      <td style="padding:6px 12px 6px 0;vertical-align:top;color:#6b7280;white-space:nowrap;">${escapeHtml(label)}</td>
+      <td style="padding:6px 0;vertical-align:top;color:#111827;">${escapeHtml(trimmed)}</td>
+    </tr>`;
+  };
+  const addressLine = [params.address?.trim(), params.apartmentOrNotes?.trim()]
+    .filter(Boolean)
+    .join(", ");
+  const lineItems = params.lines
+    .map(
+      (line) =>
+        `<li style="margin:0 0 4px;padding:0;">${escapeHtml(reconciliationLineText(line))}</li>`,
+    )
+    .join("");
+  const linesBlock =
+    lineItems.length > 0
+      ? `<p style="margin:16px 0 8px;font-size:15px;line-height:1.5;color:#374151;">Purchased lines</p>
+  <ul dir="ltr" style="margin:0;padding:0 0 0 1.25em;font-size:15px;line-height:1.5;color:#374151;">
+    ${lineItems}
+  </ul>`
+      : "";
+
+  return `
+<!DOCTYPE html>
+<html>
+<body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;">
+  <p style="margin:0 0 16px;font-size:16px;">A Catalog payment was verified but no order was created. Review this attempt in Admin orders.</p>
+  <table style="border-collapse:collapse;font-size:15px;line-height:1.5;">
+    ${row("Attempt ID", params.attemptId)}
+    ${row("Customer name", params.fullName)}
+    ${row("Customer email", params.customerEmail)}
+    ${row("Phone", params.phone ?? "")}
+    ${row("Delivery address", addressLine)}
+    ${row("Amount", params.amountDisplay)}
+    ${row("Reason", params.failureReason ?? "")}
+    ${row("Cardcom transaction", params.cardcomTransactionId != null ? String(params.cardcomTransactionId) : "")}
+    ${row("Checkout session", params.checkoutSessionId ?? "")}
+  </table>
+  ${linesBlock}
+  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">This notice was sent only to Urban Plant. The customer was not copied.</p>
+</body>
+</html>
+`.trim();
+}
+
+/**
+ * One-shot Urban Plant alert when a Catalog attempt first needs reconciliation.
+ * Uses the existing Gmail sender and Urban Plant inbox. Independent of payment state.
+ */
+export async function sendInternalCatalogReconciliationAlert(
+  params: SendInternalCatalogReconciliationAlertParams,
+): Promise<{ messageId: string | null }> {
+  const to = URBAN_PLANT_NOTIFICATION_TO.trim();
+  if (!to || !isValidPurchaseEmailAddress(to)) {
+    throw new Error("Urban Plant notification address is not configured");
+  }
+
+  const { gmailUser, gmailAppPassword } = requireGmailAuth();
+  const attemptId = params.attemptId.trim();
+  const customerEmail = params.customerEmail.trim();
+  const fullName = params.fullName.trim();
+  const amountDisplay = params.amountDisplay.trim();
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: gmailUser,
+      pass: gmailAppPassword,
+    },
+  });
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"Urban Plant" <${gmailUser}>`,
+      to,
+      ...(customerEmail && isValidPurchaseEmailAddress(customerEmail)
+        ? { replyTo: customerEmail }
+        : {}),
+      subject: attemptId
+        ? `${URBAN_PLANT_RECONCILIATION_SUBJECT} (${attemptId})`
+        : URBAN_PLANT_RECONCILIATION_SUBJECT,
+      html: buildInternalCatalogReconciliationAlertHtml({
+        ...params,
+        attemptId,
+        customerEmail,
+        fullName,
+        amountDisplay,
+      }),
+    });
+    return { messageId: info.messageId ?? null };
+  } catch (error) {
+    console.error("[purchase-email] catalog_reconciliation_alert_failed", {
+      role: "urban_plant",
+      to,
+      attemptId,
       error: mailErrorMessage(error),
     });
     throw error;

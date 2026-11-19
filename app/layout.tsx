@@ -30,10 +30,16 @@ const notoSansHebrew = Noto_Sans_Hebrew({
   subsets: ["hebrew"],
 });
 
-export const metadata: Metadata = {
-  title: "Urban Plant",
-  description: "QR-based plant commerce experience",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getLocale();
+  return {
+    title: "Urban Plant",
+    description:
+      locale === "he"
+        ? "חוויית מסחר בצמחים מבוססת QR"
+        : "QR-based plant commerce experience",
+  };
+}
 
 export default async function RootLayout({
   children,

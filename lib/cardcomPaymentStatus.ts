@@ -22,10 +22,39 @@ export type CardcomPaymentClientState =
   | "not_found";
 
 export type CardcomPaymentStatusResponse =
-  | { state: "pending"; spotSlug?: string }
+  | { state: "pending"; spotSlug?: string; channel?: "catalog" }
   | { state: "completed"; orderId: string }
-  | { state: "cancelled"; spotSlug?: string }
-  | { state: "not_found" };
+  | { state: "cancelled"; spotSlug?: string; channel?: "catalog" }
+  | { state: "not_found" }
+  | { state: "confirmation_required" };
+
+/**
+ * Safe poll state for a payment attempt.
+ * Partner `needs_reconciliation` stays `cancelled` (existing POS return).
+ * Catalog `needs_reconciliation` is a separate confirmation state.
+ */
+export function mapPaymentAttemptToClientState(
+  channel: string | undefined,
+  status: string,
+): CardcomPaymentStatusResponse["state"] {
+  if (channel === "catalog" && status === "needs_reconciliation") {
+    return "confirmation_required";
+  }
+  switch (status) {
+    case "created":
+    case "awaiting_payment":
+      return "pending";
+    case "finalized":
+      return "completed";
+    case "expired":
+    case "cancelled":
+    case "failed":
+    case "needs_reconciliation":
+      return "cancelled";
+    default:
+      return "not_found";
+  }
+}
 
 /** Strict UUID check for browser-supplied orderId (lookup key only). */
 export function isValidOrderIdUuid(value: unknown): value is string {
@@ -77,6 +106,9 @@ export function paymentVerificationRedirectPath(
 ): string | null {
   if (status.state === "completed") {
     return paymentCompletedRedirectPath(status.orderId);
+  }
+  if (status.state === "cancelled" && status.channel === "catalog") {
+    return null;
   }
   if (status.state === "cancelled" && status.spotSlug && known.orderId && known.resumeToken) {
     return paymentCancelledCheckoutRedirectPath({

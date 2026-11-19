@@ -8,11 +8,18 @@ import { sql } from "@/lib/db";
 import { paymentResumeTokensEqual } from "@/lib/paymentResume";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
 
-import type {
-  FulfillmentMethod,
-  OrderSnapshot,
-  PurchaseEmailStatus,
-  SavedOrder,
+import {
+  assignCommissionAfterPartnerOrderWrite,
+  parseOptionalCommissionRate,
+} from "@/lib/orderCommission";
+import { resolveOrderSaleIdentity, saleIdentityFromRow } from "@/lib/orderSaleIdentity";
+import { parseStoredPartnerSupplierCost } from "@/lib/partnerSupplierCost";
+import {
+  saleTimeSnapshotFields,
+  type FulfillmentMethod,
+  type OrderSnapshot,
+  type PurchaseEmailStatus,
+  type SavedOrder,
 } from "./orderTypes";
 import type { OrderStatus } from "./status";
 import { isOrderStatus } from "./status";
@@ -22,7 +29,8 @@ function isPurchaseEmailStatus(value: unknown): value is PurchaseEmailStatus {
     value === "pending" ||
     value === "processing" ||
     value === "sent" ||
-    value === "failed"
+    value === "failed" ||
+    value === "skipped"
   );
 }
 
@@ -99,6 +107,8 @@ function normalizeSnapshot(value: unknown): OrderSnapshot | undefined {
       : {}),
     ...(typeof o.spotSlug === "string" && o.spotSlug ? { spotSlug: o.spotSlug } : {}),
     fulfillmentType,
+    ...saleTimeSnapshotFields(o),
+    ...parseStoredPartnerSupplierCost(o),
   };
 }
 
@@ -123,6 +133,9 @@ type OrderRow = {
   fulfillment_method: string;
   order_status: string;
   source: string | null;
+  channel: string | null;
+  partner_id: string | null;
+  commission_rate?: string | number | null;
   cancelled_at: string | Date | null;
   cancelled_by: string | null;
   cancellation_reason: string | null;
@@ -164,6 +177,7 @@ function mapOrderRow(row: OrderRow): SavedOrder {
     row.source === "manual" || row.source === "admin" || row.source === "online"
       ? row.source
       : undefined;
+  const identity = saleIdentityFromRow(row);
 
   return {
     id: orderId,
@@ -190,6 +204,9 @@ function mapOrderRow(row: OrderRow): SavedOrder {
     createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
     orderStatus,
     ...(source ? { source } : {}),
+    ...(identity.channel ? { channel: identity.channel } : {}),
+    partnerId: identity.partnerId,
+    commissionRate: parseOptionalCommissionRate(row.commission_rate),
     ...(toIsoString(row.cancelled_at) ? { cancelledAt: toIsoString(row.cancelled_at) } : {}),
     ...(row.cancelled_by ? { cancelledBy: row.cancelled_by } : {}),
     ...(row.cancellation_reason ? { cancellationReason: row.cancellation_reason } : {}),
@@ -219,6 +236,7 @@ function mapOrderRow(row: OrderRow): SavedOrder {
 }
 
 async function insertOrder(order: SavedOrder): Promise<void> {
+  const identity = await resolveOrderSaleIdentity(order);
   await sql`
     INSERT INTO orders (
       order_id,
@@ -241,6 +259,9 @@ async function insertOrder(order: SavedOrder): Promise<void> {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -270,6 +291,9 @@ async function insertOrder(order: SavedOrder): Promise<void> {
       ${order.fulfillmentMethod},
       ${order.orderStatus},
       ${order.source ?? null},
+      ${identity.channel},
+      ${identity.partnerId},
+      ${null},
       ${order.cancelledAt ?? null}::timestamptz,
       ${order.cancelledBy ?? null},
       ${order.cancellationReason ?? null},
@@ -279,6 +303,12 @@ async function insertOrder(order: SavedOrder): Promise<void> {
       ${order.createdAt}::timestamptz
     )
   `;
+  await assignCommissionAfterPartnerOrderWrite({
+    channel: identity.channel,
+    partnerId: identity.partnerId,
+    productId: order.plantId,
+    createdAt: new Date(order.createdAt),
+  });
 }
 
 export async function readOrders(): Promise<SavedOrder[]> {
@@ -304,13 +334,22 @@ export async function readOrders(): Promise<SavedOrder[]> {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
       delivered_at,
       picked_up_at,
       snapshot,
-      created_at
+      created_at,
+      cardcom_transaction_id,
+      cardcom_document_type,
+      cardcom_document_number,
+      purchase_email_status,
+      purchase_email_sent_at,
+      purchase_email_last_error
     FROM orders
     ORDER BY created_at DESC
   `;
@@ -377,6 +416,9 @@ export async function getOrderById(orderId: string): Promise<SavedOrder | null> 
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -399,6 +441,7 @@ export async function getOrderById(orderId: string): Promise<SavedOrder | null> 
 }
 
 export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null> {
+  const identity = await resolveOrderSaleIdentity(order);
   const rows = await sql`
     UPDATE orders
     SET
@@ -421,6 +464,8 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
       fulfillment_method = ${order.fulfillmentMethod},
       order_status = ${order.orderStatus},
       source = ${order.source ?? null},
+      channel = ${identity.channel},
+      partner_id = ${identity.partnerId},
       cancelled_at = ${order.cancelledAt ?? null}::timestamptz,
       cancelled_by = ${order.cancelledBy ?? null},
       cancellation_reason = ${order.cancellationReason ?? null},
@@ -450,6 +495,9 @@ export async function replaceOrder(order: SavedOrder): Promise<SavedOrder | null
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -518,6 +566,9 @@ export async function attachCheckoutSessionIdToPendingOrder(
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
+        commission_rate,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -598,6 +649,9 @@ export async function cancelPendingPaymentOrder(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -613,7 +667,16 @@ export async function cancelPendingPaymentOrder(
       purchase_email_last_error
   `;
   const row = (rows as OrderRow[])[0];
-  return row ? mapOrderRow(row) : null;
+  const cancelled = row ? mapOrderRow(row) : null;
+  if (cancelled?.channel === "partner") {
+    await assignCommissionAfterPartnerOrderWrite({
+      channel: "partner",
+      partnerId: cancelled.partnerId ?? null,
+      productId: cancelled.plantId,
+      createdAt: new Date(cancelled.createdAt),
+    });
+  }
+  return cancelled;
 }
 
 export type AdminCancelPendingOrderResult =
@@ -673,6 +736,9 @@ export async function adminCancelPendingPaymentOrder(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
+        commission_rate,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -707,9 +773,18 @@ export async function adminCancelPendingPaymentOrder(input: {
     rows as (OrderRow & { released_pos_id: string | null })[]
   )[0];
   if (row) {
+    const order = mapOrderRow(row);
+    if (order.channel === "partner") {
+      await assignCommissionAfterPartnerOrderWrite({
+        channel: "partner",
+        partnerId: order.partnerId ?? null,
+        productId: order.plantId,
+        createdAt: new Date(order.createdAt),
+      });
+    }
     return {
       ok: true,
-      order: mapOrderRow(row),
+      order,
       releasedPos: Boolean(row.released_pos_id),
     };
   }
@@ -776,6 +851,9 @@ export async function claimPaymentRetryLock(input: {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -846,6 +924,9 @@ export async function getOrderByCheckoutSessionId(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -882,7 +963,8 @@ export type FinalizeVerifiedPendingPaymentResult =
  *
  * Delivery: pending_payment → sold
  * Pickup: pending_payment → picked_up (+ picked_up_at)
- * POS: plants held_for_payment → sold. Flowers: POS is not updated.
+ * POS: plants available → sold, and the order status changes only if that sold update wins.
+ * Flowers: POS is not updated.
  *
  * Also persists verified Cardcom TranzactionId and sets purchase_email_status = pending
  * so post-payment document/email can be claimed without rolling back payment.
@@ -925,16 +1007,28 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         AND o.order_status = 'pending_payment'
         AND o.checkout_session_id = ${checkoutSessionId}
         AND o.pos_spot_id = ${posSpotId}::uuid
-        AND (
-          (
-            COALESCE(pl.inventory_type, 'plants') = 'flowers'
-            AND p.status = 'available'
-          )
-          OR (
-            COALESCE(pl.inventory_type, 'plants') <> 'flowers'
-            AND p.status = 'held_for_payment'
-          )
-        )
+        AND p.status = 'available'
+    ),
+    plant_lock AS (
+      SELECT p.id
+      FROM pos_spots p
+      INNER JOIN eligible e ON e.pos_spot_id = p.id
+      WHERE e.inventory_type <> 'flowers'
+        AND p.status = 'available'
+      FOR UPDATE OF p
+    ),
+    pos_upd AS (
+      UPDATE pos_spots p
+      SET
+        status = 'sold',
+        payment_hold_started_at = NULL,
+        payment_hold_attempt_id = NULL,
+        plant_variant_id = NULL,
+        pot_id = NULL
+      FROM plant_lock l
+      WHERE p.id = l.id
+        AND p.status = 'available'
+      RETURNING p.id, p.status
     ),
     order_upd AS (
       UPDATE orders o
@@ -951,6 +1045,10 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         purchase_email_status = COALESCE(o.purchase_email_status, 'pending')
       FROM eligible e
       WHERE o.order_id = e.order_id
+        AND (
+          e.inventory_type = 'flowers'
+          OR EXISTS (SELECT 1 FROM pos_upd)
+        )
       RETURNING
         o.order_id,
         o.checkout_session_id,
@@ -972,6 +1070,9 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         o.fulfillment_method,
         o.order_status,
         o.source,
+        o.channel,
+        o.partner_id,
+        o.commission_rate,
         o.cancelled_at,
         o.cancelled_by,
         o.cancellation_reason,
@@ -986,16 +1087,32 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
         o.purchase_email_sent_at,
         o.purchase_email_last_error
     ),
-    pos_upd AS (
-      UPDATE pos_spots p
+    cycle_close AS (
+      UPDATE placement_cycles c
       SET
-        status = 'sold',
-        payment_hold_started_at = NULL,
-        payment_hold_attempt_id = NULL
-      FROM eligible e
-      WHERE p.id = e.pos_spot_id
-        AND e.inventory_type <> 'flowers'
-      RETURNING p.id, p.status
+        ended_at = now(),
+        end_reason = 'sold',
+        order_id = u.order_id
+      FROM pos_upd p
+      INNER JOIN order_upd u ON true
+      WHERE c.pos_spot_id = p.id
+        AND c.ended_at IS NULL
+      RETURNING c.id
+    ),
+    segment_close AS (
+      UPDATE placement_segments s
+      SET ended_at = now()
+      FROM cycle_close cc
+      WHERE s.placement_cycle_id = cc.id
+        AND s.ended_at IS NULL
+      RETURNING s.id
+    ),
+    segment_guard AS (
+      SELECT 1 / CASE
+        WHEN (SELECT COUNT(*) FROM cycle_close) = (SELECT COUNT(*) FROM segment_close)
+        THEN 1
+        ELSE 0
+      END AS seg_ok
     )
     SELECT
       o.order_id,
@@ -1018,6 +1135,9 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       o.fulfillment_method,
       o.order_status,
       o.source,
+      o.channel,
+      o.partner_id,
+      o.commission_rate,
       o.cancelled_at,
       o.cancelled_by,
       o.cancellation_reason,
@@ -1033,7 +1153,9 @@ export async function finalizeVerifiedPendingPaymentAtomic(input: {
       o.purchase_email_last_error,
       (SELECT id FROM pos_upd LIMIT 1) AS finalized_pos_spot_id,
       (SELECT status FROM pos_upd LIMIT 1) AS pos_status,
-      (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type
+      (SELECT inventory_type FROM eligible LIMIT 1) AS inventory_type,
+      (SELECT COUNT(*)::int FROM cycle_close) AS cycles_closed,
+      (SELECT seg_ok FROM segment_guard) AS segment_guard_ok
     FROM order_upd o
   `;
 
@@ -1128,6 +1250,9 @@ export async function rotateCheckoutSessionIdForResume(input: {
         fulfillment_method,
         order_status,
         source,
+        channel,
+        partner_id,
+        commission_rate,
         cancelled_at,
         cancelled_by,
         cancellation_reason,
@@ -1227,6 +1352,9 @@ export async function claimPurchaseEmailProcessing(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1297,6 +1425,9 @@ export async function saveCardcomDocumentOnOrder(input: {
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1350,6 +1481,9 @@ export async function markPurchaseEmailSent(orderId: string): Promise<SavedOrder
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1406,6 +1540,9 @@ export async function markPurchaseEmailFailed(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1463,6 +1600,9 @@ export async function ensurePurchaseEmailPending(
       fulfillment_method,
       order_status,
       source,
+      channel,
+      partner_id,
+      commission_rate,
       cancelled_at,
       cancelled_by,
       cancellation_reason,
@@ -1479,4 +1619,63 @@ export async function ensurePurchaseEmailPending(
   `;
   const row = (rows as OrderRow[])[0];
   return row ? mapOrderRow(row) : getOrderById(trimmedId);
+}
+
+/**
+ * Plant order without a customer email: document was created and the internal
+ * notification handled; the customer email is intentionally not sent.
+ * processing → skipped (purchase_email_sent_at stays NULL).
+ */
+export async function markPurchaseEmailSkipped(orderId: string): Promise<SavedOrder | null> {
+  const trimmedId = orderId.trim();
+  if (!trimmedId) return null;
+
+  const rows = await sql`
+    UPDATE orders
+    SET
+      purchase_email_status = 'skipped',
+      purchase_email_last_error = NULL
+    WHERE order_id = ${trimmedId}::uuid
+      AND purchase_email_sent_at IS NULL
+      AND purchase_email_status = 'processing'
+    RETURNING
+      order_id,
+      checkout_session_id,
+      cardcom_env,
+      payment_resume_token,
+      pos_spot_id,
+      offer_id,
+      product_id,
+      product_name,
+      partner_location_id,
+      partner_location_name,
+      partner_location_address,
+      price,
+      full_name,
+      customer_email,
+      phone,
+      address,
+      apartment_or_notes,
+      fulfillment_method,
+      order_status,
+      source,
+      channel,
+      partner_id,
+      commission_rate,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      delivered_at,
+      picked_up_at,
+      snapshot,
+      created_at,
+      cardcom_transaction_id,
+      cardcom_document_type,
+      cardcom_document_number,
+      purchase_email_status,
+      purchase_email_sent_at,
+      purchase_email_last_error
+  `;
+  const row = (rows as OrderRow[])[0];
+  return row ? mapOrderRow(row) : null;
 }

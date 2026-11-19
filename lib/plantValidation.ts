@@ -1,5 +1,5 @@
 import { parseInventoryType } from "@/lib/inventoryType";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel, PlantProduct } from "@/lib/types";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -10,18 +10,11 @@ function isValidPlantId(id: string): boolean {
   return UUID_PATTERN.test(id) || LEGACY_PLANT_ID_PATTERN.test(id);
 }
 const CURRENCIES = new Set<PlantProduct["currency"]>(["ILS", "USD", "EUR"]);
-const DIFFICULTIES = new Set<CareLevel>(["Easy", "Moderate", "Advanced"]);
 const LIGHT_LEVELS = new Set<LightLevel>([
   "Low light",
   "Medium light",
   "Bright indirect light",
   "Direct sun",
-]);
-const AVERAGE_SIZES = new Set<NonNullable<PlantProduct["averageSize"]>>([
-  "small",
-  "medium",
-  "large",
-  "x-large",
 ]);
 
 export type PlantParseResult =
@@ -175,8 +168,7 @@ export function parsePlantBody(
     return { ok: false, error: "currency must be ILS, USD, or EUR" };
   }
 
-  const supplierPriceRaw =
-    body.supplierPrice ?? body.supplier_price ?? body.price;
+  const supplierPriceRaw = body.supplierPrice ?? body.supplier_price;
   const supplierPrice =
     typeof supplierPriceRaw === "number" &&
     Number.isFinite(supplierPriceRaw) &&
@@ -191,14 +183,6 @@ export function parsePlantBody(
   const family = cleanString(body.family);
   const supplierName = cleanString(body.supplierName);
   const baseSupplierPrice = parseOptionalNumber(body.baseSupplierPrice);
-  const averageSizeRaw = cleanString(body.averageSize);
-  let averageSize: PlantProduct["averageSize"];
-  if (averageSizeRaw) {
-    if (!AVERAGE_SIZES.has(averageSizeRaw as NonNullable<PlantProduct["averageSize"]>)) {
-      return { ok: false, error: "averageSize must be small, medium, large, or x-large" };
-    }
-    averageSize = averageSizeRaw as PlantProduct["averageSize"];
-  }
 
   if (inventoryType === "flowers") {
     const subtitle = optionalFlowerText(body, "subtitle", "subtitle");
@@ -244,23 +228,6 @@ export function parsePlantBody(
       }
     }
 
-    let difficulty: CareLevel | undefined;
-    const difficultyField = readBodyField(body, "difficulty", "difficulty");
-    if (!difficultyField.omitted) {
-      if (difficultyField.value === null) {
-        difficulty = undefined;
-      } else {
-        const difficultyRaw = cleanString(difficultyField.value);
-        if (!difficultyRaw) {
-          return { ok: false, error: "difficulty must be omitted, null, or Easy, Moderate, or Advanced" };
-        }
-        if (!DIFFICULTIES.has(difficultyRaw as CareLevel)) {
-          return { ok: false, error: "difficulty must be Easy, Moderate, or Advanced" };
-        }
-        difficulty = difficultyRaw as CareLevel;
-      }
-    }
-
     let petFriendly: boolean | undefined;
     const petField = readBodyField(body, "petFriendly", "pet_friendly");
     if (!petField.omitted) {
@@ -282,7 +249,6 @@ export function parsePlantBody(
       id: resolvedId,
       name,
       supplierPrice,
-      price: supplierPrice,
       currency: currencyRaw as PlantProduct["currency"],
       inventoryType: "flowers",
       ...(nameHe ? { nameHe } : {}),
@@ -296,11 +262,9 @@ export function parsePlantBody(
       ...(light ? { light } : {}),
       ...(water.value ? { water: water.value } : {}),
       ...(waterHe.value ? { waterHe: waterHe.value } : {}),
-      ...(difficulty ? { difficulty } : {}),
       ...(location.value ? { location: location.value } : {}),
       ...(petFriendly !== undefined ? { petFriendly } : {}),
       ...(careInstructions.value ? { careInstructions: careInstructions.value } : {}),
-      ...(averageSize ? { averageSize } : {}),
       ...(supplierName ? { supplierName } : {}),
       ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
     };
@@ -319,11 +283,6 @@ export function parsePlantBody(
   const subtitleHe = cleanString(body.subtitleHe ?? body.subtitle_he);
   const descriptionHe = cleanString(body.descriptionHe ?? body.description_he);
   const waterHe = cleanString(body.waterHe ?? body.water_he);
-
-  const difficultyRaw = cleanString(body.difficulty);
-  if (!DIFFICULTIES.has(difficultyRaw as CareLevel)) {
-    return { ok: false, error: "difficulty must be Easy, Moderate, or Advanced" };
-  }
 
   const lightRaw = cleanString(body.light);
   if (!LIGHT_LEVELS.has(lightRaw as LightLevel)) {
@@ -366,13 +325,11 @@ export function parsePlantBody(
     subtitle: subtitle.value,
     description: description.value,
     supplierPrice,
-    price: supplierPrice,
     currency: currencyRaw as PlantProduct["currency"],
     images,
     labels,
     light: lightRaw as LightLevel,
     water: water.value,
-    difficulty: difficultyRaw as CareLevel,
     location: location.value,
     petFriendly,
     careInstructions,
@@ -382,10 +339,47 @@ export function parsePlantBody(
     ...(subtitleHe ? { subtitleHe } : {}),
     ...(descriptionHe ? { descriptionHe } : {}),
     ...(waterHe ? { waterHe } : {}),
-    ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
   };
 
   return { ok: true, plant };
+}
+
+export function catalogPublishedFieldPresent(body: Record<string, unknown>): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(body, "catalogPublished") ||
+    Object.prototype.hasOwnProperty.call(body, "catalog_published")
+  );
+}
+
+export function parseCatalogPublishedValue(
+  raw: unknown,
+): { ok: true; value: boolean } | { ok: false; error: string } {
+  if (typeof raw === "boolean") return { ok: true, value: raw };
+  if (raw === "true" || raw === "1") return { ok: true, value: true };
+  if (raw === "false" || raw === "0") return { ok: true, value: false };
+  return { ok: false, error: "catalogPublished must be a boolean" };
+}
+
+/** Catalog publish may only be set by an admin session. */
+export function resolveCatalogPublishedInput(input: {
+  body: Record<string, unknown>;
+  isAdmin: boolean;
+  existing?: boolean;
+}):
+  | { ok: true; value: boolean }
+  | { ok: false; status: 400 | 401; error: string } {
+  if (!catalogPublishedFieldPresent(input.body)) {
+    return { ok: true, value: input.existing === true };
+  }
+  if (!input.isAdmin) {
+    return { ok: false, status: 401, error: "Unauthorized" };
+  }
+  const raw = Object.prototype.hasOwnProperty.call(input.body, "catalogPublished")
+    ? input.body.catalogPublished
+    : input.body.catalog_published;
+  const parsed = parseCatalogPublishedValue(raw);
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.error };
+  return { ok: true, value: parsed.value };
 }

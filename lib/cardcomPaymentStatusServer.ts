@@ -9,30 +9,10 @@ import { getPaymentAttemptById } from "@/lib/paymentAttemptStorage";
 import { getOrderById } from "@/lib/ordersStorage";
 import {
   mapOrderStatusToPaymentClientState,
+  mapPaymentAttemptToClientState,
   parseOrderIdQueryParam,
   type CardcomPaymentStatusResponse,
 } from "@/lib/cardcomPaymentStatus";
-
-function mapAttemptStatusToClientState(
-  status: string,
-): Exclude<CardcomPaymentStatusResponse["state"], "not_found"> | "not_found" {
-  switch (status) {
-    case "created":
-    case "awaiting_payment":
-      return "pending";
-    case "finalized":
-      return "completed";
-    case "expired":
-    case "cancelled":
-    case "failed":
-      return "cancelled";
-    case "needs_reconciliation":
-      // Never report success for unpaid reconciliation.
-      return "cancelled";
-    default:
-      return "not_found";
-  }
-}
 
 /**
  * Load attempt or order by correlation id and return a minimal safe status payload.
@@ -50,8 +30,27 @@ export async function readCardcomPaymentStatus(
 
   const attempt = await getPaymentAttemptById(correlationId);
   if (attempt) {
+    const state = mapPaymentAttemptToClientState(attempt.channel, attempt.status);
+    if (attempt.channel === "catalog") {
+      if (state === "completed") {
+        if (!attempt.finalizedOrderId) {
+          return { state: "not_found" };
+        }
+        return { state: "completed", orderId: attempt.finalizedOrderId };
+      }
+      if (state === "confirmation_required") {
+        return { state: "confirmation_required" };
+      }
+      if (state === "cancelled") {
+        return { state: "cancelled", channel: "catalog" };
+      }
+      if (state === "pending") {
+        return { state: "pending", channel: "catalog" };
+      }
+      return { state: "not_found" };
+    }
+
     const spotSlug = attempt.snapshot?.spotSlug?.trim() || undefined;
-    const state = mapAttemptStatusToClientState(attempt.status);
     if (state === "completed") {
       if (!attempt.finalizedOrderId) {
         return { state: "not_found" };

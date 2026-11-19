@@ -1,6 +1,6 @@
 /**
- * payment_attempt + owned POS hold + Cardcom LowProfile/Create.
- * Server-only. Does not create an Order, send email, or mark POS sold.
+ * payment_attempt + Cardcom LowProfile/Create.
+ * Server-only. Does not create an Order, send email, mark POS sold, or hold a Partner POS.
  * Callers may inject createLowProfile for offline tests.
  */
 
@@ -14,10 +14,7 @@ import {
   type CreateCardcomLowProfileInput,
 } from "@/lib/cardcom";
 import { resolveDeliveryAddressFromRequest } from "@/lib/deliveryAddress";
-import {
-  isValidEmail,
-  isValidIsraeliMobilePhone,
-} from "@/lib/formValidation";
+import { getCheckoutCustomerServerError } from "@/lib/checkoutValidation";
 import { getLocationById } from "@/lib/mockLocations";
 import { getOfferById } from "@/lib/offerStorage";
 import type { Offer } from "@/lib/offerTypes";
@@ -31,19 +28,16 @@ import type { SavedPaymentAttempt } from "@/lib/paymentAttemptTypes";
 import { PAYMENT_HOLD_TTL_MS } from "@/lib/paymentHoldExpiry";
 import { createPaymentResumeToken } from "@/lib/paymentResume";
 import { getPlantById } from "@/lib/plantCatalog";
+import { partnerSupplierCostFromPlantPrice } from "@/lib/partnerSupplierCost";
+import { getPlantVariantById } from "@/lib/plantVariantStorage";
 import {
   cardcomLineItemName,
   inventoryTypeOrDefault,
-  posRequiresPaymentHold,
   type InventoryType,
 } from "@/lib/inventoryType";
-import { isPosSpotPurchasable } from "@/lib/posSpotHold";
+import { posAllowsNewCustomerPurchase } from "@/lib/posOccupancy";
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
-import {
-  acquirePosSpotHoldForPayment,
-  getPosSpotBySpotSlug,
-  releasePosSpotHoldForPayment,
-} from "@/lib/posSpotStorage";
+import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import type { PosSpot } from "@/lib/posSpotTypes";
 import {
   buildCardcomCallbackUrls,
@@ -69,9 +63,18 @@ export type StartCardcomPaymentPrepInput = {
   customerEmail: string;
   phone: string;
   fulfillmentMethod: FulfillmentMethod;
+  /**
+   * Plant checkout email opt-in. Omitted -> legacy rules (name, email, phone all required).
+   * When provided: delivery needs name + phone (+ email only if true); pickup needs
+   * nothing (email only if true). Without opt-in no email is stored.
+   * Ignored for flowers.
+   */
+  emailOptIn?: boolean;
   deliveryStreet?: string;
   deliveryHouseNumber?: string;
   apartmentOrNotes?: string;
+  /** Staff browser. False when omitted. */
+  isInternal?: boolean;
 };
 
 export type StartCardcomPaymentPrepDeps = {
@@ -109,9 +112,18 @@ async function buildOrderSnapshot(input: {
   offer: Offer;
   posSpot: PosSpot;
   fulfillmentMethod: FulfillmentMethod;
+  inventoryType: InventoryType;
 }): Promise<OrderSnapshot> {
-  const { plant, offer, posSpot, fulfillmentMethod } = input;
+  const { plant, offer, posSpot, fulfillmentMethod, inventoryType } = input;
   const partner = await getLocationById(posSpot.partnerLocationId);
+  const supplierCost = partnerSupplierCostFromPlantPrice(plant.supplierPrice);
+  const plantVariantId = posSpot.plantVariantId?.trim() || "";
+  let sizeLabel: string | undefined;
+  if (plantVariantId) {
+    const variant = await getPlantVariantById(plantVariantId);
+    const label = variant?.sizeLabel?.trim();
+    if (label) sizeLabel = label;
+  }
   return {
     productId: plant.id,
     productName: plant.name,
@@ -126,39 +138,19 @@ async function buildOrderSnapshot(input: {
     posSpotDescription: posSpot.posName,
     spotSlug: posSpot.spotSlug,
     fulfillmentType: fulfillmentMethod,
+    inventoryType,
+    ...(plantVariantId ? { plantVariantId } : {}),
+    ...(sizeLabel ? { sizeLabel } : {}),
+    ...(supplierCost ?? {}),
   };
 }
 
-/**
- * Release owned hold (if requested) and mark attempt terminal.
- */
+/** Mark a failed payment-prep attempt terminal. Does not change the POS. */
 export async function compensatePaymentPrepFailure(
   attempt: SavedPaymentAttempt,
-  posSpotId: string,
+  _posSpotId: string,
   reason: string,
-  options?: { releaseHold?: boolean },
 ): Promise<void> {
-  if (options?.releaseHold) {
-    try {
-      const released = await releasePosSpotHoldForPayment(posSpotId, attempt.id);
-      if (!released.ok) {
-        console.error(
-          "[payment-prep] POS hold release failed after payment prep error",
-          {
-            attemptId: attempt.id,
-            posSpotId,
-            outcome: released.outcome,
-            reason,
-          },
-        );
-      }
-    } catch {
-      console.error(
-        "[payment-prep] POS hold release threw after payment prep error",
-        { attemptId: attempt.id, posSpotId, reason },
-      );
-    }
-  }
   try {
     await markPaymentAttemptTerminal(attempt.id, "cancelled", reason);
   } catch {
@@ -262,9 +254,9 @@ export async function startCardcomPaymentPrep(
   input: StartCardcomPaymentPrepInput,
   deps: StartCardcomPaymentPrepDeps = {},
 ): Promise<StartCardcomPaymentPrepResult> {
-  const nameStr = input.fullName.trim();
-  const emailTrim = input.customerEmail.trim().toLowerCase();
-  const phoneStr = input.phone.trim();
+  let nameStr = input.fullName.trim();
+  let emailTrim = input.customerEmail.trim().toLowerCase();
+  let phoneStr = input.phone.trim();
   const spotSlug = input.spotSlug.trim();
   const plantId = input.plantId.trim();
   const fulfillmentMethod: FulfillmentMethod =
@@ -289,24 +281,23 @@ export async function startCardcomPaymentPrep(
   const inventoryType = inventoryTypeOrDefault(catalogPlant.inventoryType);
 
   if (inventoryType !== "flowers") {
-    if (!nameStr) {
-      return { ok: false, code: "validation", error: "fullName is required", httpStatus: 400 };
+    const customerError = getCheckoutCustomerServerError({
+      fulfillmentMethod,
+      emailOptIn: input.emailOptIn,
+      fullName: nameStr,
+      email: emailTrim,
+      phone: phoneStr,
+    });
+    if (customerError) {
+      return { ok: false, code: "validation", error: customerError, httpStatus: 400 };
     }
-    if (!emailTrim || !isValidEmail(emailTrim)) {
-      return {
-        ok: false,
-        code: "validation",
-        error: "customerEmail is required and must be a valid email",
-        httpStatus: 400,
-      };
-    }
-    if (!phoneStr || !isValidIsraeliMobilePhone(phoneStr)) {
-      return {
-        ok: false,
-        code: "validation",
-        error: "Please enter a valid 10-digit Israeli phone number.",
-        httpStatus: 400,
-      };
+    if (typeof input.emailOptIn === "boolean") {
+      // Opt-in rules: store only what the customer was asked for.
+      if (!input.emailOptIn) emailTrim = "";
+      if (fulfillmentMethod === "pickup") {
+        nameStr = "";
+        phoneStr = "";
+      }
     }
   }
 
@@ -361,7 +352,7 @@ export async function startCardcomPaymentPrep(
     return { ok: false, code: "not_found", error: "POS Spot not found", httpStatus: 404 };
   }
   posSpot = refreshed;
-  if (!isPosSpotPurchasable(posSpot.status)) {
+  if (!posAllowsNewCustomerPurchase(posSpot)) {
     return {
       ok: false,
       code: "unavailable",
@@ -370,7 +361,7 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const offer = await getOfferById(posSpot.currentOfferId);
+  const offer = await getOfferById(posSpot.currentOfferId ?? "");
   if (!offer || offer.status !== "active") {
     return { ok: false, code: "validation", error: "Offer is not available", httpStatus: 400 };
   }
@@ -418,11 +409,13 @@ export async function startCardcomPaymentPrep(
     offer,
     posSpot,
     fulfillmentMethod,
+    inventoryType,
   });
 
   const attempt: SavedPaymentAttempt = {
     id: attemptId,
     status: "created",
+    channel: "partner",
     posSpotId: posSpot.id,
     offerId: offer.id,
     productId: catalogPlant.id,
@@ -437,6 +430,7 @@ export async function startCardcomPaymentPrep(
     snapshot,
     paymentResumeToken,
     expiresAt,
+    isInternal: input.isInternal === true,
     createdAt,
     updatedAt: createdAt,
   };
@@ -452,30 +446,6 @@ export async function startCardcomPaymentPrep(
     };
   }
 
-  const holdRequired = posRequiresPaymentHold(inventoryType);
-  let holdAcquired = false;
-  if (holdRequired) {
-    const hold = await acquirePosSpotHoldForPayment(posSpot.id, attemptId);
-    if (!hold.ok) {
-      await compensatePaymentPrepFailure(
-        attempt,
-        posSpot.id,
-        CANCEL_REASON_POS_UNAVAILABLE_BEFORE_PAYMENT,
-        { releaseHold: false },
-      );
-      return {
-        ok: false,
-        code: hold.outcome === "not_found" ? "not_found" : "unavailable",
-        error:
-          hold.outcome === "not_found"
-            ? "POS Spot not found"
-            : "This POS Spot is no longer available for purchase.",
-        httpStatus: hold.outcome === "not_found" ? 404 : 409,
-      };
-    }
-    holdAcquired = true;
-  }
-
   let publicOrigin: string;
   try {
     publicOrigin = resolvePublicOrigin(deps.publicOrigin);
@@ -484,7 +454,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_CREATE_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -502,7 +471,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -521,7 +489,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_PAYMENT_PREP_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -560,9 +527,7 @@ export async function startCardcomPaymentPrep(
     cardcomResult = await createFn(createInput);
   } catch (error) {
     const mapped = mapCardcomFailure(error);
-    await compensatePaymentPrepFailure(attempt, posSpot.id, mapped.reason, {
-      releaseHold: holdAcquired,
-    });
+    await compensatePaymentPrepFailure(attempt, posSpot.id, mapped.reason);
     return {
       ok: false,
       code: mapped.code,
@@ -578,7 +543,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_RESPONSE_INVALID,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -598,7 +562,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_SESSION_ATTACH_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -613,7 +576,6 @@ export async function startCardcomPaymentPrep(
       attempt,
       posSpot.id,
       CANCEL_REASON_CARDCOM_SESSION_ATTACH_FAILED,
-      { releaseHold: holdAcquired },
     );
     return {
       ok: false,
@@ -629,7 +591,7 @@ export async function startCardcomPaymentPrep(
       lowProfileId,
       attemptStatus: "awaiting_payment",
       posSpotId: posSpot.id,
-      posStatus: holdRequired ? "held_for_payment" : posSpot.status,
+      posStatus: posSpot.status,
       environment: "test",
     });
   }

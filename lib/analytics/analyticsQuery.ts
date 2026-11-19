@@ -14,10 +14,28 @@ export type AnalyticsInventoryFilter = InventoryType | "all";
 export const DEFAULT_ANALYTICS_INVENTORY_FILTER: AnalyticsInventoryFilter =
   DEFAULT_INVENTORY_TYPE;
 
+export type AnalyticsArea = "overall" | "logistics" | "financial";
+
+export const DEFAULT_ANALYTICS_AREA: AnalyticsArea = "overall";
+
 export type AnalyticsFilterState = {
   inventoryType: AnalyticsInventoryFilter;
   dateFilter: DateFilterValue;
+  /** `partners.id`. Null is Urban Plant scope. */
+  partnerId: string | null;
+  area: AnalyticsArea;
 };
+
+export function parseAnalyticsArea(raw: string | undefined | null): AnalyticsArea {
+  const value = (raw ?? "").trim();
+  if (value === "logistics" || value === "financial" || value === "overall") return value;
+  return DEFAULT_ANALYTICS_AREA;
+}
+
+export function parseAnalyticsPartnerId(raw: string | undefined | null): string | null {
+  const value = (raw ?? "").trim();
+  return value || null;
+}
 
 export function parseAnalyticsInventoryType(
   raw: string | undefined | null,
@@ -52,12 +70,16 @@ export function parseAnalyticsFilterState(
     date?: string | undefined;
     from?: string | undefined;
     to?: string | undefined;
+    partner?: string | undefined;
+    area?: string | undefined;
   },
   now: Date = new Date(),
 ): AnalyticsFilterState {
   return {
     inventoryType: parseAnalyticsInventoryType(input.inventoryType),
     dateFilter: parseAnalyticsDateFilter(input, now),
+    partnerId: parseAnalyticsPartnerId(input.partner),
+    area: parseAnalyticsArea(input.area),
   };
 }
 
@@ -72,5 +94,7 @@ export function analyticsQueryUrl(state: AnalyticsFilterState): string {
   } else if (state.dateFilter.presetId !== DEFAULT_DATE_FILTER_PRESET) {
     params.set("date", state.dateFilter.presetId);
   }
+  if (state.partnerId) params.set("partner", state.partnerId);
+  if (state.area !== DEFAULT_ANALYTICS_AREA) params.set("area", state.area);
   return routes.admin.analyticsWithQuery(params.toString());
 }

@@ -4,7 +4,7 @@
  */
 
 import { expireStalePaymentHold } from "@/lib/paymentHoldExpiry";
-import { isPosSpotPurchasable } from "@/lib/posSpotHold";
+import { posAllowsNewCustomerPurchase } from "@/lib/posOccupancy";
 import { getPosSpotBySpotSlug } from "@/lib/posSpotStorage";
 import type { PosSpot } from "@/lib/posSpotTypes";
 
@@ -35,7 +35,7 @@ export async function getPosSpotForCustomerPurchase(
 
   return {
     posSpot,
-    purchaseEnabled: isPosSpotPurchasable(posSpot.status),
+    purchaseEnabled: posAllowsNewCustomerPurchase(posSpot),
   };
 }
 

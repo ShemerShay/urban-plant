@@ -32,7 +32,6 @@ async function main(): Promise<void> {
   const {
     getPosSpotById,
     readPosSpots,
-    releasePosSpotHoldForPayment,
     setPosSpotStatus,
   } = await import("../lib/posSpotStorage");
   const { sql } = await import("../lib/db");
@@ -51,7 +50,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const offer = await getOfferById(available.currentOfferId);
+  const offer = await getOfferById(available.currentOfferId ?? "");
   if (!offer || offer.status !== "active" || offer.consumerPrice <= 0) {
     console.log("verify-cardcom-create: skip (no valid active offer)");
     return;
@@ -104,8 +103,8 @@ async function main(): Promise<void> {
 
   async function releaseOwnedHold(): Promise<void> {
     const spot = await getPosSpotById(available!.id);
-    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
-      await releasePosSpotHoldForPayment(available!.id, spot.paymentHoldAttemptId);
+    if (spot?.status === "held_for_payment") {
+      await setPosSpotStatus(available!.id, "available");
     }
   }
 
@@ -168,10 +167,10 @@ async function main(): Promise<void> {
     assert.equal(attempt!.amount, offer.consumerPrice);
     assert.equal(attempt!.checkoutSessionId, lp1);
 
-    const held = await getPosSpotById(available.id);
-    assert.equal(held?.status, "held_for_payment");
-    assert.equal(held?.paymentHoldAttemptId, first.attemptId);
-    assert.notEqual(held?.status, "sold");
+    const afterPrep = await getPosSpotById(available.id);
+    assert.equal(afterPrep?.status, "available");
+    assert.equal(afterPrep?.paymentHoldAttemptId, undefined);
+    assert.notEqual(afterPrep?.status, "sold");
 
     assert.ok(captured.last, "Cardcom mock received a request");
     assert.equal(captured.last!.amount, attempt!.amount);
@@ -215,8 +214,6 @@ async function main(): Promise<void> {
     );
     assert.ok(!captured.last!.failedRedirectUrl.includes("/payment/failed"));
 
-    // Release + cancel attempt so we can run failure scenarios on the same spot
-    await releasePosSpotHoldForPayment(available.id, first.attemptId);
     await deletePaymentAttemptById(first.attemptId);
     createdAttemptIds.splice(createdAttemptIds.indexOf(first.attemptId), 1);
     await setPosSpotStatus(available.id, "available");
@@ -328,7 +325,6 @@ async function main(): Promise<void> {
       );
       assert.equal(blocker.ok, true);
       if (blocker.ok) createdAttemptIds.push(blocker.attemptId);
-      await releasePosSpotHoldForPayment(available.id, blocker.ok ? blocker.attemptId : "");
       await setPosSpotStatus(available.id, "available");
 
       const result = await startCardcomPaymentPrep(
@@ -382,10 +378,6 @@ async function main(): Promise<void> {
       assert.equal(overwrite.ok, false);
       if (!overwrite.ok) assert.equal(overwrite.reason, "already_set");
 
-      await releasePosSpotHoldForPayment(
-        available.id,
-        owned.ok ? owned.attemptId : "",
-      );
       await setPosSpotStatus(available.id, "available");
 
       const other = await startCardcomPaymentPrep(

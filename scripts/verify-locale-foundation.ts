@@ -13,11 +13,14 @@ import {
   localeHtmlLang,
   parseLocale,
 } from "../lib/locale";
+import { formatStoredDeliveryAddressDisplay } from "../lib/deliveryAddress";
+import { formatPrice } from "../lib/mockPlants";
 
-assert.equal(DEFAULT_LOCALE, "en");
-assert.equal(parseLocale(undefined), "en");
-assert.equal(parseLocale("nope"), "en");
+assert.equal(DEFAULT_LOCALE, "he");
+assert.equal(parseLocale(undefined), "he");
+assert.equal(parseLocale("nope"), "he");
 assert.equal(parseLocale("he"), "he");
+assert.equal(parseLocale("en"), "en");
 assert.equal(localeHtmlLang("en"), "en");
 assert.equal(localeHtmlDir("en"), "ltr");
 assert.equal(localeHtmlLang("he"), "he");
@@ -25,6 +28,11 @@ assert.equal(localeHtmlDir("he"), "rtl");
 assert.equal(LOCALE_COOKIE, "up_locale");
 assert.equal(localeDisplayFontClass("he"), "font-sans");
 assert.equal(localeDisplayFontClass("en"), "font-display");
+assert.equal(formatPrice(120, "ILS"), formatPrice(120, "ILS", "en"));
+assert.equal(
+  formatStoredDeliveryAddressDisplay("Tel Aviv, Rothschild Blvd 12"),
+  formatStoredDeliveryAddressDisplay("Tel Aviv, Rothschild Blvd 12", "en"),
+);
 
 const root = process.cwd();
 function read(rel: string): string {
@@ -35,6 +43,8 @@ const layout = read("app/layout.tsx");
 assert.match(layout, /lang=\{localeHtmlLang\(locale\)\}/);
 assert.match(layout, /dir=\{localeHtmlDir\(locale\)\}/);
 assert.match(layout, /LocaleProvider/);
+assert.match(layout, /locale === "he"/);
+assert.match(layout, /חוויית מסחר בצמחים מבוססת QR/);
 assert.match(layout, /Noto_Sans_Hebrew/);
 assert.match(layout, /notoSansHebrew\.variable/);
 
@@ -70,7 +80,9 @@ assert.match(login, /LanguageSwitcher/);
 assert.match(login, /localeDisplayFontClass/);
 
 const adminLayout = read("app/admin/layout.tsx");
-assert.match(adminLayout, /LanguageSwitcher/);
+assert.match(adminLayout, /AdminShell/);
+const adminShell = read("components/admin/AdminShell.tsx");
+assert.match(adminShell, /LanguageSwitcher/);
 
 const api = read("app/api/locale/route.ts");
 assert.match(api, /LOCALE_COOKIE/);

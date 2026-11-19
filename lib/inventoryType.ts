@@ -1,7 +1,7 @@
 /**
- * Catalog inventory type: Admin grouping and POS payment lock policy.
+ * Catalog inventory type: Admin grouping and POS payment policy.
  *
- * plants → unique unit; acquire held_for_payment; successful payment sets POS sold.
+ * plants → unique unit; payment does not reserve the POS; successful payment sets POS sold.
  * flowers → reusable POS; no hold; POS status is not updated by payment.
  */
 
@@ -25,10 +25,6 @@ export function parseInventoryType(value: unknown): InventoryType | null {
 
 export function inventoryTypeOrDefault(value: unknown): InventoryType {
   return parseInventoryType(value) ?? DEFAULT_INVENTORY_TYPE;
-}
-
-export function posRequiresPaymentHold(inventoryType: InventoryType): boolean {
-  return inventoryType !== "flowers";
 }
 
 /**

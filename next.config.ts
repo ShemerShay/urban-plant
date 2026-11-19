@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: {
+    "/plant-library/[filename]": ["./data/plant-library/**"],
+  },
   images: {
     remotePatterns: [
       {

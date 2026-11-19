@@ -5,6 +5,7 @@ import {
   createPartnerLocation,
   readPartnerLocations,
 } from "@/lib/partnerLocationStorage";
+import { getPartnerById } from "@/lib/partnerStorage";
 import { parsePartnerBody } from "@/lib/partnerValidation";
 
 export async function GET() {
@@ -39,6 +40,12 @@ export async function POST(request: NextRequest) {
   const parsed = parsePartnerBody(record, { requireId: false, existingId: newId });
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  if (!parsed.partner.partnerId) {
+    return NextResponse.json({ error: "partnerId is required" }, { status: 400 });
+  }
+  if (!(await getPartnerById(parsed.partner.partnerId))) {
+    return NextResponse.json({ error: "Partner not found" }, { status: 400 });
   }
 
   try {

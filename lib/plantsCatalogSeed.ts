@@ -1,6 +1,6 @@
 import type { PlantProduct } from "./types";
 
-const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
+const SEED_ENTRIES: Omit<PlantProduct, "inventoryType">[] = [
   {
     id: "monstera",
     name: "Monstera Deliciosa",
@@ -16,7 +16,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Easy to care", "Medium", "Statement leaves"],
     light: "Bright indirect light",
     water: "Every 4–6 days",
-    difficulty: "Easy",
     location: "Near a bright window",
     petFriendly: false,
     careInstructions: [
@@ -24,7 +23,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
       "Water when the top soil feels dry.",
       "Wipe leaves occasionally for shine.",
     ],
-    averageSize: "medium",
   },
   {
     id: "alocasia",
@@ -41,7 +39,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Moderate care", "Medium", "Tropical"],
     light: "Medium light",
     water: "Every 4-6 days",
-    difficulty: "Moderate",
     location: "Warm spot with indirect light",
     petFriendly: false,
     careInstructions: [
@@ -49,14 +46,12 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
       "Higher humidity helps leaf edges stay crisp.",
       "Rotate weekly for even growth.",
     ],
-    averageSize: "medium",
   },
   {
     id: "asparagus",
     name: "Asparagus fern",
     family: "Asparagaceae",
     subtitle: "Soft airy texture",
-    averageSize: "small",
     description:
       "Feathery, delicate foliage that adds movement and a relaxed botanical vibe to tight spaces.",
     supplierPrice: 89,
@@ -68,7 +63,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Easy to care", "Small", "Trailing"],
     light: "Low light",
     water: "Every 3-5 days",
-    difficulty: "Easy",
     location: "Bright indirect spot",
     petFriendly: false,
     careInstructions: [
@@ -93,7 +87,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
     labels: ["Easy to care", "Small", "Flowering plant"],
     light: "Direct sun",
     water: "Every 5-7 days",
-    difficulty: "Moderate",
     location: "Near a bright window",
     petFriendly: false,
     careInstructions: [
@@ -102,13 +95,11 @@ const SEED_ENTRIES: Omit<PlantProduct, "price" | "inventoryType">[] = [
       "Rotate the pot weekly for balanced growth.",
       "Wipe leaves gently once a month to remove dust.",
     ],
-    averageSize: "large",
   },
 ];
 
 /** Default catalog when DB is empty (seed / fallback). */
 export const PLANTS_CATALOG_SEED: PlantProduct[] = SEED_ENTRIES.map((plant) => ({
   ...plant,
-  price: plant.supplierPrice,
   inventoryType: "plants",
 }));

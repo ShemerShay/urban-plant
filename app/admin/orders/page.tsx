@@ -1,22 +1,34 @@
 /**
- * Local JSON order management is only for prototype/testing and should be replaced
- * with a real database-backed admin before production.
+ * Admin order list: Partner/POS cards plus Catalog line visibility
+ * and read-only Catalog needs_reconciliation attempts.
  */
 
 import { AdminOrderCard } from "@/components/admin/AdminOrderCard";
 import { AdminOrdersHeaderMenu } from "@/components/admin/AdminOrdersHeaderMenu";
 import type { FilterOption } from "@/components/admin/AdminOrdersFilters";
 import { AdminOrdersFilters } from "@/components/admin/AdminOrdersFilters";
+import { AdminReconciliationCard } from "@/components/admin/AdminReconciliationCard";
 import {
-  filterOrders,
+  catalogItemsRecordFromOrderItems,
+  isCatalogAdminOrder,
+  reconciliationAttemptViewFromAttempt,
+} from "@/lib/adminOrderDisplay";
+import {
+  parseChannel,
   parseDateParam,
   parseLocation,
   parsePlant,
   parseStatuses,
 } from "@/lib/adminOrdersFilterUtils";
+import {
+  readAdminOrderFilterOptions,
+  readAdminOrdersList,
+} from "@/lib/adminOrdersList";
 import { getLocale } from "@/lib/getLocale";
+import type { Locale } from "@/lib/locale";
 import { t } from "@/lib/messages";
-import { readOrders } from "@/lib/ordersStorage";
+import { getOrderItemsByOrderIds } from "@/lib/orderItemStorage";
+import { listCatalogPaymentAttemptsNeedingReconciliation } from "@/lib/paymentAttemptStorage";
 
 function firstParam(v: string | string[] | undefined): string | undefined {
   if (typeof v === "string") return v;
@@ -24,9 +36,18 @@ function firstParam(v: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
+function plantOptionLabel(
+  plant: { name: string; nameHe: string | null },
+  locale: Locale,
+): string {
+  if (locale === "he" && plant.nameHe) return plant.nameHe;
+  return plant.name;
+}
+
 interface AdminOrdersPageProps {
   searchParams: Promise<{
     status?: string | string[];
+    channel?: string | string[];
     location?: string | string[];
     plant?: string | string[];
     dateFrom?: string | string[];
@@ -38,48 +59,48 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
   const locale = await getLocale();
   const sp = await searchParams;
   const statusFilters = parseStatuses(sp.status);
+  const channelFilter = parseChannel(firstParam(sp.channel));
   const locationFilter = parseLocation(firstParam(sp.location));
   const plantFilter = parsePlant(firstParam(sp.plant));
   const dateFrom = parseDateParam(firstParam(sp.dateFrom));
   const dateTo = parseDateParam(firstParam(sp.dateTo));
 
-  const allOrders = await readOrders();
-
-  const orders = filterOrders(allOrders, {
+  const filters = {
     statuses: statusFilters,
+    channel: channelFilter,
     location: locationFilter,
     plant: plantFilter,
     dateFrom,
     dateTo,
-  });
+  };
 
-  const hasNoLocationOrder = allOrders.some((o) => (o.snapshot?.partnerLocationId ?? o.locationId) === null);
-  const locationMap = new Map<string, string>();
-  for (const o of allOrders) {
-    const locationId = o.snapshot?.partnerLocationId ?? o.locationId;
-    if (locationId !== null && !locationMap.has(locationId)) {
-      locationMap.set(locationId, o.snapshot?.partnerLocationName ?? o.locationName ?? locationId);
-    }
-  }
+  const [orders, filterOptions, reconciliationAttempts] = await Promise.all([
+    readAdminOrdersList(filters),
+    readAdminOrderFilterOptions(),
+    listCatalogPaymentAttemptsNeedingReconciliation(),
+  ]);
+
+  const catalogOrderIds = orders.filter(isCatalogAdminOrder).map((order) => order.orderId);
+  const itemsByOrderId = await getOrderItemsByOrderIds(catalogOrderIds);
+  const catalogItemsByOrderId = catalogItemsRecordFromOrderItems(
+    itemsByOrderId,
+    catalogOrderIds,
+  );
+
   const locationOptions: FilterOption[] = [];
-  if (hasNoLocationOrder) {
+  if (filterOptions.hasNoLocationOrder) {
     locationOptions.push({ value: "__none__", label: t(locale, "admin.orders.noLocation") });
   }
-  const sortedLocIds = [...locationMap.keys()].sort((a, b) =>
-    (locationMap.get(a) ?? a).localeCompare(locationMap.get(b) ?? b),
-  );
-  for (const id of sortedLocIds) {
-    locationOptions.push({ value: id, label: locationMap.get(id) ?? id });
+  for (const location of filterOptions.locations) {
+    locationOptions.push({ value: location.id, label: location.name });
   }
 
-  const plantMap = new Map<string, string>();
-  for (const o of allOrders) {
-    const productId = o.snapshot?.productId ?? o.plantId;
-    if (!plantMap.has(productId)) plantMap.set(productId, o.snapshot?.productName ?? o.plantName);
-  }
-  const plantOptions: FilterOption[] = [...plantMap.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1]))
-    .map(([value, label]) => ({ value, label }));
+  const plantOptions: FilterOption[] = filterOptions.plants.map((plant) => ({
+    value: plant.id,
+    label: plantOptionLabel(plant, locale),
+  }));
+
+  const reconciliationViews = reconciliationAttempts.map(reconciliationAttemptViewFromAttempt);
 
   return (
     <main
@@ -90,11 +111,15 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
         <h1 className="text-2xl font-semibold text-emerald-950">
           {t(locale, "admin.orders.title")}
         </h1>
-        <AdminOrdersHeaderMenu filteredOrders={orders} />
+        <AdminOrdersHeaderMenu
+          filteredOrders={orders}
+          catalogItemsByOrderId={catalogItemsByOrderId}
+        />
       </div>
 
       <AdminOrdersFilters
         currentStatuses={statusFilters}
+        currentChannel={channelFilter}
         currentLocation={locationFilter}
         currentPlant={plantFilter}
         currentDateFrom={dateFrom}
@@ -103,16 +128,39 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
         plantOptions={plantOptions}
       />
 
+      {reconciliationViews.length > 0 ? (
+        <section className="mb-8" aria-labelledby="admin-orders-reconciliation-heading">
+          <h2
+            id="admin-orders-reconciliation-heading"
+            className="text-lg font-semibold text-amber-950"
+          >
+            {t(locale, "admin.orders.reviewTitle")}
+          </h2>
+          <p className="mt-1 mb-4 text-sm text-slate-600">
+            {t(locale, "admin.orders.reviewHint")}
+          </p>
+          <ul className="space-y-4">
+            {reconciliationViews.map((attempt) => (
+              <AdminReconciliationCard key={attempt.id} attempt={attempt} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {orders.length === 0 ? (
         <p className="rounded-2xl bg-white p-5 text-sm text-slate-600">
-          {allOrders.length === 0
+          {!filterOptions.hasAnyOrders
             ? t(locale, "admin.orders.empty")
             : t(locale, "admin.orders.noMatch")}
         </p>
       ) : (
         <ul className="space-y-4">
           {orders.map((order) => (
-            <AdminOrderCard key={order.orderId} order={order} />
+            <AdminOrderCard
+              key={order.orderId}
+              order={order}
+              catalogItems={catalogItemsByOrderId[order.orderId] ?? []}
+            />
           ))}
         </ul>
       )}

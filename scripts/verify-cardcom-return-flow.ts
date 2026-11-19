@@ -70,8 +70,9 @@ async function main(): Promise<void> {
     "/success must not call readOrders()",
   );
 
-  // 3. no new checkout page
+  // 3. POS checkout stays; catalog shop checkout is separate. No Cardcom-specific checkout page.
   assert.ok(exists("app/checkout/pos/[spotSlug]/page.tsx"));
+  assert.ok(exists("app/checkout/shop/page.tsx"));
   assert.ok(exists("components/checkout/CheckoutForm.tsx"));
   assert.equal(exists("app/checkout/cardcom"), false);
   assert.equal(exists("app/checkout/payment"), false);
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
     .readdirSync(path.join(root, "app/checkout"), { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name);
-  assert.deepEqual(checkoutPages, ["pos"]);
+  assert.deepEqual(checkoutPages, ["pos", "shop"]);
 
   // 4–5. missing / invalid orderId handling (page + parser)
   const paymentSuccessSrc = read("app/payment/success/page.tsx");
@@ -246,24 +247,11 @@ async function main(): Promise<void> {
   assert.equal(PAYMENT_FAILED_CHECKOUT_MESSAGE, "Payment failed. Please try again.");
   assert.equal(isPosSpotPurchasable("held_for_payment"), false);
   assert.equal(isPosSpotPurchasable("held_for_payment", { resumeHolder: true }), true);
-  const {
-    POS_HELD_FOR_PAYMENT_CTA,
-    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
-    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
-    shouldShowHeldForPaymentCheckoutMessage,
-  } = await import("../lib/posSpotHold");
-  assert.equal(POS_HELD_FOR_PAYMENT_CTA, "Purchase in progress");
-  assert.equal(
-    POS_HELD_FOR_PAYMENT_PRODUCT_MESSAGE,
-    "Another customer is currently purchasing this plant. Please check back shortly.",
-  );
-  assert.equal(
-    POS_HELD_FOR_PAYMENT_CHECKOUT_MESSAGE,
-    "This plant is currently being purchased by another customer.",
-  );
-  assert.equal(
-    shouldShowHeldForPaymentCheckoutMessage("held_for_payment", { resumeHolder: true }),
-    false,
+  assert.doesNotMatch(messagesSrc, /plant\.held\.checkout/);
+  assert.doesNotMatch(messagesSrc, /plant\.held\.product/);
+  assert.doesNotMatch(
+    messagesSrc,
+    /This plant is currently being purchased by another customer/,
   );
 
   // 12-ish: success page still not claiming paid while pending

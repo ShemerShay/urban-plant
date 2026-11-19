@@ -2,11 +2,12 @@
  * Plant catalog backed by Neon Postgres (`plants` table).
  */
 
+import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { inventoryTypeOrDefault, type InventoryType } from "@/lib/inventoryType";
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
 import { parseNumeric, toIsoString } from "@/lib/storageUtils";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel, PlantProduct } from "@/lib/types";
 
 export type PlantRow = {
   id: string;
@@ -24,15 +25,32 @@ export type PlantRow = {
   light: string | null;
   water: string | null;
   water_he: string | null;
-  average_size: string | null;
   supplier_name: string | null;
-  difficulty: string | null;
   location: string | null;
   pet_friendly: boolean | null;
   care_instructions: unknown;
   created_at: string | Date | null;
   inventory_type?: string | null;
+  catalog_published?: boolean | null;
 };
+
+export class CatalogPublishError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CatalogPublishError";
+  }
+}
+
+function catalogPublishedForWrite(plant: PlantProduct): boolean {
+  const inventoryType = inventoryTypeOrDefault(plant.inventoryType);
+  if (inventoryType === "flowers") {
+    if (plant.catalogPublished === true) {
+      throw new CatalogPublishError("Flowers cannot be published to Catalog");
+    }
+    return false;
+  }
+  return plant.catalogPublished === true;
+}
 
 function parseJsonStringArray(value: unknown): string[] | undefined {
   if (value == null) return undefined;
@@ -63,14 +81,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
   const subtitleHe = optionalTrimmed(row.subtitle_he);
   const descriptionHe = optionalTrimmed(row.description_he);
   const waterHe = optionalTrimmed(row.water_he);
-  const averageSizeRaw = row.average_size?.trim();
-  const averageSize =
-    averageSizeRaw === "small" ||
-    averageSizeRaw === "medium" ||
-    averageSizeRaw === "large" ||
-    averageSizeRaw === "x-large"
-      ? averageSizeRaw
-      : undefined;
 
   const subtitle = optionalTrimmed(row.subtitle);
   const description = optionalTrimmed(row.description);
@@ -87,17 +97,10 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     lightRaw === "Direct sun"
       ? (lightRaw as LightLevel)
       : undefined;
-  const difficultyRaw = optionalTrimmed(row.difficulty);
-  const difficulty =
-    difficultyRaw === "Easy" || difficultyRaw === "Moderate" || difficultyRaw === "Advanced"
-      ? (difficultyRaw as CareLevel)
-      : undefined;
-
   return {
     id: row.id,
     name: row.name,
     supplierPrice,
-    price: supplierPrice,
     currency: row.currency as PlantProduct["currency"],
     ...(subtitle ? { subtitle } : {}),
     ...(description ? { description } : {}),
@@ -105,7 +108,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     ...(labels ? { labels } : {}),
     ...(light ? { light } : {}),
     ...(water ? { water } : {}),
-    ...(difficulty ? { difficulty } : {}),
     ...(location ? { location } : {}),
     ...(row.pet_friendly === true || row.pet_friendly === false
       ? { petFriendly: row.pet_friendly }
@@ -116,29 +118,19 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
     ...(subtitleHe ? { subtitleHe } : {}),
     ...(descriptionHe ? { descriptionHe } : {}),
     ...(waterHe ? { waterHe } : {}),
-    ...(averageSize ? { averageSize } : {}),
     ...(supplierName ? { supplierName } : {}),
     ...(createdAt ? { createdAt } : {}),
     inventoryType: inventoryTypeOrDefault(row.inventory_type),
+    catalogPublished: row.catalog_published === true,
   };
 }
 
 function seedPlantsWithSupplierPrice(): PlantProduct[] {
-  return PLANTS_CATALOG_SEED.map((plant) => {
-    const legacyPrice = (plant as PlantProduct & { price?: number }).price;
-    const supplierPrice =
-      typeof plant.supplierPrice === "number"
-        ? plant.supplierPrice
-        : typeof legacyPrice === "number"
-          ? legacyPrice
-          : 0;
-    return {
-      ...plant,
-      supplierPrice,
-      price: supplierPrice,
-      inventoryType: plant.inventoryType ?? "plants",
-    };
-  });
+  return PLANTS_CATALOG_SEED.map((plant) => ({
+    ...plant,
+    inventoryType: plant.inventoryType ?? "plants",
+    catalogPublished: plant.catalogPublished === true,
+  }));
 }
 
 export async function readPlants(filter?: {
@@ -148,9 +140,9 @@ export async function readPlants(filter?: {
     ? await sql`
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-          supplier_price, currency, images, labels, light, water, water_he, average_size,
-          supplier_name, difficulty, location, pet_friendly,
-          care_instructions, created_at, inventory_type
+          supplier_price, currency, images, labels, light, water, water_he,
+          supplier_name, location, pet_friendly,
+          care_instructions, created_at, inventory_type, catalog_published
         FROM plants
         WHERE inventory_type = ${filter.inventoryType}
         ORDER BY name ASC
@@ -158,9 +150,9 @@ export async function readPlants(filter?: {
     : await sql`
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-          supplier_price, currency, images, labels, light, water, water_he, average_size,
-          supplier_name, difficulty, location, pet_friendly,
-          care_instructions, created_at, inventory_type
+          supplier_price, currency, images, labels, light, water, water_he,
+          supplier_name, location, pet_friendly,
+          care_instructions, created_at, inventory_type, catalog_published
         FROM plants
         ORDER BY name ASC
       `;
@@ -180,9 +172,9 @@ export async function getPlantByIdAsync(id: string): Promise<PlantProduct | unde
   const rows = await sql`
     SELECT
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      supplier_price, currency, images, labels, light, water, water_he,
+      supplier_name, location, pet_friendly,
+      care_instructions, created_at, inventory_type, catalog_published
     FROM plants
     WHERE id = ${trimmed}
     LIMIT 1
@@ -201,13 +193,14 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
   const imagesJson = jsonArrayOrNull(plant.images);
   const labelsJson = jsonArrayOrNull(plant.labels);
   const careJson = jsonArrayOrNull(plant.careInstructions);
+  const catalogPublished = catalogPublishedForWrite(plant);
 
   const rows = await sql`
     INSERT INTO plants (
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      supplier_price, currency, images, labels, light, water, water_he,
+      supplier_name, location, pet_friendly,
+      care_instructions, created_at, inventory_type, catalog_published
     )
     VALUES (
       ${plant.id},
@@ -225,23 +218,23 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.light ?? null},
       ${plant.water ?? null},
       ${plant.waterHe ?? null},
-      ${plant.averageSize ?? null},
       ${plant.supplierName ?? null},
-      ${plant.difficulty ?? null},
       ${plant.location ?? null},
       ${plant.petFriendly ?? null},
       ${careJson}::jsonb,
       ${plant.createdAt ?? new Date().toISOString()}::timestamptz,
-      ${inventoryTypeOrDefault(plant.inventoryType)}
+      ${inventoryTypeOrDefault(plant.inventoryType)},
+      ${catalogPublished}
     )
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      supplier_price, currency, images, labels, light, water, water_he,
+      supplier_name, location, pet_friendly,
+      care_instructions, created_at, inventory_type, catalog_published
   `;
   const row = (rows as PlantRow[])[0];
   if (!row) throw new Error("Could not create plant");
+  await revalidateCatalogShopCache();
   return mapPlantRow(row);
 }
 
@@ -258,6 +251,7 @@ export async function updatePlant(
   const imagesJson = jsonArrayOrNull(plant.images);
   const labelsJson = jsonArrayOrNull(plant.labels);
   const careJson = jsonArrayOrNull(plant.careInstructions);
+  const catalogPublished = catalogPublishedForWrite(plant);
 
   const rows = await sql`
     UPDATE plants
@@ -276,21 +270,22 @@ export async function updatePlant(
       light = ${plant.light ?? null},
       water = ${plant.water ?? null},
       water_he = ${plant.waterHe ?? null},
-      average_size = ${plant.averageSize ?? null},
       supplier_name = ${plant.supplierName ?? null},
-      difficulty = ${plant.difficulty ?? null},
       location = ${plant.location ?? null},
       pet_friendly = ${plant.petFriendly ?? null},
-      care_instructions = ${careJson}::jsonb
+      care_instructions = ${careJson}::jsonb,
+      catalog_published = ${catalogPublished}
     WHERE id = ${trimmed}
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he, average_size,
-      supplier_name, difficulty, location, pet_friendly,
-      care_instructions, created_at, inventory_type
+      supplier_price, currency, images, labels, light, water, water_he,
+      supplier_name, location, pet_friendly,
+      care_instructions, created_at, inventory_type, catalog_published
   `;
   const row = (rows as PlantRow[])[0];
-  return row ? mapPlantRow(row) : null;
+  if (!row) return null;
+  await revalidateCatalogShopCache();
+  return mapPlantRow(row);
 }
 
 export async function deletePlant(id: string): Promise<boolean> {
@@ -301,5 +296,7 @@ export async function deletePlant(id: string): Promise<boolean> {
     WHERE id = ${trimmed}
     RETURNING id
   `;
-  return (rows as { id: string }[]).length > 0;
+  const deleted = (rows as { id: string }[]).length > 0;
+  if (deleted) await revalidateCatalogShopCache();
+  return deleted;
 }

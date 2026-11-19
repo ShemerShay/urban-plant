@@ -25,8 +25,13 @@ export type PostHogQuerySuccess = {
 
 export type PostHogQueryOutcome = PostHogQuerySuccess | PostHogQueryError;
 
-/** Per-request client abort so a hung HogQL call cannot stall the analytics RSC forever. */
-export const POSTHOG_QUERY_TIMEOUT_MS = 30_000;
+export type RunHogQLQueryOptions = {
+  /** Load-level abort (overall analytics budget). Best-effort socket cancel. */
+  signal?: AbortSignal;
+};
+
+/** JS deadline for one HogQL call (fetch + body). AbortSignal is cleanup only. */
+export const POSTHOG_QUERY_TIMEOUT_MS = 15_000;
 
 function trimEnv(value: string | undefined): string {
   return typeof value === "string" ? value.trim() : "";
@@ -40,6 +45,14 @@ function isTimeoutError(err: unknown): boolean {
     return err.name === "AbortError" || err.name === "TimeoutError";
   }
   return false;
+}
+
+function timeoutOutcome(name: string): PostHogQueryError {
+  return {
+    ok: false,
+    error: `PostHog query timed out after ${POSTHOG_QUERY_TIMEOUT_MS / 1000}s (${name})`,
+    code: "timeout",
+  };
 }
 
 /** API host for `/api/projects/.../query` (not the ingest `*.i.posthog.com` host). */
@@ -78,10 +91,13 @@ export function getPostHogQueryConfig():
 /**
  * Run a HogQL query against the project.
  * Requires a personal API key with Query Read scope.
+ *
+ * Settlement is guaranteed by Promise.race, not by AbortSignal.
  */
 export async function runHogQLQuery(
   query: string,
   name: string,
+  options?: RunHogQLQueryOptions,
 ): Promise<PostHogQueryOutcome> {
   const config = getPostHogQueryConfig();
   if (!config.ok) {
@@ -89,58 +105,93 @@ export async function runHogQLQuery(
   }
 
   const url = `${config.apiHost}/api/projects/${encodeURIComponent(config.projectId)}/query/`;
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.personalApiKey}`,
-      },
-      body: JSON.stringify({
-        query: { kind: "HogQLQuery", query },
-        name,
-        refresh: "blocking",
-      }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(POSTHOG_QUERY_TIMEOUT_MS),
-    });
-  } catch (err) {
-    if (isTimeoutError(err)) {
-      return {
-        ok: false,
-        error: `PostHog query timed out after ${POSTHOG_QUERY_TIMEOUT_MS / 1000}s (${name})`,
-        code: "timeout",
-      };
-    }
-    const message = err instanceof Error ? err.message : "Network error calling PostHog";
-    return { ok: false, error: message, code: "http_error" };
-  }
-
-  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!response.ok) {
-    const detail =
-      (body && typeof body.detail === "string" && body.detail) ||
-      (body && typeof body.error === "string" && body.error) ||
-      `PostHog query failed (${response.status})`;
-    return { ok: false, error: detail, code: "http_error" };
-  }
-
-  if (!body || !Array.isArray(body.results) || !Array.isArray(body.columns)) {
-    return {
-      ok: false,
-      error: "Unexpected PostHog query response shape",
-      code: "invalid_response",
-    };
-  }
-
-  return {
-    ok: true,
-    data: {
-      columns: body.columns as string[],
-      results: body.results as unknown[][],
-    },
+  const controller = new AbortController();
+  const abortRequest = (): void => {
+    if (!controller.signal.aborted) controller.abort();
   };
+  const parentSignal = options?.signal;
+  if (parentSignal) {
+    if (parentSignal.aborted) abortRequest();
+    else parentSignal.addEventListener("abort", abortRequest, { once: true });
+  }
+
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<PostHogQueryError>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      abortRequest();
+      resolve(timeoutOutcome(name));
+    }, POSTHOG_QUERY_TIMEOUT_MS);
+  });
+
+  const work = (async (): Promise<PostHogQueryOutcome> => {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.personalApiKey}`,
+        },
+        body: JSON.stringify({
+          query: { kind: "HogQLQuery", query },
+          name,
+          refresh: "blocking",
+        }),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      let body: Record<string, unknown> | null;
+      try {
+        body = (await response.json()) as Record<string, unknown>;
+      } catch (err) {
+        if (
+          isTimeoutError(err) ||
+          controller.signal.aborted ||
+          parentSignal?.aborted
+        ) {
+          return timeoutOutcome(name);
+        }
+        return {
+          ok: false,
+          error: "Unexpected PostHog query response shape",
+          code: "invalid_response",
+        };
+      }
+      if (!response.ok) {
+        const detail =
+          (typeof body.detail === "string" && body.detail) ||
+          (typeof body.error === "string" && body.error) ||
+          `PostHog query failed (${response.status})`;
+        return { ok: false, error: detail, code: "http_error" };
+      }
+      if (!Array.isArray(body.results) || !Array.isArray(body.columns)) {
+        return {
+          ok: false,
+          error: "Unexpected PostHog query response shape",
+          code: "invalid_response",
+        };
+      }
+      return {
+        ok: true,
+        data: {
+          columns: body.columns as string[],
+          results: body.results as unknown[][],
+        },
+      };
+    } catch (err) {
+      if (isTimeoutError(err) || controller.signal.aborted || parentSignal?.aborted) {
+        return timeoutOutcome(name);
+      }
+      const message = err instanceof Error ? err.message : "Network error calling PostHog";
+      return { ok: false, error: message, code: "http_error" };
+    }
+  })();
+
+  try {
+    return await Promise.race([work, deadline]);
+  } finally {
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    parentSignal?.removeEventListener("abort", abortRequest);
+  }
 }
 
 export function hogqlRowNumber(row: unknown[], index: number): number {

@@ -49,6 +49,9 @@ lerna-debug.log*
 # vercel
 .vercel
 
+# local stand-in for Netlify Blobs when not running on Netlify
+.netlify/plant-library-blobs/
+
 # uploaded plant images (keep folder)
 /public/plant-library/*
 !/public/plant-library/.gitkeep

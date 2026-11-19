@@ -27,6 +27,8 @@ type PlantImagePickerProps = {
   images: string[];
   onChange: (urls: string[]) => void;
   plantName?: string;
+  /** One model photo. A new upload replaces the current image. */
+  single?: boolean;
 };
 
 function mergeUnique(existing: string[], added: string[]): string[] {
@@ -38,7 +40,12 @@ function mergeUnique(existing: string[], added: string[]): string[] {
   return next;
 }
 
-export function PlantImagePicker({ images, onChange, plantName = "Plant" }: PlantImagePickerProps) {
+export function PlantImagePicker({
+  images,
+  onChange,
+  plantName = "Plant",
+  single = false,
+}: PlantImagePickerProps) {
   const locale = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -52,7 +59,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
 
   const uploadFiles = useCallback(
     async (files: FileList | File[]) => {
-      const list = Array.from(files);
+      const list = Array.from(files).slice(0, single ? 1 : files.length);
       if (list.length === 0) {
         setUploadError(
           displayApiError(locale, PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE, "admin.image.uploadFailed"),
@@ -94,7 +101,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
           }
           uploaded.push(data.image.url);
         }
-        onChange(mergeUnique(images, uploaded));
+        onChange(single ? uploaded.slice(-1) : mergeUnique(images, uploaded));
       } catch (error) {
         const message =
           error instanceof Error && error.message.trim()
@@ -102,13 +109,13 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
             : PLANT_IMAGE_UPLOAD_FAILED_MESSAGE;
         setUploadError(displayApiError(locale, message, "admin.image.uploadFailed"));
         if (uploaded.length > 0) {
-          onChange(mergeUnique(images, uploaded));
+          onChange(single ? uploaded.slice(-1) : mergeUnique(images, uploaded));
         }
       } finally {
         setIsUploading(false);
       }
     },
-    [images, locale, onChange],
+    [images, locale, onChange, single],
   );
 
   const loadLibrary = useCallback(async () => {
@@ -153,6 +160,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
 
   function toggleLibraryUrl(url: string) {
     setLibrarySelection((prev) => {
+      if (single) return new Set(prev.has(url) ? [] : [url]);
       const next = new Set(prev);
       if (next.has(url)) next.delete(url);
       else next.add(url);
@@ -161,7 +169,12 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
   }
 
   function applyLibrarySelection() {
-    onChange(mergeUnique(images, [...librarySelection]));
+    if (single) {
+      const chosen = [...librarySelection].at(-1);
+      onChange(chosen ? [chosen] : []);
+    } else {
+      onChange(mergeUnique(images, [...librarySelection]));
+    }
     setLibraryOpen(false);
   }
 
@@ -237,7 +250,7 @@ export function PlantImagePicker({ images, onChange, plantName = "Plant" }: Plan
           ref={inputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp,image/gif"
-          multiple
+          multiple={!single}
           className="sr-only"
           onChange={(e) => {
             if (e.target.files?.length) void uploadFiles(e.target.files);

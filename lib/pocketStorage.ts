@@ -135,8 +135,9 @@ export async function countPosSpotsForPocket(pocketId: string): Promise<number> 
 }
 
 /**
- * Delete a pocket. Assigned POS spots are set inactive and unassigned (pocket_id = null).
- * Spot rows, slugs, and numbers are preserved for historical Orders / Events / QR identity.
+ * Delete a pocket. POS rows in the pocket are unassigned (pocket_id = null).
+ * Remaining plant occupancy is Removed. Flower offers and sold leftover offers are kept.
+ * Spot rows, slugs, and numbers are preserved. Status and payment holds are left unchanged.
  */
 export async function deletePocket(id: string): Promise<{
   deleted: boolean;
@@ -145,21 +146,83 @@ export async function deletePocket(id: string): Promise<{
   const trimmed = id.trim();
   if (!trimmed) return { deleted: false, inactivatedCount: 0 };
 
-  const inactivated = await sql`
-    UPDATE pos_spots
-    SET
-      status = 'inactive',
-      pocket_id = NULL
-    WHERE pocket_id = ${trimmed}::uuid
-    RETURNING id
+  const inactivatedQuery = sql`
+    WITH old AS (
+      SELECT id, plant_variant_id
+      FROM pos_spots
+      WHERE pocket_id = ${trimmed}::uuid
+    ),
+    cleared AS (
+      UPDATE pos_spots p
+      SET
+        plant_variant_id = NULL,
+        pot_id = NULL,
+        current_offer_id = CASE
+          WHEN p.status = 'sold' THEN p.current_offer_id
+          WHEN EXISTS (
+            SELECT 1
+            FROM offers o
+            INNER JOIN plants pl ON pl.id = o.product_id
+            WHERE o.id = p.current_offer_id
+              AND COALESCE(pl.inventory_type, 'plants') = 'flowers'
+          ) THEN p.current_offer_id
+          ELSE NULL
+        END,
+        offer_placed_at = CASE
+          WHEN p.status = 'sold' THEN p.offer_placed_at
+          WHEN EXISTS (
+            SELECT 1
+            FROM offers o
+            INNER JOIN plants pl ON pl.id = o.product_id
+            WHERE o.id = p.current_offer_id
+              AND COALESCE(pl.inventory_type, 'plants') = 'flowers'
+          ) THEN p.offer_placed_at
+          ELSE NULL
+        END,
+        pocket_id = NULL
+      WHERE p.pocket_id = ${trimmed}::uuid
+      RETURNING p.id, p.plant_variant_id AS new_variant_id
+    ),
+    closed AS (
+      UPDATE placement_cycles c
+      SET
+        ended_at = now(),
+        end_reason = 'removed'
+      FROM old
+      INNER JOIN cleared ON cleared.id = old.id
+      WHERE c.pos_spot_id = old.id
+        AND c.ended_at IS NULL
+        AND old.plant_variant_id IS NOT NULL
+        AND cleared.new_variant_id IS NULL
+      RETURNING c.id
+    ),
+    closed_segments AS (
+      UPDATE placement_segments s
+      SET ended_at = now()
+      FROM closed c
+      WHERE s.placement_cycle_id = c.id
+        AND s.ended_at IS NULL
+      RETURNING s.id
+    )
+    SELECT cleared.id
+    FROM cleared
+    CROSS JOIN (
+      SELECT 1 / CASE
+        WHEN (SELECT COUNT(*) FROM closed) = (SELECT COUNT(*) FROM closed_segments)
+        THEN 1
+        ELSE 0
+      END AS seg_ok
+    ) segment_guard
   `;
-  const inactivatedCount = (inactivated as { id: string }[]).length;
-
-  const rows = await sql`
+  const deleteQuery = sql`
     DELETE FROM pockets
     WHERE id = ${trimmed}::uuid
     RETURNING id
   `;
+  const results = await sql.transaction([inactivatedQuery, deleteQuery]);
+  const inactivated = (results[0] ?? []) as { id: string }[];
+  const inactivatedCount = inactivated.length;
+  const rows = (results[1] ?? []) as { id: string }[];
   return {
     deleted: (rows as { id: string }[]).length > 0,
     inactivatedCount,

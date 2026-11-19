@@ -3,13 +3,15 @@
 import posthog from 'posthog-js'
 import { PostHogProvider as PHProvider } from 'posthog-js/react'
 
+import {
+  INTERNAL_COOKIE_NAME,
+  INTERNAL_QUERY_PARAM,
+  INTERNAL_QUERY_VALUE,
+  INTERNAL_STORAGE_KEY,
+} from '@/lib/internalTraffic'
+
 const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST
-
-/** Private one-time activation: `?up_internal=1` — not for public QR links. */
-const INTERNAL_QUERY_PARAM = 'up_internal'
-const INTERNAL_QUERY_VALUE = '1'
-const INTERNAL_STORAGE_KEY = 'up_ph_internal'
 
 /**
  * Persist staff-browser status and stamp every later event with `is_internal`.
@@ -20,6 +22,7 @@ function applyInternalDeviceCapture(): void {
     const params = new URLSearchParams(window.location.search)
     if (params.get(INTERNAL_QUERY_PARAM) === INTERNAL_QUERY_VALUE) {
       localStorage.setItem(INTERNAL_STORAGE_KEY, '1')
+      document.cookie = `${INTERNAL_COOKIE_NAME}=${INTERNAL_QUERY_VALUE}; Path=/; Max-Age=31536000; SameSite=Lax`
       params.delete(INTERNAL_QUERY_PARAM)
       const qs = params.toString()
       const next =
@@ -27,6 +30,7 @@ function applyInternalDeviceCapture(): void {
       window.history.replaceState(null, '', next)
     }
     if (localStorage.getItem(INTERNAL_STORAGE_KEY) === '1') {
+      document.cookie = `${INTERNAL_COOKIE_NAME}=${INTERNAL_QUERY_VALUE}; Path=/; Max-Age=31536000; SameSite=Lax`
       posthog.register({ is_internal: true })
     }
   } catch {

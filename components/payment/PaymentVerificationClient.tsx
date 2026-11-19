@@ -3,8 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
+import Link from "next/link";
+
 import { CustomerRecoveryActions } from "@/components/customer/CustomerRecoveryActions";
 import { useLocale } from "@/components/locale/LocaleProvider";
+import { clearCatalogCartForPaymentStatus } from "@/lib/catalogCheckoutSession";
 import { t } from "@/lib/messages";
 import {
   PAYMENT_STATUS_POLL_MS,
@@ -17,7 +20,13 @@ import {
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
 import { routes } from "@/lib/routes";
 
-type UiMode = "invalid" | "verifying" | "timeout" | "cancelled_unavailable";
+type UiMode =
+  | "invalid"
+  | "verifying"
+  | "timeout"
+  | "cancelled_unavailable"
+  | "catalog_failed"
+  | "confirmation_required";
 
 async function fetchPaymentStatus(
   orderId: string,
@@ -81,8 +90,22 @@ export function PaymentVerificationClient({
       if (cancelled || redirectedRef.current) return;
 
       if (status.state === "completed") {
+        clearCatalogCartForPaymentStatus({
+          state: status.state,
+          urlAttemptId: orderId,
+        });
         redirectedRef.current = true;
         router.replace(paymentCompletedRedirectPath(status.orderId));
+        return;
+      }
+
+      if (status.state === "confirmation_required") {
+        setMode("confirmation_required");
+        return;
+      }
+
+      if (status.state === "cancelled" && status.channel === "catalog") {
+        setMode("catalog_failed");
         return;
       }
 
@@ -131,7 +154,11 @@ export function PaymentVerificationClient({
         ? t(locale, "payment.verify.timeoutTitle")
         : mode === "cancelled_unavailable"
           ? t(locale, "payment.verify.cancelledTitle")
-          : t(locale, "payment.verify.verifyingTitle");
+          : mode === "catalog_failed"
+            ? t(locale, "payment.verify.catalogFailedTitle")
+            : mode === "confirmation_required"
+              ? t(locale, "payment.verify.confirmationTitle")
+              : t(locale, "payment.verify.verifyingTitle");
 
   const description =
     mode === "invalid"
@@ -140,7 +167,11 @@ export function PaymentVerificationClient({
         ? t(locale, "payment.verify.timeoutBody")
         : mode === "cancelled_unavailable"
           ? t(locale, "payment.verify.cancelledBody")
-          : t(locale, "payment.verify.verifyingBody");
+          : mode === "catalog_failed"
+            ? t(locale, "payment.verify.catalogFailedBody")
+            : mode === "confirmation_required"
+              ? t(locale, "payment.verify.confirmationBody")
+              : t(locale, "payment.verify.verifyingBody");
 
   return (
     <main
@@ -173,6 +204,14 @@ export function PaymentVerificationClient({
           >
             {description}
           </p>
+          {mode === "catalog_failed" || mode === "confirmation_required" ? (
+            <Link
+              href={routes.shop.index()}
+              className="text-body mt-6 flex min-h-12 w-full items-center justify-center rounded-2xl bg-brand px-5 py-4 font-semibold text-white transition hover:bg-brand-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/55 focus-visible:ring-offset-2"
+            >
+              {t(locale, "shop.backToShop")}
+            </Link>
+          ) : null}
           {mode === "timeout" ? (
             <button
               type="button"

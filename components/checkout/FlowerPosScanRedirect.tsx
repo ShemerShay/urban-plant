@@ -37,6 +37,7 @@ export function FlowerPosScanRedirect({
   partner_name,
   pocket_id,
   pocket_name,
+  channel = "partner",
 }: AnalyticsCommerceProps & { url: string }) {
   const posthog = usePostHog();
   const posSpotId = pos_spot_id?.trim() ?? "";
@@ -67,6 +68,7 @@ export function FlowerPosScanRedirect({
             partner_name,
             pocket_id,
             pocket_name,
+            channel,
           },
           { send_instantly: true, transport: "sendBeacon" },
         );

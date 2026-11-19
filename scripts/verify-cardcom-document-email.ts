@@ -49,7 +49,6 @@ async function main(): Promise<void> {
   const {
     getPosSpotById,
     readPosSpots,
-    releasePosSpotHoldForPayment,
     setPosSpotStatus,
   } = await import("../lib/posSpotStorage");
   const { processCardcomWebhook } = await import("../lib/processCardcomWebhook");
@@ -278,7 +277,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const offer = await getOfferById(available.currentOfferId);
+  const offer = await getOfferById(available.currentOfferId ?? "");
   if (!offer || offer.status !== "active" || offer.consumerPrice <= 0) {
     console.log("verify-cardcom-document-email: skip DB (no valid offer)");
     return;
@@ -357,8 +356,8 @@ async function main(): Promise<void> {
 
   async function releaseOwnedHold(): Promise<void> {
     const spot = await getPosSpotById(available!.id);
-    if (spot?.status === "held_for_payment" && spot.paymentHoldAttemptId) {
-      await releasePosSpotHoldForPayment(available!.id, spot.paymentHoldAttemptId);
+    if (spot?.status === "held_for_payment") {
+      await setPosSpotStatus(available!.id, "available");
     }
   }
 
@@ -818,6 +817,7 @@ async function main(): Promise<void> {
         id: flowerId,
         name: "Verify Flower No Email",
         inventoryType: "flowers",
+        catalogPublished: false,
         createdAt: new Date().toISOString(),
       });
       const orderId = randomUUID();

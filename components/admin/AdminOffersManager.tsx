@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useLocale } from "@/components/locale/LocaleProvider";
+import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { displayApiError, offerStatusLabel } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
-import type { OfferStatus, OfferWithProduct } from "@/lib/offerTypes";
+import type { OfferAvailability, OfferSellableVariant, OfferStatus, OfferWithProduct } from "@/lib/offerTypes";
 import type { InventoryType } from "@/lib/inventoryType";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
@@ -15,6 +16,7 @@ import type { PlantProduct } from "@/lib/types";
 type OffersApiResponse = {
   offers?: OfferWithProduct[];
   offer?: OfferWithProduct;
+  reused?: boolean;
   error?: string;
 };
 
@@ -23,10 +25,36 @@ type PlantsApiResponse = {
   error?: string;
 };
 
+type VariantChoice = {
+  sellableVariantId: string;
+  plantName: string;
+  plantSizeLabel: string;
+  potName: string | null;
+  potDiameterCm: number | null;
+};
+
+type VariantsApiResponse = {
+  sellableVariants?: VariantChoice[];
+  error?: string;
+};
+
+type LocationChoice = {
+  id: string;
+  name: string;
+};
+
+type PartnersApiResponse = {
+  partners?: LocationChoice[];
+  error?: string;
+};
+
 type OfferDraft = {
   productId: string;
+  sellableVariantId: string;
   consumerPrice: string;
   status: OfferStatus;
+  catalog: boolean;
+  locationIds: string[];
 };
 
 const STATUS_OPTIONS: OfferStatus[] = ["active", "inactive"];
@@ -35,29 +63,66 @@ const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900";
 const labelClassName = "text-xs font-medium text-slate-500";
 
+function variantLabel(
+  variant: Pick<OfferSellableVariant, "plantName" | "plantSizeLabel" | "potName" | "potDiameterCm">,
+  noPot: string,
+): string {
+  const diameter = variant.potDiameterCm != null ? `${variant.potDiameterCm} cm` : "";
+  const pot = variant.potName
+    ? [variant.potName, diameter].filter(Boolean).join(" ")
+    : noPot;
+  return `${variant.plantName} · ${variant.plantSizeLabel} · ${pot}`;
+}
+
+function availabilitiesFromDraft(draft: OfferDraft): OfferAvailability[] {
+  return [
+    ...(draft.catalog ? [{ scope: "catalog" as const, partnerLocationId: null }] : []),
+    ...draft.locationIds.map((partnerLocationId) => ({
+      scope: "partner_location" as const,
+      partnerLocationId,
+    })),
+  ];
+}
+
 function offerToDraft(offer: OfferWithProduct): OfferDraft {
+  const availabilities = offer.availabilities ?? [];
   return {
     productId: offer.productId,
+    sellableVariantId: offer.sellableVariantId ?? "",
     consumerPrice: String(offer.consumerPrice),
     status: offer.status,
+    catalog: availabilities.some((row) => row.scope === "catalog"),
+    locationIds: availabilities
+      .filter((row) => row.scope === "partner_location" && row.partnerLocationId)
+      .map((row) => row.partnerLocationId as string),
   };
 }
 
 function emptyDraft(): OfferDraft {
   return {
     productId: "",
+    sellableVariantId: "",
     consumerPrice: "",
     status: "active",
+    catalog: false,
+    locationIds: [],
   };
 }
 
-function draftToPayload(draft: OfferDraft): Record<string, unknown> {
-  const consumerPrice = Number(draft.consumerPrice);
-
+function legacyPayload(draft: OfferDraft): Record<string, unknown> {
   return {
     productId: draft.productId.trim(),
-    consumerPrice,
+    consumerPrice: Number(draft.consumerPrice),
     status: draft.status,
+  };
+}
+
+function plantPayload(draft: OfferDraft, includeVariant: boolean): Record<string, unknown> {
+  return {
+    ...(includeVariant ? { sellableVariantId: draft.sellableVariantId.trim() } : {}),
+    consumerPrice: Number(draft.consumerPrice),
+    status: draft.status,
+    availabilities: availabilitiesFromDraft(draft),
   };
 }
 
@@ -184,6 +249,57 @@ function PlantSelect({
   );
 }
 
+function AvailabilityFields({
+  draft,
+  locations,
+  onChange,
+}: {
+  draft: OfferDraft;
+  locations: LocationChoice[];
+  onChange: (next: OfferDraft) => void;
+}) {
+  const locale = useLocale();
+
+  function toggleLocation(locationId: string, checked: boolean) {
+    onChange({
+      ...draft,
+      locationIds: checked
+        ? [...draft.locationIds, locationId]
+        : draft.locationIds.filter((id) => id !== locationId),
+    });
+  }
+
+  return (
+    <div className="space-y-3 sm:col-span-2">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={draft.catalog}
+          onChange={(e) => onChange({ ...draft, catalog: e.target.checked })}
+          className={adminCheckboxClassName}
+        />
+        <span className="text-sm text-slate-800">{t(locale, "admin.offers.catalog")}</span>
+      </label>
+      <fieldset>
+        <legend className={labelClassName}>{t(locale, "admin.offers.partnerLocations")}</legend>
+        <div className="mt-2 space-y-2">
+          {locations.map((location) => (
+            <label key={location.id} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={draft.locationIds.includes(location.id)}
+                onChange={(e) => toggleLocation(location.id, e.target.checked)}
+                className={adminCheckboxClassName}
+              />
+              <span className="text-sm text-slate-800">{location.name}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </div>
+  );
+}
+
 function OfferFieldsForm({
   draft,
   plants,
@@ -211,13 +327,7 @@ function OfferFieldsForm({
             plants={plants}
             value={draft.productId}
             onChange={(productId) => {
-              const plant = plants.find((p) => p.id === productId);
-              patch({
-                productId,
-                ...(plant && !draft.consumerPrice
-                  ? { consumerPrice: String(plant.price) }
-                  : {}),
-              });
+              patch({ productId });
             }}
             required
           />
@@ -264,9 +374,105 @@ function OfferFieldsForm({
   );
 }
 
-function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
+function PlantOfferFields({
+  draft,
+  variants,
+  locations,
+  variantText,
+  onChange,
+}: {
+  draft: OfferDraft;
+  variants: VariantChoice[];
+  locations: LocationChoice[];
+  variantText?: string;
+  onChange: (next: OfferDraft) => void;
+}) {
+  const locale = useLocale();
+
+  function patch(partial: Partial<OfferDraft>) {
+    onChange({ ...draft, ...partial });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {variantText ? (
+          <div className="sm:col-span-2">
+            <span className={labelClassName}>{t(locale, "admin.offers.variant")}</span>
+            <p className="mt-1 text-sm text-slate-900">{variantText}</p>
+          </div>
+        ) : (
+          <label className="block sm:col-span-2">
+            <span className={labelClassName}>{t(locale, "admin.offers.variant")}</span>
+            <select
+              className={inputClassName}
+              value={draft.sellableVariantId}
+              required
+              onChange={(e) => patch({ sellableVariantId: e.target.value })}
+            >
+              <option value="">{t(locale, "admin.offers.selectVariant")}</option>
+              {variants.map((variant) => (
+                <option key={variant.sellableVariantId} value={variant.sellableVariantId}>
+                  {variantLabel(variant, t(locale, "admin.offers.noPot"))}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="block">
+          <span className={labelClassName}>{t(locale, "admin.offers.consumerPrice")}</span>
+          <input
+            className={inputClassName}
+            type="number"
+            min={0}
+            step={1}
+            value={draft.consumerPrice}
+            onChange={(e) => patch({ consumerPrice: e.target.value })}
+            required
+          />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className={labelClassName}>{t(locale, "admin.common.status")}</span>
+          <select
+            className={inputClassName}
+            value={draft.status}
+            onChange={(e) => patch({ status: e.target.value as OfferStatus })}
+          >
+            {STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>
+                {offerStatusLabel(locale, status)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <AvailabilityFields draft={draft} locations={locations} onChange={onChange} />
+      </div>
+    </div>
+  );
+}
+
+function contextLabel(
+  row: OfferAvailability,
+  locations: LocationChoice[],
+  catalogLabel: string,
+): string {
+  if (row.scope === "catalog") return catalogLabel;
+  const location = locations.find((item) => item.id === row.partnerLocationId);
+  return location?.name || row.partnerLocationId || "";
+}
+
+function OfferDetailView({
+  offer,
+  locations,
+}: {
+  offer: OfferWithProduct;
+  locations: LocationChoice[];
+}) {
   const locale = useLocale();
   const missingPlant = offer.productName === offer.productId && offer.plantImages.length === 0;
+  const contexts = (offer.availabilities ?? [])
+    .map((row) => contextLabel(row, locations, t(locale, "admin.offers.catalog")))
+    .filter(Boolean);
 
   return (
     <div>
@@ -284,6 +490,14 @@ function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
             <span className="font-mono text-xs text-slate-500">({offer.productId})</span>
           </dd>
         </div>
+        {offer.sellableVariant ? (
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="font-medium text-slate-500">{t(locale, "admin.offers.variant")}</dt>
+            <dd className="text-slate-900">
+              {variantLabel(offer.sellableVariant, t(locale, "admin.offers.noPot"))}
+            </dd>
+          </div>
+        ) : null}
         {offer.plantSubtitle ? (
           <div className="flex flex-wrap gap-x-2">
             <dt className="font-medium text-slate-500">{t(locale, "admin.offers.plantSubtitle")}</dt>
@@ -298,6 +512,12 @@ function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
           <dt className="font-medium text-slate-500">{t(locale, "admin.common.status")}</dt>
           <dd className="text-slate-900">{offerStatusLabel(locale, offer.status)}</dd>
         </div>
+        {offer.sellableVariant ? (
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="font-medium text-slate-500">{t(locale, "admin.offers.availability")}</dt>
+            <dd className="text-slate-900">{contexts.join(", ")}</dd>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.common.createdAt")}</dt>
           <dd className="font-mono text-xs text-slate-900">{offer.createdAt}</dd>
@@ -310,6 +530,8 @@ function OfferDetailView({ offer }: { offer: OfferWithProduct }) {
 function AdminOfferCard({
   offer,
   plants,
+  locations,
+  variantBacked,
   isEditing,
   onStartEdit,
   onCancelEdit,
@@ -317,6 +539,8 @@ function AdminOfferCard({
 }: {
   offer: OfferWithProduct;
   plants: PlantProduct[];
+  locations: LocationChoice[];
+  variantBacked: boolean;
   isEditing: boolean;
   onStartEdit: () => void;
   onCancelEdit: () => void;
@@ -337,12 +561,12 @@ function AdminOfferCard({
   }, [isEditing]);
 
   async function handleSave() {
-    if (!draft.productId.trim()) {
+    if (!variantBacked && !draft.productId.trim()) {
       setSaveError(t(locale, "admin.offers.selectPlantRequired"));
       return;
     }
     const consumerPrice = Number(draft.consumerPrice);
-    if (!Number.isFinite(consumerPrice) || consumerPrice < 0) {
+    if (draft.consumerPrice.trim() === "" || !Number.isFinite(consumerPrice) || consumerPrice < 0) {
       setSaveError(t(locale, "admin.offers.consumerPriceInvalid"));
       return;
     }
@@ -353,7 +577,9 @@ function AdminOfferCard({
       const res = await fetch(routes.api.offer(offer.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draftToPayload(draft)),
+        body: JSON.stringify(
+          variantBacked ? plantPayload(draft, false) : legacyPayload(draft),
+        ),
       });
       const data = (await res.json().catch(() => ({}))) as OffersApiResponse;
       if (!res.ok) {
@@ -369,6 +595,9 @@ function AdminOfferCard({
   }
 
   const headerImage = offer.plantImages[0];
+  const savedVariantText = offer.sellableVariant
+    ? variantLabel(offer.sellableVariant, t(locale, "admin.offers.noPot"))
+    : offer.sellableVariantId ?? "";
 
   return (
     <article className="overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
@@ -421,11 +650,17 @@ function AdminOfferCard({
         <div className="border-t border-slate-100 px-4 pb-4 pt-4">
           {isEditing ? (
             <>
-              <OfferFieldsForm
-                draft={draft}
-                plants={plants}
-                onChange={setDraft}
-              />
+              {variantBacked ? (
+                <PlantOfferFields
+                  draft={draft}
+                  variants={[]}
+                  locations={locations}
+                  variantText={savedVariantText}
+                  onChange={setDraft}
+                />
+              ) : (
+                <OfferFieldsForm draft={draft} plants={plants} onChange={setDraft} />
+              )}
               {saveError ? <p className="mt-3 text-sm text-red-700">{saveError}</p> : null}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -447,7 +682,7 @@ function AdminOfferCard({
               </div>
             </>
           ) : (
-            <OfferDetailView offer={offer} />
+            <OfferDetailView offer={offer} locations={locations} />
           )}
         </div>
       ) : null}
@@ -455,18 +690,34 @@ function AdminOfferCard({
   );
 }
 
-export function AdminOffersManager({ inventoryType }: { inventoryType: InventoryType }) {
+export function AdminOffersManager({
+  inventoryType,
+  initialOffers,
+  initialPlants,
+  initialVariants = [],
+  initialLocations = [],
+}: {
+  inventoryType: InventoryType;
+  initialOffers: OfferWithProduct[];
+  initialPlants: PlantProduct[];
+  initialVariants?: VariantChoice[];
+  initialLocations?: LocationChoice[];
+}) {
   const locale = useLocale();
-  const [offers, setOffers] = useState<OfferWithProduct[]>([]);
-  const [plants, setPlants] = useState<PlantProduct[]>([]);
+  const [offers, setOffers] = useState<OfferWithProduct[]>(initialOffers);
+  const [plants, setPlants] = useState<PlantProduct[]>(initialPlants);
+  const [variants, setVariants] = useState<VariantChoice[]>(initialVariants);
+  const [locations, setLocations] = useState<LocationChoice[]>(initialLocations);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState(emptyDraft);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createNotice, setCreateNotice] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const isPlants = inventoryType === "plants";
 
   const filteredOffers = useMemo(
     () => offers.filter((offer) => offerMatchesSearch(offer, searchQuery)),
@@ -477,7 +728,7 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [offersRes, plantsRes] = await Promise.all([
+      const requests: Promise<Response>[] = [
         fetch(`${routes.api.offers()}?inventoryType=${inventoryType}`, {
           cache: "no-store",
           signal,
@@ -486,7 +737,14 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
           cache: "no-store",
           signal,
         }),
-      ]);
+      ];
+      if (isPlants) {
+        requests.push(
+          fetch(routes.api.sellableVariantList(), { cache: "no-store", signal }),
+          fetch(routes.api.partners(), { cache: "no-store", signal }),
+        );
+      }
+      const [offersRes, plantsRes, variantsRes, partnersRes] = await Promise.all(requests);
       const offersData = (await offersRes.json().catch(() => ({}))) as OffersApiResponse;
       const plantsData = (await plantsRes.json().catch(() => ({}))) as PlantsApiResponse;
       if (signal?.aborted) return;
@@ -499,6 +757,24 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
       if (plantsRes.ok) {
         setPlants(plantsData.plants ?? []);
       }
+      if (isPlants && variantsRes) {
+        const variantsData = (await variantsRes.json().catch(() => ({}))) as VariantsApiResponse;
+        if (!variantsRes.ok) {
+          setLoadError(displayApiError(locale, variantsData.error, "admin.offers.loadFailed"));
+          setVariants([]);
+        } else {
+          setVariants(variantsData.sellableVariants ?? []);
+        }
+      }
+      if (isPlants && partnersRes?.ok) {
+        const partnersData = (await partnersRes.json().catch(() => ({}))) as PartnersApiResponse;
+        setLocations(
+          (partnersData.partners ?? []).map((location) => ({
+            id: location.id,
+            name: location.name,
+          })),
+        );
+      }
     } catch {
       if (signal?.aborted) return;
       setLoadError(t(locale, "admin.offers.loadNetworkError"));
@@ -506,17 +782,21 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, [inventoryType, locale]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadData(controller.signal);
-    return () => controller.abort();
-  }, [loadData]);
+  }, [inventoryType, isPlants, locale]);
 
   async function handleCreate() {
-    if (!createDraft.productId.trim()) {
+    if (isPlants) {
+      if (variants.length === 0) return;
+      if (!createDraft.sellableVariantId.trim()) {
+        setCreateError(t(locale, "admin.offers.selectVariantRequired"));
+        return;
+      }
+    } else if (!createDraft.productId.trim()) {
       setCreateError(t(locale, "admin.offers.selectPlantRequired"));
+      return;
+    }
+    if (createDraft.consumerPrice.trim() === "") {
+      setCreateError(t(locale, "admin.offers.consumerPriceInvalid"));
       return;
     }
     const consumerPrice = Number(createDraft.consumerPrice);
@@ -527,7 +807,7 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
 
     setIsCreating(true);
     setCreateError(null);
-    const payload = draftToPayload(createDraft);
+    const payload = isPlants ? plantPayload(createDraft, true) : legacyPayload(createDraft);
 
     try {
       const res = await fetch(`${routes.api.offers()}?inventoryType=${inventoryType}`, {
@@ -540,6 +820,7 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
         setCreateError(displayApiError(locale, data.error, "admin.offers.createFailed"));
         return;
       }
+      setCreateNotice(data.reused ? t(locale, "admin.offers.existingUpdated") : null);
       setShowCreate(false);
       setCreateDraft(emptyDraft());
       await loadData();
@@ -549,6 +830,8 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
       setIsCreating(false);
     }
   }
+
+  const createBlocked = isPlants ? variants.length === 0 : plants.length === 0;
 
   return (
     <>
@@ -576,6 +859,7 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
             onClick={() => {
               setShowCreate((open) => !open);
               setCreateError(null);
+              setCreateNotice(null);
               if (showCreate) setCreateDraft(emptyDraft());
             }}
             className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-700 text-white shadow-sm transition hover:bg-emerald-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
@@ -591,27 +875,41 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
         </div>
       </div>
 
+      {createNotice ? (
+        <p className="mb-4 text-sm text-emerald-800">{createNotice}</p>
+      ) : null}
 
       {showCreate ? (
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
           <h2 className="mb-4 text-base font-semibold text-emerald-950">
             {t(locale, "admin.offers.new")}
           </h2>
-          {plants.length === 0 ? (
-            <p className="text-sm text-amber-800">{t(locale, "admin.offers.addPlantsFirst")}</p>
+          {createBlocked ? (
+            <p className="text-sm text-amber-800">
+              {t(locale, isPlants ? "admin.offers.addVariantsFirst" : "admin.offers.addPlantsFirst")}
+            </p>
           ) : (
             <>
-              <OfferFieldsForm
-                draft={createDraft}
-                plants={plants}
-                onChange={setCreateDraft}
-              />
+              {isPlants ? (
+                <PlantOfferFields
+                  draft={createDraft}
+                  variants={variants}
+                  locations={locations}
+                  onChange={setCreateDraft}
+                />
+              ) : (
+                <OfferFieldsForm
+                  draft={createDraft}
+                  plants={plants}
+                  onChange={setCreateDraft}
+                />
+              )}
               {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => void handleCreate()}
-                  disabled={isCreating || plants.length === 0}
+                  disabled={isCreating || createBlocked}
                   className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-50"
                 >
                   {isCreating ? t(locale, "admin.common.creating") : t(locale, "admin.offers.create")}
@@ -666,6 +964,8 @@ export function AdminOffersManager({ inventoryType }: { inventoryType: Inventory
               <AdminOfferCard
                 offer={offer}
                 plants={plants}
+                locations={locations}
+                variantBacked={isPlants && Boolean(offer.sellableVariantId)}
                 isEditing={editingId === offer.id}
                 onStartEdit={() => {
                   setEditingId(offer.id);

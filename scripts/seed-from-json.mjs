@@ -91,8 +91,14 @@ async function seedPartnerLocations() {
   let count = 0;
   for (const loc of partnerLocations) {
     await sql`
-      INSERT INTO partner_locations (id, name, address, type, payments, created_at)
+      INSERT INTO partners (id, name)
+      VALUES (${loc.id}, ${loc.name})
+      ON CONFLICT (id) DO NOTHING
+    `;
+    await sql`
+      INSERT INTO partner_locations (id, partner_id, name, address, type, payments, created_at)
       VALUES (
+        ${loc.id},
         ${loc.id},
         ${loc.name},
         ${loc.address},

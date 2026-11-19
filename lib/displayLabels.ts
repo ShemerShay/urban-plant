@@ -10,9 +10,11 @@ import {
   PLANT_IMAGE_UPLOAD_FAILED_MESSAGE,
 } from "@/lib/plantImageUpload";
 import type { CheckoutFieldErrors, CheckoutFieldKey } from "@/lib/checkoutValidation";
+import type { OrderChannel } from "@/lib/orderSaleIdentity";
+import type { PurchaseEmailStatus } from "@/lib/orderTypes";
 import type { InventoryStatus, OrderStatus, PlantStatus } from "@/lib/status";
 import type { PosSpotStatus } from "@/lib/posSpotTypes";
-import type { CareLevel, LightLevel, PlantProduct } from "@/lib/types";
+import type { LightLevel } from "@/lib/types";
 
 export function inventoryStatusLabel(locale: Locale, status: InventoryStatus): string {
   switch (status) {
@@ -74,36 +76,34 @@ export function lightLabel(locale: Locale, light: LightLevel): string {
   }
 }
 
-export function careLabel(locale: Locale, difficulty: CareLevel): string {
-  switch (difficulty) {
-    case "Easy":
-      return t(locale, "plant.care.easy");
-    case "Moderate":
-      return t(locale, "plant.care.moderate");
-    case "Advanced":
-      return t(locale, "plant.care.advanced");
-  }
-}
-
-export function sizeLabel(locale: Locale, averageSize: PlantProduct["averageSize"]): string {
-  switch (averageSize) {
-    case "small":
-      return t(locale, "plant.size.small");
-    case "medium":
-      return t(locale, "plant.size.medium");
-    case "large":
-      return t(locale, "plant.size.large");
-    case "x-large":
-      return t(locale, "plant.size.xlarge");
-    default:
-      return "";
-  }
-}
-
 export function fulfillmentLabel(locale: Locale, method: "delivery" | "pickup"): string {
   return method === "pickup"
     ? t(locale, "checkout.fulfillment.pickup")
     : t(locale, "checkout.fulfillment.delivery");
+}
+
+export function orderChannelLabel(locale: Locale, channel: OrderChannel): string {
+  return channel === "catalog"
+    ? t(locale, "admin.orders.channelCatalog")
+    : t(locale, "admin.orders.channelPartner");
+}
+
+export function purchaseEmailStatusLabel(
+  locale: Locale,
+  status: PurchaseEmailStatus,
+): string {
+  switch (status) {
+    case "pending":
+      return t(locale, "admin.orders.emailStatus.pending");
+    case "processing":
+      return t(locale, "admin.orders.emailStatus.processing");
+    case "sent":
+      return t(locale, "admin.orders.emailStatus.sent");
+    case "failed":
+      return t(locale, "admin.orders.emailStatus.failed");
+    case "skipped":
+      return t(locale, "admin.orders.emailStatus.skipped");
+  }
 }
 
 export function productPageCtaDisplay(
@@ -134,7 +134,7 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not retry payment. Try again.": "checkout.error.retryPayment",
   "Payment is temporarily unavailable. Try again later.": "checkout.error.unavailable",
   "Payment session is not available to retry.": "checkout.error.retrySession",
-  "This plant is no longer held for your payment.": "checkout.error.noLongerHeld",
+  "This order is no longer held for your payment.": "shop.error.orderNoLongerHeld",
   "Payment is already being prepared. Please wait.": "checkout.error.alreadyPreparing",
   "This POS Spot is not available for purchase.": "checkout.error.spotUnavailable",
   "This POS Spot is no longer available for purchase.": "checkout.error.spotNoLonger",
@@ -149,6 +149,9 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not save partner": "admin.partners.saveFailed",
   "Could not create partner": "admin.partners.createFailed",
   "Could not save POS Spot": "admin.qr.saveFailed",
+  "This variant has no remaining Back Office stock": "admin.pos.inventorySource.zeroStock",
+  "inventorySource is required for Place and Replace": "admin.pos.inventorySource.required",
+  "inventorySource is invalid": "admin.pos.inventorySource.invalid",
   [PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE]: "admin.image.unsupportedType",
   [PLANT_IMAGE_SOURCE_TOO_LARGE_MESSAGE]: "admin.image.sourceTooLarge",
   [PLANT_IMAGE_GIF_TOO_LARGE_MESSAGE]: "admin.image.gifTooLarge",
@@ -163,10 +166,31 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not load plants": "admin.plants.loadFailed",
   "Network error while loading plants": "admin.plants.loadNetworkError",
   "Could not create plant": "admin.plants.createFailed",
+  "Cannot delete this size: used by a Sellable Variant":
+    "admin.plants.variants.deleteBlockedSellable",
+  "Cannot delete this size: has inventory/history":
+    "admin.plants.variants.deleteBlockedInventory",
+  "Cannot delete this size: used by POS/placement": "admin.plants.variants.deleteBlockedPos",
+  "Cannot delete this size: referenced by a historical order":
+    "admin.plants.variants.deleteBlockedOrder",
+  "This size is in use and cannot be deleted": "admin.plants.variants.deleteBlockedInUse",
+  "This plant size already has that pot": "admin.plants.sellableVariants.duplicate",
+  "Choose an active pot": "admin.plants.sellableVariants.inactivePot",
+  "This variant is used by an active offer. Create a new variant for a different configuration.":
+    "admin.plants.sellableVariants.activeOfferLocked",
+  "Plant size cannot be changed": "admin.plants.sellableVariants.plantSizeLocked",
+  "Pot color is not part of this variant": "admin.plants.sellableVariants.potColorRejected",
+  "Quantity must be a whole number of 0 or more": "admin.plants.variants.invalidQuantity",
+  "Inventory quantity cannot go below 0": "admin.plants.variants.belowZero",
+  "Inventory delta cannot be 0": "admin.plants.variants.deltaZero",
+  "Inventory delta must be a non-zero integer": "admin.plants.variants.invalidDelta",
+  "delta must be a non-zero integer": "admin.plants.variants.invalidDelta",
   "Could not save offer": "admin.offers.saveFailed",
   "Could not load offers": "admin.offers.loadFailed",
   "Network error while loading offers": "admin.offers.loadNetworkError",
   "Could not create offer": "admin.offers.createFailed",
+  "This price is already used by another offer for this variant": "admin.offers.priceConflict",
+  "Another active Catalog offer already exists for this variant": "admin.offers.catalogConflict",
 };
 
 export function offerStatusLabel(locale: Locale, status: string): string {

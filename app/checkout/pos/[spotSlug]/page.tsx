@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { TrackCheckoutStarted } from "@/components/analytics/TrackCheckoutStarted";
@@ -9,6 +10,7 @@ import { FlowerPosScanRedirect } from "@/components/checkout/FlowerPosScanRedire
 import { PlantImageGallery } from "@/components/plant/PlantImageGallery";
 import { PlantPageHeader } from "@/components/plant/PlantPageHeader";
 import { getLocale } from "@/lib/getLocale";
+import { INTERNAL_COOKIE_NAME, isInternalAnalyticsSignal } from "@/lib/internalTraffic";
 import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import { t } from "@/lib/messages";
 import { formatPrice } from "@/lib/mockPlants";
@@ -17,6 +19,7 @@ import { parseOrderIdQueryParam } from "@/lib/cardcomPaymentStatus";
 import { getAwaitingPaymentAttemptForResume } from "@/lib/paymentAttemptStorage";
 import { getPendingOrderForPaymentResume } from "@/lib/ordersStorage";
 import { isPaymentResumeTokenShape } from "@/lib/paymentResumeToken";
+import { isEmptyPosOccupancy } from "@/lib/posOccupancy";
 import { getPosLandingDetails } from "@/lib/posLandingRead";
 import { getPosSpotForCustomerPurchase } from "@/lib/purchaseEligibility";
 import { startCardcomPaymentPrep } from "@/lib/startCardcomPaymentPrep";
@@ -27,6 +30,7 @@ interface PosCheckoutPageProps {
     paymentFailed?: string | string[];
     orderId?: string | string[];
     resume?: string | string[];
+    up_internal?: string | string[];
   }>;
 }
 
@@ -39,14 +43,52 @@ export default async function PosCheckoutPage({
   params,
   searchParams,
 }: PosCheckoutPageProps) {
-  const { spotSlug } = await params;
-  const locale = await getLocale();
-  const sp = await searchParams;
+  const [{ spotSlug }, locale, sp] = await Promise.all([params, getLocale(), searchParams]);
   const resolved = await getPosSpotForCustomerPurchase(spotSlug);
   if (!resolved) notFound();
   const { posSpot } = resolved;
 
-  const { offer, plant, partner, pocket } = await getPosLandingDetails(posSpot);
+  const { offer, plant, partner, pocket, placement } = await getPosLandingDetails(posSpot);
+  if (isEmptyPosOccupancy(posSpot)) {
+    const partnerName = partner?.name?.trim() || undefined;
+    return (
+      <main
+        id="main-content"
+        tabIndex={-1}
+        data-page="checkout-page"
+        data-pos-empty="true"
+        className="mx-auto min-h-screen w-full max-w-md px-4 py-6"
+      >
+        <TrackPosScan
+          pos_spot_id={posSpot.id}
+          spot_slug={posSpot.spotSlug}
+          partner_id={posSpot.partnerLocationId}
+          partner_name={partnerName}
+          pocket_id={posSpot.pocketId}
+          pocket_name={pocket?.name}
+          channel="partner"
+        />
+        <RememberCustomerPath />
+        <div className="space-y-6">
+          <PlantPageHeader knownPartner={partner?.name ?? ""} />
+          <section
+            className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
+            aria-labelledby="checkout-order-heading"
+          >
+            <h1
+              id="checkout-order-heading"
+              className="text-heading font-semibold text-foreground"
+            >
+              {t(locale, "checkout.empty.title")}
+            </h1>
+            <p className="text-body mt-3 leading-6 text-slate-600">
+              {t(locale, "checkout.empty.body")}
+            </p>
+          </section>
+        </div>
+      </main>
+    );
+  }
   if (!offer || offer.status !== "active") notFound();
   if (!plant) notFound();
 
@@ -69,9 +111,11 @@ export default async function PosCheckoutPage({
     pocket_id: posSpot.pocketId,
     pocket_name: pocket?.name,
     amount: offer.consumerPrice,
+    channel: "partner" as const,
   };
 
   if (isFlowerCheckout) {
+    const jar = await cookies();
     const result = await startCardcomPaymentPrep({
       plantId: plant.id,
       spotSlug: posSpot.spotSlug,
@@ -79,6 +123,10 @@ export default async function PosCheckoutPage({
       customerEmail: "",
       phone: "",
       fulfillmentMethod: "pickup",
+      isInternal: isInternalAnalyticsSignal({
+        queryValue: readParam(sp.up_internal),
+        cookieValue: jar.get(INTERNAL_COOKIE_NAME)?.value ?? null,
+      }),
     });
     if (!result.ok) {
       return (
@@ -211,8 +259,33 @@ export default async function PosCheckoutPage({
                     id="checkout-order-heading"
                     className="text-heading-sm font-semibold text-foreground sm:text-heading"
                   >
-                    {t(locale, "checkout.plant.withPot", { name: displayName })}
+                    {placement.potColor
+                      ? t(locale, "checkout.plant.withPot", { name: displayName })
+                      : displayName}
                   </h1>
+                  {placement.plantSizeLabel ? (
+                    <p className="text-body mt-1 text-slate-600">
+                      {t(locale, "checkout.plant.size", { size: placement.plantSizeLabel })}
+                    </p>
+                  ) : null}
+                  {placement.potColor && (placement.potName || placement.potSizeLabel) ? (
+                    <p className="text-body mt-1 text-slate-600">
+                      {t(locale, "checkout.plant.pot", {
+                        pot: placement.potName ?? "",
+                        size: placement.potSizeLabel ?? "",
+                      }).trim()}
+                    </p>
+                  ) : null}
+                  {placement.potColor ? (
+                    <p className="text-body mt-1 text-slate-600">
+                      {t(locale, "checkout.plant.color", {
+                        color:
+                          locale === "he" && placement.potColorHe
+                            ? placement.potColorHe
+                            : placement.potColor,
+                      })}
+                    </p>
+                  ) : null}
                   <p className="text-heading-sm mt-1 font-semibold text-foreground">{priceDisplay}</p>
                 </div>
               </div>

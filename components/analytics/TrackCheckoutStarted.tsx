@@ -22,6 +22,7 @@ export function TrackCheckoutStarted({
   pocket_id,
   pocket_name,
   amount,
+  channel,
 }: AnalyticsCommerceProps) {
   const posthog = usePostHog();
   const firedRef = useRef(false);
@@ -45,6 +46,7 @@ export function TrackCheckoutStarted({
         pocket_id,
         pocket_name,
         amount,
+        channel,
       },
     );
     if (sent) firedRef.current = true;
@@ -61,6 +63,7 @@ export function TrackCheckoutStarted({
     pocket_id,
     pocket_name,
     amount,
+    channel,
   ]);
 
   return null;
