@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/adminAuth";
 import { getPlantById } from "@/lib/plantCatalog";
 import { enrichOfferWithProduct } from "@/lib/offerEnrichment";
-import { OfferWriteError, getOfferById, offerWriteHttp, updateOffer } from "@/lib/offerStorage";
+import { OfferWriteError, deleteOffer, getOfferById, offerWriteHttp, updateOffer } from "@/lib/offerStorage";
 import { inventoryTypeOrDefault } from "@/lib/inventoryType";
 import type { OfferStatus } from "@/lib/offerTypes";
 
@@ -143,5 +143,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ offer: await enrichOfferWithProduct(offer) });
   } catch (error) {
     return offerError(error, "Could not save offer");
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  if (!isAdminRequest(request)) return unauthorized();
+
+  const { offerId: rawId } = await params;
+  const offerId = decodeURIComponent(rawId);
+  try {
+    await deleteOffer(offerId);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return offerError(error, "Could not delete offer");
   }
 }

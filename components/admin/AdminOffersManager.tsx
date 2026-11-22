@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useLocale } from "@/components/locale/LocaleProvider";
+import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { displayApiError, offerStatusLabel } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
@@ -58,6 +59,14 @@ type OfferDraft = {
 };
 
 const STATUS_OPTIONS: OfferStatus[] = ["active", "inactive"];
+
+function listedOffers(
+  offers: OfferWithProduct[],
+  inventoryType: InventoryType,
+): OfferWithProduct[] {
+  if (inventoryType !== "plants") return offers;
+  return offers.filter((offer) => Boolean(offer.sellableVariantId));
+}
 
 const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900";
@@ -536,6 +545,7 @@ function AdminOfferCard({
   onStartEdit,
   onCancelEdit,
   onSaved,
+  onRequestDelete,
 }: {
   offer: OfferWithProduct;
   plants: PlantProduct[];
@@ -545,6 +555,7 @@ function AdminOfferCard({
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onSaved: (offer: OfferWithProduct) => void;
+  onRequestDelete: () => void;
 }) {
   const locale = useLocale();
   const [isOpen, setIsOpen] = useState(false);
@@ -682,7 +693,19 @@ function AdminOfferCard({
               </div>
             </>
           ) : (
-            <OfferDetailView offer={offer} locations={locations} />
+            <>
+              <OfferDetailView offer={offer} locations={locations} />
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={onRequestDelete}
+                  className="rounded-xl border border-red-100 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                  aria-label={t(locale, "admin.offers.deleteAria", { name: offer.productName })}
+                >
+                  {t(locale, "admin.offers.delete")}
+                </button>
+              </div>
+            </>
           )}
         </div>
       ) : null}
@@ -704,7 +727,9 @@ export function AdminOffersManager({
   initialLocations?: LocationChoice[];
 }) {
   const locale = useLocale();
-  const [offers, setOffers] = useState<OfferWithProduct[]>(initialOffers);
+  const [offers, setOffers] = useState<OfferWithProduct[]>(() =>
+    listedOffers(initialOffers, inventoryType),
+  );
   const [plants, setPlants] = useState<PlantProduct[]>(initialPlants);
   const [variants, setVariants] = useState<VariantChoice[]>(initialVariants);
   const [locations, setLocations] = useState<LocationChoice[]>(initialLocations);
@@ -717,6 +742,9 @@ export function AdminOffersManager({
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const isPlants = inventoryType === "plants";
 
   const filteredOffers = useMemo(
@@ -753,7 +781,7 @@ export function AdminOffersManager({
         setOffers([]);
         return;
       }
-      setOffers(offersData.offers ?? []);
+      setOffers(listedOffers(offersData.offers ?? [], inventoryType));
       if (plantsRes.ok) {
         setPlants(plantsData.plants ?? []);
       }
@@ -783,6 +811,27 @@ export function AdminOffersManager({
       if (!signal?.aborted) setIsLoading(false);
     }
   }, [inventoryType, isPlants, locale]);
+
+  async function confirmDelete() {
+    if (!deleteId) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(routes.api.offer(deleteId), { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as OffersApiResponse;
+      if (!res.ok) {
+        setDeleteError(displayApiError(locale, data.error, "admin.offers.deleteFailed"));
+        return;
+      }
+      setOffers((prev) => prev.filter((item) => item.id !== deleteId));
+      if (editingId === deleteId) setEditingId(null);
+      setDeleteId(null);
+    } catch {
+      setDeleteError(t(locale, "common.networkError"));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
 
   async function handleCreate() {
     if (isPlants) {
@@ -978,11 +1027,28 @@ export function AdminOffersManager({
                   );
                   setEditingId(null);
                 }}
+                onRequestDelete={() => {
+                  setDeleteError(null);
+                  setDeleteId(offer.id);
+                }}
               />
             </li>
           ))}
         </ul>
       )}
+      <AdminConfirmDialog
+        open={deleteId != null}
+        title={t(locale, "admin.offers.deleteTitle")}
+        message={t(locale, "admin.offers.deleteMessage")}
+        confirmLabel={t(locale, "admin.offers.deleteConfirm")}
+        destructive
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          if (!deleteBusy) setDeleteId(null);
+        }}
+        onConfirm={() => void confirmDelete()}
+      />
     </>
   );
 }

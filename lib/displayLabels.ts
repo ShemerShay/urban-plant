@@ -193,6 +193,8 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not create offer": "admin.offers.createFailed",
   "This price is already used by another offer for this variant": "admin.offers.priceConflict",
   "Another active Catalog offer already exists for this variant": "admin.offers.catalogConflict",
+  "This offer is still in use or in history and cannot be deleted": "admin.offers.inUse",
+  "Could not delete offer": "admin.offers.deleteFailed",
 };
 
 export function offerStatusLabel(locale: Locale, status: string): string {

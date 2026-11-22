@@ -36,6 +36,8 @@ export const OFFER_FLOWER_VARIANT_REJECTED =
 export const OFFER_LEGACY_VARIANT_REJECTED =
   "This offer cannot gain a variant or availabilities";
 export const OFFER_VARIANT_IMMUTABLE = "sellableVariantId cannot be changed";
+export const OFFER_IN_USE =
+  "This offer is still in use or in history and cannot be deleted";
 
 export type OfferWriteCode = "conflict" | "invalid" | "not_found";
 
@@ -351,6 +353,63 @@ export async function getOfferById(id: string): Promise<Offer | undefined> {
   if (!trimmed) return undefined;
   const rows = await queryOffers({ id: trimmed });
   return rows[0];
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  const { code, message } = pgErrorParts(error);
+  return code === "23503" || /foreign key|violates foreign key constraint/i.test(message);
+}
+
+function quoteIdent(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error("Unexpected identifier");
+  }
+  return `"${name}"`;
+}
+
+async function offerHasBlockingReferences(offerId: string): Promise<boolean> {
+  const columns = await sql`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND column_name IN ('offer_id', 'current_offer_id')
+      AND table_name <> 'offer_availabilities'
+      AND table_name <> 'offers'
+  `;
+  const seen = new Set<string>();
+  for (const row of columns as { table_name: string; column_name: string }[]) {
+    const key = `${row.table_name}.${row.column_name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const counted = await sql.query(
+      `SELECT count(*)::int AS n FROM ${quoteIdent(row.table_name)} WHERE ${quoteIdent(row.column_name)} = $1`,
+      [offerId],
+    );
+    if ((counted[0] as { n: number } | undefined)?.n) return true;
+  }
+  return false;
+}
+
+export async function deleteOffer(offerId: string): Promise<void> {
+  const trimmed = offerId.trim();
+  if (!trimmed) throw new OfferWriteError("not_found", "Offer not found");
+  const existing = await getOfferById(trimmed);
+  if (!existing) throw new OfferWriteError("not_found", "Offer not found");
+  if (await offerHasBlockingReferences(trimmed)) {
+    throw new OfferWriteError("conflict", OFFER_IN_USE);
+  }
+  try {
+    await sql.transaction([
+      sql`DELETE FROM offer_availabilities WHERE offer_id = ${trimmed}`,
+      sql`DELETE FROM offers WHERE id = ${trimmed}`,
+    ]);
+  } catch (error) {
+    if (isForeignKeyViolation(error)) {
+      throw new OfferWriteError("conflict", OFFER_IN_USE);
+    }
+    throw error;
+  }
+  await revalidateCatalogShopCache();
 }
 
 async function readVariantPlant(sellableVariantId: string): Promise<VariantPlant | null> {
