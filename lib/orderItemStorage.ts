@@ -8,7 +8,7 @@ import "server-only";
 import { sql } from "@/lib/db";
 import {
   catalogLineTotal,
-  PLANT_UNIT_COST_SOURCE,
+  isPlantUnitCostSource,
   POT_UNIT_COST_SOURCE,
   LEGACY_POT_UNIT_COST_SOURCE,
   type CatalogCurrency,
@@ -113,8 +113,8 @@ function mapOrderItemRow(row: OrderItemRow): OrderItem {
     potColorHe: row.pot_color_he,
     plantUnitCost,
     plantUnitCostSource:
-      plantUnitCost != null && row.plant_unit_cost_source === PLANT_UNIT_COST_SOURCE
-        ? PLANT_UNIT_COST_SOURCE
+      plantUnitCost != null && isPlantUnitCostSource(row.plant_unit_cost_source)
+        ? row.plant_unit_cost_source
         : null,
     potUnitCost,
     potUnitCostSource:
@@ -168,8 +168,8 @@ function assertInsertableLine(line: CatalogPaymentSnapshotLine): void {
   if ((line.plantUnitCost != null) !== (line.plantUnitCostSource != null)) {
     throw new Error("Order item plant cost and cost source must be stored together");
   }
-  if (line.plantUnitCostSource != null && line.plantUnitCostSource !== PLANT_UNIT_COST_SOURCE) {
-    throw new Error("Order item plant cost source is not plants.supplier_price@sale");
+  if (line.plantUnitCostSource != null && !isPlantUnitCostSource(line.plantUnitCostSource)) {
+    throw new Error("Order item plant cost source is not a plant supplier-price snapshot");
   }
   if ((line.potUnitCost != null) !== (line.potUnitCostSource != null)) {
     throw new Error("Order item pot cost and cost source must be stored together");

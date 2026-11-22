@@ -981,17 +981,23 @@ export async function finalizeVerifiedPaymentAttemptAtomic(input: {
         ${pickedUpAt}::timestamptz,
         e.snapshot,
         CASE
-          WHEN e.snapshot->>'supplierUnitCostSource' = 'plants.supplier_price@sale'
+          WHEN e.snapshot->>'supplierUnitCostSource' IN (
+            'plants.supplier_price@sale',
+            'plant_variants.supplier_price@sale'
+          )
             AND jsonb_typeof(e.snapshot->'supplierUnitCost') = 'number'
             AND (e.snapshot->>'supplierUnitCost')::numeric >= 0
           THEN round((e.snapshot->>'supplierUnitCost')::numeric, 2)
           ELSE NULL
         END,
         CASE
-          WHEN e.snapshot->>'supplierUnitCostSource' = 'plants.supplier_price@sale'
+          WHEN e.snapshot->>'supplierUnitCostSource' IN (
+            'plants.supplier_price@sale',
+            'plant_variants.supplier_price@sale'
+          )
             AND jsonb_typeof(e.snapshot->'supplierUnitCost') = 'number'
             AND (e.snapshot->>'supplierUnitCost')::numeric >= 0
-          THEN 'plants.supplier_price@sale'
+          THEN e.snapshot->>'supplierUnitCostSource'
           ELSE NULL
         END,
         e.is_internal,

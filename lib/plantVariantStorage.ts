@@ -18,6 +18,7 @@ export type PlantVariant = {
   plantId: string;
   sizeLabel?: string;
   nurseryPotDiameterCm?: number;
+  supplierPrice: number | null;
 };
 
 export type PlantVariantWithQuantity = PlantVariant & {
@@ -31,6 +32,7 @@ export type PlantVariantWriteCode =
   | "identity_required"
   | "invalid_size_label"
   | "invalid_quantity"
+  | "invalid_supplier_price"
   | "duplicate_size_label"
   | "plant_id_immutable"
   | "in_use";
@@ -56,7 +58,14 @@ type PlantVariantRow = {
   plant_id: string;
   size_label: string | null;
   nursery_pot_diameter_cm: string | number | null;
+  supplier_price: string | number | null;
 };
+
+function mapSupplierPrice(value: string | number | null): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 function mapDiameter(value: string | number | null): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -76,6 +85,7 @@ export function mapPlantVariantRow(row: PlantVariantRow): PlantVariant {
   return {
     id: row.id,
     plantId: row.plant_id,
+    supplierPrice: mapSupplierPrice(row.supplier_price),
     ...(sizeLabel ? { sizeLabel } : {}),
     ...(diameter != null ? { nurseryPotDiameterCm: diameter } : {}),
   };
@@ -94,7 +104,7 @@ export async function getPlantVariantById(id: string): Promise<PlantVariant | un
   const trimmed = id.trim();
   if (!trimmed) return undefined;
   const rows = await sql`
-    SELECT id, plant_id, size_label, nursery_pot_diameter_cm
+    SELECT id, plant_id, size_label, nursery_pot_diameter_cm, supplier_price
     FROM plant_variants
     WHERE id = ${trimmed}::uuid
     LIMIT 1
@@ -105,7 +115,7 @@ export async function getPlantVariantById(id: string): Promise<PlantVariant | un
 
 export async function readPlantVariants(): Promise<PlantVariant[]> {
   const rows = await sql`
-    SELECT id, plant_id, size_label, nursery_pot_diameter_cm
+    SELECT id, plant_id, size_label, nursery_pot_diameter_cm, supplier_price
     FROM plant_variants
     ORDER BY plant_id ASC, size_label ASC NULLS LAST, id ASC
   `;
@@ -116,7 +126,7 @@ export async function readPlantVariantsByPlantId(plantId: string): Promise<Plant
   const trimmed = plantId.trim();
   if (!trimmed) return [];
   const rows = await sql`
-    SELECT id, plant_id, size_label, nursery_pot_diameter_cm
+    SELECT id, plant_id, size_label, nursery_pot_diameter_cm, supplier_price
     FROM plant_variants
     WHERE plant_id = ${trimmed}
     ORDER BY size_label ASC NULLS LAST, id ASC
@@ -142,6 +152,26 @@ function trimSizeLabel(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+/** Empty means no supplier cost. A present value must be 0 or greater, with at most 2 decimals. */
+export function parsePlantVariantSupplierPrice(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new PlantVariantWriteError(
+      "invalid_supplier_price",
+      "supplierPrice must be 0 or greater",
+    );
+  }
+  const cents = Math.round(n * 100);
+  if (Math.abs(n * 100 - cents) > 1e-6) {
+    throw new PlantVariantWriteError(
+      "invalid_supplier_price",
+      "supplierPrice must have at most 2 decimal places",
+    );
+  }
+  return cents / 100;
 }
 
 function parseDiameter(value: unknown): number | null {
@@ -279,6 +309,7 @@ export async function createPlantVariant(input: {
   plantId: string;
   sizeLabel?: unknown;
   nurseryPotDiameterCm?: unknown;
+  supplierPrice?: unknown;
 }): Promise<PlantVariant> {
   const plantId = input.plantId.trim();
   if (!plantId) {
@@ -287,18 +318,20 @@ export async function createPlantVariant(input: {
   await assertPlantAcceptsVariants(plantId);
   const sizeLabel = trimSizeLabel(input.sizeLabel);
   const diameter = parseDiameter(input.nurseryPotDiameterCm);
+  const supplierPrice = parsePlantVariantSupplierPrice(input.supplierPrice);
   assertVariantIdentity(sizeLabel, diameter);
   assertCanonicalPlantSize(sizeLabel, undefined);
   await assertUniqueSizeLabel({ plantId, sizeLabel });
 
   const rows = await sql`
-    INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm)
+    INSERT INTO plant_variants (plant_id, size_label, nursery_pot_diameter_cm, supplier_price)
     VALUES (
       ${plantId},
       ${sizeLabel},
-      ${diameter}
+      ${diameter},
+      ${supplierPrice}
     )
-    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm
+    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm, supplier_price
   `;
   const row = (rows as PlantVariantRow[])[0];
   if (!row) throw new Error("Could not create variant");
@@ -323,6 +356,7 @@ export async function createPlantSizeWithOpeningQuantity(input: {
   plantId: string;
   sizeLabel?: unknown;
   quantity: number;
+  supplierPrice?: unknown;
 }): Promise<{ variant: PlantVariant; quantity: number }> {
   if (!Number.isInteger(input.quantity) || input.quantity < 0) {
     throw new PlantVariantWriteError("invalid_quantity", PLANT_SIZE_QUANTITY_INVALID);
@@ -330,6 +364,7 @@ export async function createPlantSizeWithOpeningQuantity(input: {
   const variant = await createPlantVariant({
     plantId: input.plantId,
     sizeLabel: input.sizeLabel,
+    supplierPrice: input.supplierPrice,
   });
   if (input.quantity === 0) return { variant, quantity: 0 };
   try {
@@ -354,6 +389,7 @@ export async function updatePlantVariant(input: {
   variantId: string;
   sizeLabel?: unknown;
   nurseryPotDiameterCm?: unknown;
+  supplierPrice?: unknown;
   plantIdFromBody?: unknown;
 }): Promise<PlantVariant> {
   const plantId = input.plantId.trim();
@@ -381,6 +417,10 @@ export async function updatePlantVariant(input: {
     input.nurseryPotDiameterCm === undefined
       ? existing.nurseryPotDiameterCm ?? null
       : parseDiameter(input.nurseryPotDiameterCm);
+  const supplierPrice =
+    input.supplierPrice === undefined
+      ? existing.supplierPrice
+      : parsePlantVariantSupplierPrice(input.supplierPrice);
   assertVariantIdentity(sizeLabel, diameter);
   assertCanonicalPlantSize(sizeLabel, previousSize);
   await assertUniqueSizeLabel({ plantId, sizeLabel, excludeId: variantId });
@@ -389,9 +429,10 @@ export async function updatePlantVariant(input: {
     UPDATE plant_variants
     SET
       size_label = ${sizeLabel},
-      nursery_pot_diameter_cm = ${diameter}
+      nursery_pot_diameter_cm = ${diameter},
+      supplier_price = ${supplierPrice}
     WHERE id = ${variantId}::uuid AND plant_id = ${plantId}
-    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm
+    RETURNING id, plant_id, size_label, nursery_pot_diameter_cm, supplier_price
   `;
   const row = (rows as PlantVariantRow[])[0];
   if (!row) throw new PlantVariantWriteError("not_found", "Variant not found");

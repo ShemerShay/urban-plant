@@ -196,22 +196,22 @@ async function main(): Promise<void> {
   try {
     await sql`
       INSERT INTO plants (
-        id, name, name_he, subtitle, description, supplier_price, currency,
+        id, name, name_he, subtitle, description, currency,
         images, labels, light, water, location, pet_friendly,
         care_instructions, inventory_type, catalog_published, created_at
       )
       VALUES (
         ${plantId}, ${`Catalog Pay ${tag}`}, 'צמח', 'Verify subtitle', 'Verify description',
-        18.50, 'ILS', '["https://example.com/catalog-pay.jpg"]'::jsonb, '["verify"]'::jsonb,
+        'ILS', '["https://example.com/catalog-pay.jpg"]'::jsonb, '["verify"]'::jsonb,
         'Low light', 'Moderate', 'Indoor', false, '["water"]'::jsonb,
         'plants', true, now()
       )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
+      INSERT INTO plant_variants (id, plant_id, size_label, supplier_price)
       VALUES
-        (${variantA}::uuid, ${plantId}, 'M'),
-        (${variantB}::uuid, ${plantId}, 'M')
+        (${variantA}::uuid, ${plantId}, 'M', 18.50),
+        (${variantB}::uuid, ${plantId}, 'M', 18.50)
     `;
     await sql`
       INSERT INTO pots (id, name, name_he, image)
@@ -446,7 +446,7 @@ async function main(): Promise<void> {
     assert.equal(afterRetry?.status, "awaiting_payment");
 
     await sql`
-      UPDATE plants SET supplier_price = 99 WHERE id = ${plantId}
+      UPDATE plant_variants SET supplier_price = 99 WHERE plant_id = ${plantId}
     `;
 
     let documentCalls = 0;

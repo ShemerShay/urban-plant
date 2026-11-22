@@ -10,7 +10,6 @@ import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
 import { useLocale } from "@/components/locale/LocaleProvider";
 import { displayApiError, lightLabel, yesNoLabel } from "@/lib/displayLabels";
-import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { routes } from "@/lib/routes";
 import type { InventoryType } from "@/lib/inventoryType";
@@ -32,7 +31,6 @@ type PlantDraft = {
   subtitleHe: string;
   description: string;
   descriptionHe: string;
-  supplierPrice: string;
   currency: PlantProduct["currency"];
   imagesText: string;
   labelsText: string;
@@ -40,7 +38,6 @@ type PlantDraft = {
   water: string;
   waterHe: string;
   supplierName: string;
-  baseSupplierPrice: string;
   location: string;
   petFriendly: boolean;
   careInstructionsText: string;
@@ -77,7 +74,6 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     subtitleHe: plant.subtitleHe ?? "",
     description: plant.description ?? "",
     descriptionHe: plant.descriptionHe ?? "",
-    supplierPrice: String(plant.supplierPrice),
     currency: plant.currency,
     imagesText: linesFromArray(plant.images ?? []),
     labelsText: linesFromArray(plant.labels ?? []),
@@ -85,8 +81,6 @@ function plantToDraft(plant: PlantProduct): PlantDraft {
     water: plant.water ?? "",
     waterHe: plant.waterHe ?? "",
     supplierName: plant.supplierName ?? "",
-    baseSupplierPrice:
-      typeof plant.baseSupplierPrice === "number" ? String(plant.baseSupplierPrice) : "",
     location: plant.location ?? "",
     petFriendly: plant.petFriendly ?? false,
     careInstructionsText: linesFromArray(plant.careInstructions ?? []),
@@ -104,7 +98,6 @@ function emptyDraft(): PlantDraft {
     subtitleHe: "",
     description: "",
     descriptionHe: "",
-    supplierPrice: "",
     currency: "ILS",
     imagesText: "",
     labelsText: "",
@@ -112,7 +105,6 @@ function emptyDraft(): PlantDraft {
     water: "",
     waterHe: "",
     supplierName: "",
-    baseSupplierPrice: "",
     location: "",
     petFriendly: false,
     careInstructionsText: "",
@@ -124,20 +116,15 @@ function draftToPayload(
   draft: PlantDraft,
   options?: { omitId?: boolean; inventoryType?: InventoryType },
 ): Record<string, unknown> {
-  const supplierPrice = Number(draft.supplierPrice);
   const inventoryType = options?.inventoryType ?? "plants";
   if (inventoryType === "flowers") {
     return {
       ...(options?.omitId ? {} : { id: draft.id.trim() }),
       name: draft.name.trim(),
-      supplierPrice,
       currency: draft.currency,
       inventoryType: "flowers",
     };
   }
-  const baseSupplierPrice =
-    draft.baseSupplierPrice.trim() === "" ? undefined : Number(draft.baseSupplierPrice);
-
   return {
     ...(options?.omitId ? {} : { id: draft.id.trim() }),
     name: draft.name.trim(),
@@ -147,7 +134,6 @@ function draftToPayload(
     subtitleHe: draft.subtitleHe.trim(),
     description: draft.description.trim(),
     descriptionHe: draft.descriptionHe.trim(),
-    supplierPrice,
     currency: draft.currency,
     images: arrayFromLines(draft.imagesText),
     labels: arrayFromLines(draft.labelsText),
@@ -155,9 +141,6 @@ function draftToPayload(
     water: draft.water.trim(),
     waterHe: draft.waterHe.trim(),
     ...(draft.supplierName.trim() ? { supplierName: draft.supplierName.trim() } : {}),
-    ...(baseSupplierPrice !== undefined && Number.isFinite(baseSupplierPrice)
-      ? { baseSupplierPrice }
-      : {}),
     location: draft.location.trim(),
     petFriendly: draft.petFriendly,
     careInstructions: arrayFromLines(draft.careInstructionsText),
@@ -239,7 +222,6 @@ function plantMatchesSearch(plant: PlantProduct, query: string): boolean {
     plant.description,
     plant.descriptionHe,
     plant.currency,
-    String(plant.supplierPrice),
     plant.light,
     plant.water,
     plant.waterHe,
@@ -419,17 +401,6 @@ function PlantFieldsForm({
         </>
         ) : null}
         <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.plants.supplierCost")}</span>
-          <input
-            className={inputClassName}
-            type="number"
-            min={0}
-            step={1}
-            value={draft.supplierPrice}
-            onChange={(e) => patch({ supplierPrice: e.target.value })}
-          />
-        </label>
-        <label className="block">
           <span className={labelClassName}>{t(locale, "admin.plants.currency")}</span>
           <select
             className={inputClassName}
@@ -539,17 +510,6 @@ function PlantFieldsForm({
             onChange={(e) => patch({ supplierName: e.target.value })}
           />
         </label>
-        <label className="block">
-          <span className={labelClassName}>{t(locale, "admin.plants.baseSupplierPriceOptional")}</span>
-          <input
-            className={inputClassName}
-            type="number"
-            min={0}
-            step={0.01}
-            value={draft.baseSupplierPrice}
-            onChange={(e) => patch({ baseSupplierPrice: e.target.value })}
-          />
-        </label>
         </>
         ) : null}
       </div>
@@ -622,10 +582,6 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
           </dd>
         </div>
       ) : null}
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="font-medium text-slate-500">{t(locale, "admin.plants.supplierCost")}</dt>
-        <dd className="text-slate-900">{formatPrice(plant.supplierPrice, plant.currency, locale)}</dd>
-      </div>
       {plant.labels && plant.labels.length > 0 ? (
       <div>
         <dt className="font-medium text-slate-500">{t(locale, "admin.plants.labels")}</dt>
@@ -680,12 +636,6 @@ function PlantDetailView({ plant }: { plant: PlantProduct }) {
         <div className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-slate-500">{t(locale, "admin.plants.supplier")}</dt>
           <dd className="text-slate-900">{plant.supplierName}</dd>
-        </div>
-      ) : null}
-      {typeof plant.baseSupplierPrice === "number" ? (
-        <div className="flex flex-wrap gap-x-2">
-          <dt className="font-medium text-slate-500">{t(locale, "admin.plants.baseSupplierPrice")}</dt>
-          <dd className="text-slate-900">{plant.baseSupplierPrice}</dd>
         </div>
       ) : null}
       {plant.createdAt ? (
@@ -800,7 +750,6 @@ function AdminPlantCard({
             </span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">{plant.subtitle}</span>
             <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{formatPrice(plant.supplierPrice, plant.currency, locale)}</span>
               {plant.inventoryType !== "flowers" ? (
                 <span
                   className={

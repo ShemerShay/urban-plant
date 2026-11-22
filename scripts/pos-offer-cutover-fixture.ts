@@ -67,8 +67,16 @@ export async function createPosCutoverFixture(input: {
   const { createOrReusePlantOffer } = await import("../lib/offerStorage");
 
   const plant = await createPlant(parsed.plant);
-  const sizeS = await createPlantVariant({ plantId: plant.id, sizeLabel: "S" });
-  const sizeL = await createPlantVariant({ plantId: plant.id, sizeLabel: "L" });
+  const sizeS = await createPlantVariant({
+    plantId: plant.id,
+    sizeLabel: "S",
+    supplierPrice: 40,
+  });
+  const sizeL = await createPlantVariant({
+    plantId: plant.id,
+    sizeLabel: "L",
+    supplierPrice: 40,
+  });
   const potA = await updatePot({
     potId: (await createPot({ name: `${tag} pot a` })).id,
     supplierPrice: 12,

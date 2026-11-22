@@ -181,6 +181,8 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Plant size cannot be changed": "admin.plants.sellableVariants.plantSizeLocked",
   "Pot color is not part of this variant": "admin.plants.sellableVariants.potColorRejected",
   "Quantity must be a whole number of 0 or more": "admin.plants.variants.invalidQuantity",
+  "supplierPrice must be 0 or greater": "admin.plants.variants.invalidSupplierPrice",
+  "supplierPrice must have at most 2 decimal places": "admin.plants.variants.invalidSupplierPrice",
   "Inventory quantity cannot go below 0": "admin.plants.variants.belowZero",
   "Inventory delta cannot be 0": "admin.plants.variants.deltaZero",
   "Inventory delta must be a non-zero integer": "admin.plants.variants.invalidDelta",

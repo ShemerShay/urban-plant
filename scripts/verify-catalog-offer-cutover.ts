@@ -262,7 +262,7 @@ async function main(): Promise<void> {
   const costs = await import("../lib/catalogCheckoutSnapshot");
   const zero = costs.plantUnitCostFromSupplierPrice(0);
   assert.equal(zero.plantUnitCost, 0);
-  assert.equal(zero.plantUnitCostSource, "plants.supplier_price@sale");
+  assert.equal(zero.plantUnitCostSource, "plant_variants.supplier_price@sale");
   const potZero = costs.potUnitCostFromSupplierPrice(0);
   assert.equal(potZero.potUnitCost, 0);
   assert.equal(potZero.potUnitCostSource, "pots.supplier_price@sale");
@@ -489,6 +489,7 @@ async function main(): Promise<void> {
       plantId: testPlantId,
       sizeLabel: "M",
       nurseryPotDiameterCm: 17,
+      supplierPrice: 18.5,
     });
     variantIds.push(size.id);
     await applyInventoryDelta({ variantId: size.id, delta: 4, note: `${tag} receive` });

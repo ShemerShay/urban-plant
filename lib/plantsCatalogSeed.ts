@@ -7,7 +7,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "inventoryType">[] = [
     subtitle: "Big leaves. Low drama.",
     description:
       "A sculptural indoor plant with bold leaves and a calm presence. Easy to style, easy to love.",
-    supplierPrice: 89,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=1200&q=80",
@@ -30,7 +29,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "inventoryType">[] = [
     subtitle: "Bold tropical contrast",
     description:
       "Arrow-shaped leaves with striking veins—an eye-catching accent that reads upscale and intentional.",
-    supplierPrice: 169,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1593691509543-c55fb32e7355?auto=format&fit=crop&w=1200&q=80",
@@ -54,7 +52,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "inventoryType">[] = [
     subtitle: "Soft airy texture",
     description:
       "Feathery, delicate foliage that adds movement and a relaxed botanical vibe to tight spaces.",
-    supplierPrice: 89,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1463947628408-f8581a2f4aca?auto=format&fit=crop&w=1200&q=80",
@@ -77,7 +74,6 @@ const SEED_ENTRIES: Omit<PlantProduct, "inventoryType">[] = [
     subtitle: "Premium indoor tree",
     description:
       "A timeless olive tree that brings a soft Mediterranean character to cafés, living rooms, and workspaces.",
-    supplierPrice: 249,
     currency: "ILS",
     images: [
       "https://images.unsplash.com/photo-1463320898484-cdee8141c787?auto=format&fit=crop&w=1200&q=80",

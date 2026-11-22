@@ -1,6 +1,7 @@
 /**
  * Idempotent: create plants table (008) and upsert rows from data/plants.json.
- * Maps legacy JSON `price` → supplier_price.
+ * Plant supplier cost belongs to Plant Size after 061; this importer does not
+ * write plants.supplier_price.
  *
  * Run: npm run db:migrate:plants
  */
@@ -23,11 +24,6 @@ function splitSqlStatements(sql) {
     .filter((s) => s.length > 0 && !/^(BEGIN|COMMIT)$/i.test(s));
 }
 
-function parseOptionalNumber(value) {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
-  return null;
-}
-
 function parseStringArray(value) {
   if (!Array.isArray(value)) return null;
   const items = value
@@ -43,14 +39,6 @@ function normalizePlant(raw) {
   }
   const id = typeof raw.id === "string" ? raw.id.trim() : "";
   if (!id) throw new Error("Plant id is required");
-
-  const supplierPrice =
-    parseOptionalNumber(raw.supplier_price) ??
-    parseOptionalNumber(raw.supplierPrice) ??
-    parseOptionalNumber(raw.price);
-  if (supplierPrice === null) {
-    throw new Error(`Plant ${id}: supplier price must be a non-negative number`);
-  }
 
   const images = parseStringArray(raw.images);
   const labels = parseStringArray(raw.labels);
@@ -68,7 +56,6 @@ function normalizePlant(raw) {
     family: typeof raw.family === "string" && raw.family.trim() ? raw.family.trim() : null,
     subtitle: typeof raw.subtitle === "string" ? raw.subtitle.trim() : "",
     description: typeof raw.description === "string" ? raw.description.trim() : "",
-    supplierPrice,
     currency,
     images,
     labels,
@@ -121,7 +108,7 @@ for (const item of parsed) {
 
   await sql`
     INSERT INTO plants (
-      id, name, family, subtitle, description, supplier_price, currency,
+      id, name, family, subtitle, description, currency,
       images, labels, light, water,
       supplier_name, location, pet_friendly,
       care_instructions, created_at
@@ -132,7 +119,6 @@ for (const item of parsed) {
       ${plant.family},
       ${plant.subtitle},
       ${plant.description},
-      ${plant.supplierPrice},
       ${plant.currency},
       ${imagesJson}::jsonb,
       ${labelsJson}::jsonb,
@@ -149,7 +135,6 @@ for (const item of parsed) {
       family = EXCLUDED.family,
       subtitle = EXCLUDED.subtitle,
       description = EXCLUDED.description,
-      supplier_price = EXCLUDED.supplier_price,
       currency = EXCLUDED.currency,
       images = EXCLUDED.images,
       labels = EXCLUDED.labels,

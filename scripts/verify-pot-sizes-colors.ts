@@ -86,6 +86,7 @@ async function main(): Promise<void> {
   const allowedNonProdHosts = [
     "ep-patient-river-alv2cow4", // prod-migration-rehearsal-031-059
     "ep-snowy-credit-alavcarh", // legacy archived non-prod
+    "ep-fancy-pond-alhhz07s", // catalog-smoke-seed
   ];
   if (host.includes("twilight-truth")) {
     throw new Error("Refusing to verify against production");
@@ -356,7 +357,11 @@ async function main(): Promise<void> {
     if (!parsed.ok) return;
     const plant = await createPlant(parsed.plant);
     plantIds.push(plant.id);
-    const size = await createPlantVariant({ plantId: plant.id, sizeLabel: "S" });
+    const size = await createPlantVariant({
+      plantId: plant.id,
+      sizeLabel: "S",
+      supplierPrice: 40,
+    });
     variantIds.push(size.id);
     await applyInventoryDelta({ variantId: size.id, delta: 3, note: `${tag} plant` });
 

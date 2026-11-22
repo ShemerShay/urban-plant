@@ -189,7 +189,7 @@ assert.match(plantsManager, /name: draft\.name\.trim\(\)/);
 assert.doesNotMatch(
   plantsManager.slice(
     plantsManager.indexOf('if (inventoryType === "flowers")'),
-    plantsManager.indexOf("const baseSupplierPrice"),
+    plantsManager.indexOf("subtitle: draft.subtitle.trim()"),
   ),
   /subtitle:/,
 );
@@ -313,7 +313,6 @@ async function assertNullableFlowerStorage(): Promise<void> {
     const created = await createPlant({
       id: flowerId,
       name: "באנץ פרחים ירוקים",
-      supplierPrice: 20,
       currency: "ILS",
       inventoryType: "flowers",
     });
@@ -360,11 +359,10 @@ async function assertNullableFlowerStorage(): Promise<void> {
     try {
       await sql`
         INSERT INTO plants (
-          id, name, supplier_price, currency, inventory_type
+          id, name, currency, inventory_type
         ) VALUES (
           ${randomUUID()},
           'Missing Plant Content',
-          10,
           'ILS',
           'plants'
         )

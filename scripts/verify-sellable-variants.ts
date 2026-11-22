@@ -90,8 +90,9 @@ function assertWiring(): void {
 
   const admin = read("components/admin/AdminPlantsManager.tsx");
   assert.match(admin, /AdminSellableVariantsSection/);
-  assert.match(admin, /admin\.plants\.supplierCost/);
+  assert.doesNotMatch(admin, /admin\.plants\.supplierCost/);
   assert.doesNotMatch(admin, /plant\.price/);
+  assert.match(read("components/admin/AdminPlantVariantsPanel.tsx"), /admin\.plants\.supplierCost/);
 
   const wire = read("lib/plantWire.ts");
   assert.doesNotMatch(wire, /price: supplierPrice/);
@@ -304,11 +305,12 @@ async function main(): Promise<void> {
     const otherSize = await createPlantVariant({
       plantId: otherPlantId,
       sizeLabel: "M",
+      supplierPrice: 99,
     });
     const flower = await createPlant(flowerParsed.plant);
     flowerId = flower.id;
-    const medium = await createPlantVariant({ plantId, sizeLabel: "M" });
-    const small = await createPlantVariant({ plantId, sizeLabel: "S" });
+    const medium = await createPlantVariant({ plantId, sizeLabel: "M", supplierPrice: 40 });
+    const small = await createPlantVariant({ plantId, sizeLabel: "S", supplierPrice: 40 });
     const potM = await updatePot({
       potId: (await createPot({ name: `${tag} terracotta` })).id,
       supplierPrice: 12.5,

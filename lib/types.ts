@@ -15,8 +15,6 @@ export interface PlantProduct {
   subtitleHe?: string;
   description?: string;
   descriptionHe?: string;
-  /** Canonical catalog supplier cost (DB: supplier_price). */
-  supplierPrice: number;
   currency: "ILS" | "USD" | "EUR";
   images?: string[];
   labels?: string[];
@@ -24,7 +22,6 @@ export interface PlantProduct {
   water?: string;
   waterHe?: string;
   supplierName?: string;
-  baseSupplierPrice?: number;
   createdAt?: string;
   location?: string;
   petFriendly?: boolean;

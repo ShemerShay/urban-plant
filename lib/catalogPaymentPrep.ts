@@ -353,13 +353,13 @@ async function createCatalogAttemptAndHolds(input: {
             END AS pot_color,
             NULL::text AS pot_color_he,
             CASE
-              WHEN p.supplier_price IS NULL THEN NULL
-              WHEN p.supplier_price < 0 THEN NULL
-              ELSE round(p.supplier_price, 2)
+              WHEN pv.supplier_price IS NULL THEN NULL
+              WHEN pv.supplier_price < 0 THEN NULL
+              ELSE round(pv.supplier_price, 2)
             END AS plant_unit_cost,
             CASE
-              WHEN p.supplier_price IS NULL OR p.supplier_price < 0 THEN NULL
-              ELSE 'plants.supplier_price@sale'
+              WHEN pv.supplier_price IS NULL OR pv.supplier_price < 0 THEN NULL
+              ELSE 'plant_variants.supplier_price@sale'
             END AS plant_unit_cost_source,
             CASE
               WHEN sv.pot_id IS NULL OR pot.supplier_price IS NULL OR pot.supplier_price < 0 THEN NULL

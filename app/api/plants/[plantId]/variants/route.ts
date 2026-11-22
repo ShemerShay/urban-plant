@@ -61,6 +61,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       plantId,
       sizeLabel: record.sizeLabel ?? record.size_label,
       quantity: parsePlantSizeOpeningQuantity(record.quantity),
+      supplierPrice: record.supplierPrice ?? record.supplier_price,
     });
     return NextResponse.json(
       { variant: created.variant, quantity: created.quantity },

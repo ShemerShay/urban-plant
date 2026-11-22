@@ -47,6 +47,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
               record.nurseryPotDiameterCm ?? record.nursery_pot_diameter_cm,
           }
         : {}),
+      ...(record.supplierPrice !== undefined || record.supplier_price !== undefined
+        ? { supplierPrice: record.supplierPrice ?? record.supplier_price }
+        : {}),
       plantIdFromBody: record.plantId ?? record.plant_id,
     });
     return NextResponse.json({ variant });

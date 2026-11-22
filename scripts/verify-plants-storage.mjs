@@ -35,11 +35,11 @@ const plants = await readPlants();
 console.log(`OK: readPlants → ${plants.length} row(s)`);
 
 const monstera = await getPlantByIdAsync("monstera");
-if (!monstera || monstera.supplierPrice !== 89) {
-  console.error("FAIL: monstera missing or wrong supplierPrice", monstera);
+if (!monstera || !monstera.name.startsWith("Monstera Deliciosa")) {
+  console.error("FAIL: monstera missing or wrong name", monstera);
   process.exit(1);
 }
-console.log(`OK: getPlantByIdAsync(monstera) supplierPrice=${monstera.supplierPrice}`);
+console.log(`OK: getPlantByIdAsync(monstera) name=${monstera.name}`);
 
 const testId = randomUUID();
 const created = await createPlant({
@@ -48,19 +48,17 @@ const created = await createPlant({
   name: "Verify Plant CRUD",
   createdAt: new Date().toISOString(),
 });
-if (created.supplierPrice !== monstera.supplierPrice) {
-  console.error("FAIL: createPlant supplierPrice mismatch");
+if (created.name !== "Verify Plant CRUD") {
+  console.error("FAIL: createPlant name mismatch");
   process.exit(1);
 }
 console.log(`OK: createPlant ${testId}`);
 
 const updated = await updatePlant(testId, {
   ...created,
-  supplierPrice: 99,
-  price: 99,
   name: "Verify Plant Updated",
 });
-if (!updated || updated.supplierPrice !== 99) {
+if (!updated || updated.name !== "Verify Plant Updated") {
   console.error("FAIL: updatePlant");
   process.exit(1);
 }

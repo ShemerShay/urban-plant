@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { useLocale } from "@/components/locale/LocaleProvider";
 import { displayApiError } from "@/lib/displayLabels";
+import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import { isPlantSizeLabel, PLANT_SIZE_LABELS } from "@/lib/plantSizes";
 import { routes } from "@/lib/routes";
@@ -15,6 +16,7 @@ type VariantRow = {
   plantId: string;
   sizeLabel?: string;
   nurseryPotDiameterCm?: number;
+  supplierPrice: number | null;
   quantity: number;
 };
 
@@ -86,12 +88,14 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
 
   const [sizeLabel, setSizeLabel] = useState("");
   const [createQuantity, setCreateQuantity] = useState("0");
+  const [createSupplierCost, setCreateSupplierCost] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editSize, setEditSize] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
+  const [editSupplierCost, setEditSupplierCost] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -137,6 +141,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
     setEditingId(variant.id);
     setEditSize(variant.sizeLabel ?? "");
     setEditQuantity(String(variant.quantity));
+    setEditSupplierCost(variant.supplierPrice == null ? "" : String(variant.supplierPrice));
     setEditError(null);
   }
 
@@ -156,6 +161,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         body: JSON.stringify({
           sizeLabel: sizeLabel.trim(),
           quantity,
+          supplierPrice: createSupplierCost.trim() === "" ? null : createSupplierCost.trim(),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
@@ -165,6 +171,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
       }
       setSizeLabel("");
       setCreateQuantity("0");
+      setCreateSupplierCost("");
       await loadVariants();
     } catch {
       setCreateError(t(locale, "common.networkError"));
@@ -181,7 +188,11 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
     }
     const sizeChanged = isPlantSizeLabel(editSize) && editSize !== (variant.sizeLabel ?? "");
     const delta = quantity - variant.quantity;
-    if (!sizeChanged && delta === 0) {
+    const nextSupplierPrice = editSupplierCost.trim() === "" ? null : editSupplierCost.trim();
+    const previousSupplierPrice =
+      variant.supplierPrice == null ? null : String(variant.supplierPrice);
+    const priceChanged = nextSupplierPrice !== previousSupplierPrice;
+    if (!sizeChanged && delta === 0 && !priceChanged) {
       setEditingId(null);
       return;
     }
@@ -201,11 +212,14 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
           return;
         }
       }
-      if (sizeChanged) {
+      if (sizeChanged || priceChanged) {
         const res = await fetch(routes.api.plantVariant(plant.id, variant.id), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sizeLabel: editSize }),
+          body: JSON.stringify({
+            ...(sizeChanged ? { sizeLabel: editSize } : {}),
+            ...(priceChanged ? { supplierPrice: nextSupplierPrice } : {}),
+          }),
         });
         const data = (await res.json().catch(() => ({}))) as VariantsApiResponse;
         if (!res.ok) {
@@ -264,7 +278,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
           {variants.map((variant) => (
             <li key={variant.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
               {editingId === variant.id ? (
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-3">
                   {isPlantSizeLabel(variant.sizeLabel) ? (
                     <PlantSizeSelect
                       value={editSize}
@@ -295,6 +309,15 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                       onChange={(e) => setEditQuantity(e.target.value)}
                     />
                   </label>
+                  <label>
+                    <span className={labelClassName}>{t(locale, "admin.plants.supplierCost")}</span>
+                    <input
+                      className={inputClassName}
+                      inputMode="decimal"
+                      value={editSupplierCost}
+                      onChange={(e) => setEditSupplierCost(e.target.value)}
+                    />
+                  </label>
                 </div>
               ) : (
                 <div className="text-sm text-slate-800">
@@ -303,6 +326,11 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
                   </p>
                   <p className="mt-1 text-xs text-slate-600">
                     {t(locale, "admin.plants.variants.quantity")}: {variant.quantity}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {variant.supplierPrice == null
+                      ? t(locale, "admin.plants.variants.supplierCostEmpty")
+                      : `${t(locale, "admin.plants.supplierCost")}: ${formatPrice(variant.supplierPrice, plant.currency, locale)}`}
                   </p>
                 </div>
               )}
@@ -362,7 +390,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
         <h4 className="text-sm font-medium text-emerald-950">
           {t(locale, "admin.plants.variants.new")}
         </h4>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <PlantSizeSelect
             value={sizeLabel}
             onChange={setSizeLabel}
@@ -380,6 +408,15 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
               step={1}
               value={createQuantity}
               onChange={(e) => setCreateQuantity(e.target.value)}
+            />
+          </label>
+          <label>
+            <span className={labelClassName}>{t(locale, "admin.plants.supplierCost")}</span>
+            <input
+              className={inputClassName}
+              inputMode="decimal"
+              value={createSupplierCost}
+              onChange={(e) => setCreateSupplierCost(e.target.value)}
             />
           </label>
         </div>

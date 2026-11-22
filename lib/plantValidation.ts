@@ -69,12 +69,6 @@ function parseStringArray(value: unknown): string[] | null {
   return null;
 }
 
-function parseOptionalNumber(value: unknown): number | undefined {
-  if (value === undefined || value === null || value === "") return undefined;
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
-  return value;
-}
-
 function rejectBlankString(value: unknown, field: string): { ok: true; value: string } | { ok: false; error: string } {
   if (typeof value !== "string") {
     return { ok: false, error: `${field} is required` };
@@ -168,21 +162,9 @@ export function parsePlantBody(
     return { ok: false, error: "currency must be ILS, USD, or EUR" };
   }
 
-  const supplierPriceRaw = body.supplierPrice ?? body.supplier_price;
-  const supplierPrice =
-    typeof supplierPriceRaw === "number" &&
-    Number.isFinite(supplierPriceRaw) &&
-    supplierPriceRaw >= 0
-      ? supplierPriceRaw
-      : null;
-  if (supplierPrice === null) {
-    return { ok: false, error: "supplierPrice must be a non-negative number" };
-  }
-
   const nameHe = cleanString(body.nameHe ?? body.name_he);
   const family = cleanString(body.family);
   const supplierName = cleanString(body.supplierName);
-  const baseSupplierPrice = parseOptionalNumber(body.baseSupplierPrice);
 
   if (inventoryType === "flowers") {
     const subtitle = optionalFlowerText(body, "subtitle", "subtitle");
@@ -248,7 +230,6 @@ export function parsePlantBody(
     const plant: PlantProduct = {
       id: resolvedId,
       name,
-      supplierPrice,
       currency: currencyRaw as PlantProduct["currency"],
       inventoryType: "flowers",
       ...(nameHe ? { nameHe } : {}),
@@ -266,7 +247,6 @@ export function parsePlantBody(
       ...(petFriendly !== undefined ? { petFriendly } : {}),
       ...(careInstructions.value ? { careInstructions: careInstructions.value } : {}),
       ...(supplierName ? { supplierName } : {}),
-      ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
     };
     return { ok: true, plant };
   }
@@ -324,7 +304,6 @@ export function parsePlantBody(
     name,
     subtitle: subtitle.value,
     description: description.value,
-    supplierPrice,
     currency: currencyRaw as PlantProduct["currency"],
     images,
     labels,
@@ -340,7 +319,6 @@ export function parsePlantBody(
     ...(descriptionHe ? { descriptionHe } : {}),
     ...(waterHe ? { waterHe } : {}),
     ...(supplierName ? { supplierName } : {}),
-    ...(baseSupplierPrice !== undefined ? { baseSupplierPrice } : {}),
   };
 
   return { ok: true, plant };

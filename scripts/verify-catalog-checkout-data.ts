@@ -231,6 +231,7 @@ async function main(): Promise<void> {
   const zeroPlantId = `chk-zero-${tag}`;
   const variantA = randomUUID();
   const variantB = randomUUID();
+  const variantZero = randomUUID();
   const potId = randomUUID();
   const attemptIds: string[] = [];
   const orderIds: string[] = [];
@@ -274,29 +275,30 @@ async function main(): Promise<void> {
   try {
     await sql`
       INSERT INTO plants (
-        id, name, name_he, subtitle, description, supplier_price, currency,
+        id, name, name_he, subtitle, description, currency,
         images, labels, light, water, location, pet_friendly,
         care_instructions, inventory_type, catalog_published, created_at
       )
       VALUES
         (
           ${pricedPlantId}, 'Checkout Priced', 'צמח', 'Verify subtitle', 'Verify description',
-          18.50, 'ILS', '["https://example.com/priced.jpg"]'::jsonb, '["verify"]'::jsonb,
+          'ILS', '["https://example.com/priced.jpg"]'::jsonb, '["verify"]'::jsonb,
           'Low light', 'Moderate', 'Indoor', false, '["water"]'::jsonb,
           'plants', false, now()
         ),
         (
           ${zeroPlantId}, 'Checkout Zero', NULL, 'Verify subtitle', 'Verify description',
-          0, 'ILS', '["https://example.com/zero.jpg"]'::jsonb, '["verify"]'::jsonb,
+          'ILS', '["https://example.com/zero.jpg"]'::jsonb, '["verify"]'::jsonb,
           'Low light', 'Moderate', 'Indoor', false, '["water"]'::jsonb,
           'plants', false, now()
         )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
+      INSERT INTO plant_variants (id, plant_id, size_label, supplier_price)
       VALUES
-        (${variantA}::uuid, ${pricedPlantId}, ${`A-${tag}`}),
-        (${variantB}::uuid, ${pricedPlantId}, ${`B-${tag}`})
+        (${variantA}::uuid, ${pricedPlantId}, ${`A-${tag}`}, 18.50),
+        (${variantB}::uuid, ${pricedPlantId}, ${`B-${tag}`}, 18.50),
+        (${variantZero}::uuid, ${zeroPlantId}, ${`Z-${tag}`}, 0)
     `;
     await sql`
       INSERT INTO pots (id, name, name_he, color, supplier_price)
@@ -449,7 +451,7 @@ async function main(): Promise<void> {
     assert.doesNotMatch(rawSnapshot, /plant_unit_price|pot_unit_price|potVariantId/);
 
     await sql`
-      UPDATE plants SET supplier_price = 99 WHERE id = ${pricedPlantId}
+      UPDATE plant_variants SET supplier_price = 99 WHERE plant_id = ${pricedPlantId}
     `;
     const afterPriceChange = await getPaymentAttemptById(catalogAttemptId);
     assert.equal(afterPriceChange?.catalogSnapshot?.lines[0]?.plantUnitCost, 18.5);
@@ -466,8 +468,8 @@ async function main(): Promise<void> {
           {
             lineNo: 1,
             plantId: zeroPlantId,
-            plantVariantId: variantB,
-            sellableVariantId: variantB,
+            plantVariantId: variantZero,
+            sellableVariantId: variantZero,
             offerId: `offer-b-${tag}`,
             potId: null,
             potSizeId: null,
@@ -735,7 +737,7 @@ async function main(): Promise<void> {
     assert.equal(zeroItems[0]?.plantUnitCost, 0);
     assert.equal(zeroItems[0]?.plantUnitCostSource, PLANT_UNIT_COST_SOURCE);
 
-    await sql`UPDATE plants SET supplier_price = 0 WHERE id = ${pricedPlantId}`;
+    await sql`UPDATE plant_variants SET supplier_price = 0 WHERE plant_id = ${pricedPlantId}`;
     const readBack = await getOrderItemsByOrderId(orderId);
     assert.equal(readBack.length, 2);
     assert.equal(readBack[0]?.plantUnitCost, 18.5);
@@ -795,8 +797,8 @@ async function main(): Promise<void> {
       await deletePaymentAttemptById(attemptId);
     }
     attemptIds.length = 0;
-    await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid)`;
-    await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid)`;
+    await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantZero}::uuid)`;
+    await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid, ${variantZero}::uuid)`;
     await sql`DELETE FROM plants WHERE id IN (${pricedPlantId}, ${zeroPlantId})`;
     const afterDelete = await getOrderItemsByOrderId(orderId);
     assert.equal(afterDelete.length, 3);
@@ -841,14 +843,14 @@ async function main(): Promise<void> {
     for (const attemptId of attemptIds) {
       await deletePaymentAttemptById(attemptId).catch(() => undefined);
     }
-    await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid)`.catch(
+    await sql`DELETE FROM inventory WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantZero}::uuid)`.catch(
       () => undefined,
     );
-    await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid)`.catch(
+    await sql`DELETE FROM inventory_history WHERE variant_id IN (${variantA}::uuid, ${variantB}::uuid, ${variantZero}::uuid)`.catch(
       () => undefined,
     );
     await sql`DELETE FROM pots WHERE id = ${potId}::uuid`.catch(() => undefined);
-    await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid)`.catch(
+    await sql`DELETE FROM plant_variants WHERE id IN (${variantA}::uuid, ${variantB}::uuid, ${variantZero}::uuid)`.catch(
       () => undefined,
     );
     await sql`DELETE FROM plants WHERE id IN (${pricedPlantId}, ${zeroPlantId})`.catch(() => undefined);

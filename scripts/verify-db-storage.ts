@@ -29,11 +29,11 @@ async function main() {
   const plants = await readPlants();
   console.log(`OK: plants → ${plants.length} row(s)`);
   const monstera = await getPlantByIdAsync("monstera");
-  if (!monstera || monstera.supplierPrice <= 0) {
-    console.error("FAIL: catalog plant monstera missing or invalid supplierPrice");
+  if (!monstera || !monstera.name.startsWith("Monstera Deliciosa")) {
+    console.error("FAIL: catalog plant monstera missing or wrong name");
     process.exit(1);
   }
-  console.log(`OK: plant monstera supplierPrice=${monstera.supplierPrice}`);
+  console.log(`OK: plant monstera name=${monstera.name}`);
 
   const testOrderId = randomUUID();
   const beforeStatus = spot.status;

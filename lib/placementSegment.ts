@@ -4,8 +4,9 @@
  * plant_variant_id, pocket_id, current_offer_id, pot_id.
  * Callers must read `segment_guard` so the CTEs run.
  *
- * Plant supplier unit cost is snapshotted only when a Cycle opens, then copied
- * onto later Segments of that Cycle. Pot supplier unit cost is snapshotted when
+ * Plant supplier unit cost is snapshotted from plant_variants.supplier_price
+ * only when a Cycle opens, then copied onto later Segments of that Cycle.
+ * Pot supplier unit cost is snapshotted when
  * the pot changes and copied when the same pot continues. Costs are never stored
  * on pos_spots.
  *
@@ -17,7 +18,8 @@
 import { sql } from "@/lib/db";
 import type { CycleEndReason, PlacementKind } from "@/lib/placementCycle";
 
-export const PLACEMENT_PLANT_UNIT_COST_SOURCE = "plants.supplier_price@cycle" as const;
+export const PLACEMENT_PLANT_UNIT_COST_SOURCE = "plant_variants.supplier_price@cycle" as const;
+export const LEGACY_PLACEMENT_PLANT_UNIT_COST_SOURCE = "plants.supplier_price@cycle" as const;
 export const PLACEMENT_POT_UNIT_COST_SOURCE = "pots.supplier_price@segment" as const;
 
 export function placementBoundaryCtes(input: {
@@ -235,15 +237,15 @@ export function placementBoundaryCtes(input: {
         CASE
           WHEN src.is_new_cycle THEN
             CASE
-              WHEN pl.supplier_price IS NULL OR pl.supplier_price < 0 THEN NULL
-              ELSE round(pl.supplier_price, 2)
+              WHEN pv.supplier_price IS NULL OR pv.supplier_price < 0 THEN NULL
+              ELSE round(pv.supplier_price, 2)
             END
           ELSE src.prev_plant_unit_cost
         END,
         CASE
           WHEN src.is_new_cycle THEN
             CASE
-              WHEN pl.supplier_price IS NULL OR pl.supplier_price < 0 THEN NULL
+              WHEN pv.supplier_price IS NULL OR pv.supplier_price < 0 THEN NULL
               ELSE ${PLACEMENT_PLANT_UNIT_COST_SOURCE}
             END
           ELSE src.prev_plant_unit_cost_source
@@ -269,10 +271,10 @@ export function placementBoundaryCtes(input: {
         CASE
           WHEN src.is_new_cycle THEN
             CASE
-              WHEN pl.supplier_price IS NULL OR pl.supplier_price < 0 THEN NULL
-              WHEN src.pot_id IS NULL THEN round(pl.supplier_price, 2)
+              WHEN pv.supplier_price IS NULL OR pv.supplier_price < 0 THEN NULL
+              WHEN src.pot_id IS NULL THEN round(pv.supplier_price, 2)
               WHEN pot.supplier_price IS NULL OR pot.supplier_price < 0 THEN NULL
-              ELSE round(round(pl.supplier_price, 2) + round(pot.supplier_price, 2), 2)
+              ELSE round(round(pv.supplier_price, 2) + round(pot.supplier_price, 2), 2)
             END
           WHEN src.prev_plant_unit_cost IS NULL THEN NULL
           WHEN src.pot_id IS NULL THEN round(src.prev_plant_unit_cost, 2)

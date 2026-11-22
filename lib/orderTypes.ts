@@ -41,7 +41,7 @@ export interface OrderSnapshot {
    * Flowers use the same snapshot. Catalog cost stays on order lines.
    */
   supplierUnitCost?: number;
-  supplierUnitCostSource?: "plants.supplier_price@sale";
+  supplierUnitCostSource?: "plant_variants.supplier_price@sale" | "plants.supplier_price@sale";
 }
 
 export function saleTimeSnapshotFields(

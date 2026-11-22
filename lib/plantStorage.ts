@@ -6,7 +6,7 @@ import { revalidateCatalogShopCache } from "@/lib/catalogShopCache";
 import { sql } from "@/lib/db";
 import { inventoryTypeOrDefault, type InventoryType } from "@/lib/inventoryType";
 import { PLANTS_CATALOG_SEED } from "@/lib/plantsCatalogSeed";
-import { parseNumeric, toIsoString } from "@/lib/storageUtils";
+import { toIsoString } from "@/lib/storageUtils";
 import type { LightLevel, PlantProduct } from "@/lib/types";
 
 export type PlantRow = {
@@ -18,7 +18,6 @@ export type PlantRow = {
   subtitle_he: string | null;
   description: string | null;
   description_he: string | null;
-  supplier_price: string | number;
   currency: string;
   images: unknown;
   labels: unknown;
@@ -73,7 +72,6 @@ function optionalTrimmed(value: string | null | undefined): string | undefined {
 }
 
 export function mapPlantRow(row: PlantRow): PlantProduct {
-  const supplierPrice = parseNumeric(row.supplier_price);
   const createdAt = toIsoString(row.created_at);
   const family = optionalTrimmed(row.family);
   const supplierName = optionalTrimmed(row.supplier_name);
@@ -100,7 +98,6 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
   return {
     id: row.id,
     name: row.name,
-    supplierPrice,
     currency: row.currency as PlantProduct["currency"],
     ...(subtitle ? { subtitle } : {}),
     ...(description ? { description } : {}),
@@ -125,7 +122,7 @@ export function mapPlantRow(row: PlantRow): PlantProduct {
   };
 }
 
-function seedPlantsWithSupplierPrice(): PlantProduct[] {
+function seedPlants(): PlantProduct[] {
   return PLANTS_CATALOG_SEED.map((plant) => ({
     ...plant,
     inventoryType: plant.inventoryType ?? "plants",
@@ -140,7 +137,7 @@ export async function readPlants(filter?: {
     ? await sql`
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-          supplier_price, currency, images, labels, light, water, water_he,
+          currency, images, labels, light, water, water_he,
           supplier_name, location, pet_friendly,
           care_instructions, created_at, inventory_type, catalog_published
         FROM plants
@@ -150,7 +147,7 @@ export async function readPlants(filter?: {
     : await sql`
         SELECT
           id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-          supplier_price, currency, images, labels, light, water, water_he,
+          currency, images, labels, light, water, water_he,
           supplier_name, location, pet_friendly,
           care_instructions, created_at, inventory_type, catalog_published
         FROM plants
@@ -163,7 +160,7 @@ export async function readPlants(filter?: {
   const n = Number((total as { n: number }[])[0]?.n ?? 0);
   if (n > 0) return [];
   if (filter?.inventoryType === "flowers") return [];
-  return seedPlantsWithSupplierPrice();
+  return seedPlants();
 }
 
 export async function getPlantByIdAsync(id: string): Promise<PlantProduct | undefined> {
@@ -172,7 +169,7 @@ export async function getPlantByIdAsync(id: string): Promise<PlantProduct | unde
   const rows = await sql`
     SELECT
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he,
+      currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
     FROM plants
@@ -198,7 +195,7 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
   const rows = await sql`
     INSERT INTO plants (
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he,
+      currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
     )
@@ -211,7 +208,6 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
       ${plant.subtitleHe ?? null},
       ${plant.description ?? null},
       ${plant.descriptionHe ?? null},
-      ${plant.supplierPrice},
       ${plant.currency},
       ${imagesJson}::jsonb,
       ${labelsJson}::jsonb,
@@ -228,7 +224,7 @@ export async function createPlant(plant: PlantProduct): Promise<PlantProduct> {
     )
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he,
+      currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
   `;
@@ -263,7 +259,6 @@ export async function updatePlant(
       subtitle_he = ${plant.subtitleHe ?? null},
       description = ${plant.description ?? null},
       description_he = ${plant.descriptionHe ?? null},
-      supplier_price = ${plant.supplierPrice},
       currency = ${plant.currency},
       images = ${imagesJson}::jsonb,
       labels = ${labelsJson}::jsonb,
@@ -278,7 +273,7 @@ export async function updatePlant(
     WHERE id = ${trimmed}
     RETURNING
       id, name, name_he, family, subtitle, subtitle_he, description, description_he,
-      supplier_price, currency, images, labels, light, water, water_he,
+      currency, images, labels, light, water, water_he,
       supplier_name, location, pet_friendly,
       care_instructions, created_at, inventory_type, catalog_published
   `;

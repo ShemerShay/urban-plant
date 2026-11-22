@@ -32,7 +32,7 @@ function assertCheckoutUnchanged(): void {
   assert.doesNotMatch(plants, /averageSize/);
   assert.doesNotMatch(read("lib/plantStorage.ts"), /average_size/);
   assert.doesNotMatch(read("lib/plantValidation.ts"), /averageSize/);
-  assert.match(plants, /supplierPrice: number/);
+  assert.doesNotMatch(plants, /supplierPrice: number/);
 
   const storage = read("lib/plantVariantStorage.ts");
   assert.match(storage, /PLANT_SIZE_DELETE_BLOCKED_SELLABLE/);
@@ -83,6 +83,7 @@ async function main(): Promise<void> {
     "plant_id",
     "size_label",
     "nursery_pot_diameter_cm",
+    "supplier_price",
   ]);
   const variantByName = Object.fromEntries(
     (
@@ -96,6 +97,7 @@ async function main(): Promise<void> {
   assert.equal(variantByName.plant_id.is_nullable, "NO");
   assert.equal(variantByName.size_label.is_nullable, "YES");
   assert.equal(variantByName.nursery_pot_diameter_cm.is_nullable, "YES");
+  assert.equal(variantByName.supplier_price.is_nullable, "YES");
   assert.equal(variantByName.catalog_price, undefined);
 
   const offerVariantCol = await sql`
@@ -127,7 +129,7 @@ async function main(): Promise<void> {
   `;
   assert.deepEqual(
     (plantPriceCols as { column_name: string }[]).map((row) => row.column_name),
-    ["supplier_price"],
+    [],
   );
 
   const fks = await sql`

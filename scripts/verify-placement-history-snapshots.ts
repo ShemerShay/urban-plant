@@ -40,6 +40,7 @@ function assertStaticContracts(): void {
   assert.match(segmentSrc, /paused_segments/);
   assert.match(segmentSrc, /resume_targets/);
   assert.match(segmentSrc, /plants\.supplier_price@cycle/);
+  assert.match(segmentSrc, /plant_variants\.supplier_price@cycle/);
 
   const offerSrc = read("lib/offerStorage.ts");
   assert.match(offerSrc, /cs\.plant_unit_cost/);
@@ -99,6 +100,7 @@ async function main(): Promise<void> {
     "../lib/partnerLocationStorage"
   );
   const { getPlantByIdAsync, updatePlant } = await import("../lib/plantStorage");
+  const { updatePlantVariant } = await import("../lib/plantVariantStorage");
   const { createPot, deletePot, updatePot } = await import("../lib/potStorage");
   const { createSellableVariant } = await import("../lib/sellableVariantStorage");
   const { deletePaymentAttemptById, finalizeVerifiedPaymentAttemptAtomic, insertPaymentAttempt } =
@@ -202,6 +204,19 @@ async function main(): Promise<void> {
   });
 
   try {
+    async function setSizeSupplierPrices(price: number): Promise<void> {
+      await updatePlantVariant({
+        plantId: fixture.plantId,
+        variantId: fixture.variantS,
+        supplierPrice: price,
+      });
+      await updatePlantVariant({
+        plantId: fixture.plantId,
+        variantId: fixture.variantL,
+        supplierPrice: price,
+      });
+    }
+
     const pocketA = await createPocket({ partnerLocationId: locationId, name: `${tag}-PocketA` });
     const pocketB = await createPocket({ partnerLocationId: locationId, name: `${tag}-PocketB` });
     createdPocketIds.push(pocketA.id, pocketB.id);
@@ -278,15 +293,13 @@ async function main(): Promise<void> {
     assert.equal(segs[0].pot_id, null);
     assert.equal(segs[0].pot_name, null);
     assert.equal(Number(segs[0].plant_unit_cost), 40);
-    assert.equal(segs[0].plant_unit_cost_source, "plants.supplier_price@cycle");
+    assert.equal(segs[0].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
     assert.equal(segs[0].pot_unit_cost, null);
     assert.equal(segs[0].pot_unit_cost_source, null);
     assert.equal(Number(segs[0].total_supplier_unit_cost), 40);
 
     // 1b. Live plant cost change must not affect later same-cycle segments
-    const livePlant0 = await getPlantByIdAsync(fixture.plantId);
-    assert.ok(livePlant0);
-    await updatePlant(fixture.plantId, { ...livePlant0, supplierPrice: 77 });
+    await setSizeSupplierPrices(77);
 
     // 2. Pocket move on same physical plant -> same cycle, new segment, inherited plant cost
     await updatePosSpot(spot.id, {
@@ -310,7 +323,7 @@ async function main(): Promise<void> {
     assert.equal(segs[1].pocket_id, pocketB.id);
     assert.equal(segs[1].pocket_name, `${tag}-PocketB`);
     assert.equal(Number(segs[1].plant_unit_cost), 40);
-    assert.equal(segs[1].plant_unit_cost_source, "plants.supplier_price@cycle");
+    assert.equal(segs[1].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
     assert.equal(segs[1].pot_unit_cost, null);
 
     // 3. Pot/Offer change on same physical plant (no-pot -> potA cost 12) -> same cycle, new segment with combined cost
@@ -348,15 +361,13 @@ async function main(): Promise<void> {
     assert.equal(segs[2].pot_id, fixture.potId);
     assert.equal(segs[2].pot_name, `${tag} pot a`);
     assert.equal(Number(segs[2].plant_unit_cost), 40);
-    assert.equal(segs[2].plant_unit_cost_source, "plants.supplier_price@cycle");
+    assert.equal(segs[2].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
     assert.equal(Number(segs[2].pot_unit_cost), 12);
     assert.equal(segs[2].pot_unit_cost_source, "pots.supplier_price@segment");
     assert.equal(Number(segs[2].total_supplier_unit_cost), 52);
 
     // 3a. Live plant + pot cost changes must not rewrite this Cycle's inherited costs
-    const livePlant1 = await getPlantByIdAsync(fixture.plantId);
-    assert.ok(livePlant1);
-    await updatePlant(fixture.plantId, { ...livePlant1, supplierPrice: 99 });
+    await setSizeSupplierPrices(99);
     await updatePot({ potId: fixture.potId, supplierPrice: 88 });
 
     // 3b. Price change on Offer -> same cycle, new segment; inherit plant + pot costs
@@ -372,7 +383,7 @@ async function main(): Promise<void> {
     assert.equal(segs.length, 4);
     assert.equal(Number(segs[3].consumer_price), nextPrice);
     assert.equal(Number(segs[3].plant_unit_cost), 40);
-    assert.equal(segs[3].plant_unit_cost_source, "plants.supplier_price@cycle");
+    assert.equal(segs[3].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
     assert.equal(Number(segs[3].pot_unit_cost), 12);
     assert.equal(segs[3].pot_unit_cost_source, "pots.supplier_price@segment");
     assert.equal(Number(segs[3].total_supplier_unit_cost), 52);
@@ -455,7 +466,7 @@ async function main(): Promise<void> {
     assert.equal(segs[5].pot_id, nullCostPot.id);
     assert.equal(segs[5].pot_name, `${tag} null-cost pot`);
     assert.equal(Number(segs[5].plant_unit_cost), 40);
-    assert.equal(segs[5].plant_unit_cost_source, "plants.supplier_price@cycle");
+    assert.equal(segs[5].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
     assert.equal(segs[5].pot_unit_cost, null);
     assert.equal(segs[5].pot_unit_cost_source, null);
     assert.equal(segs[5].total_supplier_unit_cost, null);
@@ -501,7 +512,7 @@ async function main(): Promise<void> {
     `) as Record<string, unknown>[];
     assert.equal(restockSegs.length, 1);
     assert.equal(Number(restockSegs[0].plant_unit_cost), 99);
-    assert.equal(restockSegs[0].plant_unit_cost_source, "plants.supplier_price@cycle");
+    assert.equal(restockSegs[0].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
 
     // 5. Sale closes cycle2 with end_reason = 'sold' & links order_id
     const attemptId = randomUUID();
@@ -582,8 +593,8 @@ async function main(): Promise<void> {
     await updatePlant(fixture.plantId, {
       ...livePlant,
       name: `MUTATED Plant ${tag}`,
-      supplierPrice: 999,
     });
+    await setSizeSupplierPrices(999);
     await updatePot({ potId: fixture.potId, name: `MUTATED Pot ${tag}`, supplierPrice: 888 });
     await updatePocket(pocketA.id, { name: `${tag}-MUTATED-PocketA` });
 
@@ -642,9 +653,7 @@ async function main(): Promise<void> {
     const spot2PotCost = Number(s2Segs[0].pot_unit_cost);
     assert.equal(spot2PlantCost, 999);
     assert.equal(spot2PotCost, 888);
-    const livePlantBeforePause = await getPlantByIdAsync(fixture.plantId);
-    assert.ok(livePlantBeforePause);
-    await updatePlant(fixture.plantId, { ...livePlantBeforePause, supplierPrice: 1111 });
+    await setSizeSupplierPrices(1111);
     await updatePot({ potId: fixture.potId, supplierPrice: 7 });
     await new Promise((resolve) => setTimeout(resolve, 250));
 
@@ -676,9 +685,7 @@ async function main(): Promise<void> {
     const pausedStartedMs = Date.parse(String(s2Segs[0].started_at));
     const pausedEndedMs = Date.parse(String(s2Segs[0].ended_at));
 
-    const livePlantWhileInactive = await getPlantByIdAsync(fixture.plantId);
-    assert.ok(livePlantWhileInactive);
-    await updatePlant(fixture.plantId, { ...livePlantWhileInactive, supplierPrice: 2222 });
+    await setSizeSupplierPrices(2222);
     await updatePot({ potId: fixture.potId, supplierPrice: 3 });
     await new Promise((resolve) => setTimeout(resolve, 250));
 
@@ -710,7 +717,7 @@ async function main(): Promise<void> {
     assert.equal(s2Segs[1].ended_at, null);
     assert.notEqual(String(s2Segs[1].id), pausedSegmentId);
     assert.equal(Number(s2Segs[1].plant_unit_cost), spot2PlantCost);
-    assert.equal(s2Segs[1].plant_unit_cost_source, "plants.supplier_price@cycle");
+    assert.equal(s2Segs[1].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
     assert.equal(Number(s2Segs[1].pot_unit_cost), spot2PotCost);
     assert.equal(s2Segs[1].pot_unit_cost_source, "pots.supplier_price@segment");
     const resumedStartedMs = Date.parse(String(s2Segs[1].started_at));

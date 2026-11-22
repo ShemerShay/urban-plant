@@ -288,7 +288,7 @@ async function main(): Promise<void> {
     otherPlantId = other.id;
     const flower = await createPlant(flowerParsed.plant);
     flowerId = flower.id;
-    const size = await createPlantVariant({ plantId, sizeLabel: "M" });
+    const size = await createPlantVariant({ plantId, sizeLabel: "M", supplierPrice: 40 });
     const pot = await createPot({ name: `${tag} pot` });
     potId = pot.id;
     await updatePot({ potId, supplierPrice: 12.5 });

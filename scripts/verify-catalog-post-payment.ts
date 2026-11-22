@@ -426,23 +426,23 @@ async function main(): Promise<void> {
   try {
     await sql`
       INSERT INTO plants (
-        id, name, name_he, subtitle, description, supplier_price, currency,
+        id, name, name_he, subtitle, description, currency,
         images, labels, light, water, location, pet_friendly,
         care_instructions, inventory_type, catalog_published, created_at
       )
       VALUES (
         ${plantId}, ${originalName}, 'צמח', 'Verify subtitle', 'Verify description',
-        18.50, 'ILS', '["https://example.com/catalog-doc.jpg"]'::jsonb, '["verify"]'::jsonb,
+        'ILS', '["https://example.com/catalog-doc.jpg"]'::jsonb, '["verify"]'::jsonb,
         'Low light', 'Moderate', 'Indoor', false,
         ${JSON.stringify(["Water when the top soil feels dry."])}::jsonb,
         'plants', true, now()
       )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
+      INSERT INTO plant_variants (id, plant_id, size_label, supplier_price)
       VALUES
-        (${variantA}::uuid, ${plantId}, 'M'),
-        (${variantB}::uuid, ${plantId}, 'S')
+        (${variantA}::uuid, ${plantId}, 'M', 18.50),
+        (${variantB}::uuid, ${plantId}, 'S', 18.50)
     `;
     await sql`
       INSERT INTO pots (id, name, name_he, image)
@@ -450,21 +450,21 @@ async function main(): Promise<void> {
     `;
     await sql`
       INSERT INTO plants (
-        id, name, name_he, subtitle, description, supplier_price, currency,
+        id, name, name_he, subtitle, description, currency,
         images, labels, light, water, location, pet_friendly,
         care_instructions, inventory_type, catalog_published, created_at
       )
       VALUES (
         ${plantId2}, ${secondName}, 'שרך', 'Second plant', 'Second description',
-        12, 'ILS', '["https://example.com/catalog-doc-b.jpg"]'::jsonb, '["verify"]'::jsonb,
+        'ILS', '["https://example.com/catalog-doc-b.jpg"]'::jsonb, '["verify"]'::jsonb,
         'Low light', 'Moderate', 'Indoor', true,
         ${JSON.stringify([careB])}::jsonb,
         'plants', true, now()
       )
     `;
     await sql`
-      INSERT INTO plant_variants (id, plant_id, size_label)
-      VALUES (${variantC}::uuid, ${plantId2}, 'S')
+      INSERT INTO plant_variants (id, plant_id, size_label, supplier_price)
+      VALUES (${variantC}::uuid, ${plantId2}, 'S', 12)
     `;
     await sql`
       INSERT INTO inventory (variant_id, quantity, updated_at)
@@ -539,8 +539,13 @@ async function main(): Promise<void> {
       const started = await startLines([lineA], "", false);
       await sql`
         UPDATE plants
-        SET name = 'LIVE RENAME', supplier_price = 99
+        SET name = 'LIVE RENAME'
         WHERE id = ${plantId}
+      `;
+      await sql`
+        UPDATE plant_variants
+        SET supplier_price = 99
+        WHERE plant_id = ${plantId}
       `;
       const created: CreateCardcomDocumentInput[] = [];
       let pdfCalls = 0;
@@ -638,14 +643,16 @@ async function main(): Promise<void> {
       assert.equal((await getOrderById(attempt.finalizedOrderId))?.purchaseEmailStatus, "skipped");
       assert.equal(await inventoryQty(variantA), 19);
 
-      await sql`UPDATE plants SET name = ${originalName}, supplier_price = 18.50 WHERE id = ${plantId}`;
+      await sql`UPDATE plants SET name = ${originalName} WHERE id = ${plantId}`;
+      await sql`UPDATE plant_variants SET supplier_price = 18.50 WHERE plant_id = ${plantId}`;
     }
 
     // 2. Opt-in multi-line: one document, one PDF email, total equals the order.
     {
       const email = `buy-${tag}@example.com`;
       const started = await startLines([lineA, linePot], email, true);
-      await sql`UPDATE plants SET supplier_price = 99, name = 'LIVE RENAME' WHERE id = ${plantId}`;
+      await sql`UPDATE plants SET name = 'LIVE RENAME' WHERE id = ${plantId}`;
+      await sql`UPDATE plant_variants SET supplier_price = 99 WHERE plant_id = ${plantId}`;
       const created: CreateCardcomDocumentInput[] = [];
       const mails: MailCapture[] = [];
       let pdfCalls = 0;
@@ -794,7 +801,8 @@ async function main(): Promise<void> {
       assert.equal((await getOrderById(attempt.finalizedOrderId))?.purchaseEmailStatus, "sent");
       assert.equal(await inventoryQty(variantA), 16);
 
-      await sql`UPDATE plants SET name = ${originalName}, supplier_price = 18.50 WHERE id = ${plantId}`;
+      await sql`UPDATE plants SET name = ${originalName} WHERE id = ${plantId}`;
+      await sql`UPDATE plant_variants SET supplier_price = 18.50 WHERE plant_id = ${plantId}`;
     }
 
     // 2b. One opted-in plant: the customer email includes that plant's care text.

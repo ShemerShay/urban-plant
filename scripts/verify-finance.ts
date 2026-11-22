@@ -31,7 +31,8 @@ async function main(): Promise<void> {
   const prep = read("lib/startCardcomPaymentPrep.ts");
   const finalize = read("lib/paymentAttemptStorage.ts");
   const dashboard = read("components/admin/AdminFinanceDashboard.tsx");
-  assert.match(prep, /partnerSupplierCostFromPlantPrice\(plant\.supplierPrice\)/);
+  assert.match(prep, /partnerSupplierCostFromPlantPrice\(sizeSupplierPrice\)/);
+  assert.doesNotMatch(prep, /plant\.supplierPrice/);
   assert.match(finalize, /supplier_unit_cost/);
   assert.match(finalize, /supplierUnitCostSource/);
   assert.match(dashboard, /view\.openObligations > 0/);
@@ -77,7 +78,7 @@ async function main(): Promise<void> {
   assert.equal(financeMonthKey(new Date("2026-03-15T00:30:00.000Z")), jerusalemMonthKey(new Date("2026-03-15T00:30:00.000Z")));
   assert.deepEqual(partnerSupplierCostFromPlantPrice(0), {
     supplierUnitCost: 0,
-    supplierUnitCostSource: "plants.supplier_price@sale",
+    supplierUnitCostSource: "plant_variants.supplier_price@sale",
   });
   assert.equal(partnerSupplierCostFromPlantPrice(null), null);
   assert.equal(partnerSupplierCostFromPlantPrice(-1), null);
@@ -87,6 +88,13 @@ async function main(): Promise<void> {
       supplierUnitCostSource: "plants.supplier_price@sale",
     }),
     { supplierUnitCost: 12.5, supplierUnitCostSource: "plants.supplier_price@sale" },
+  );
+  assert.deepEqual(
+    parseStoredPartnerSupplierCost({
+      supplierUnitCost: 8,
+      supplierUnitCostSource: "plant_variants.supplier_price@sale",
+    }),
+    { supplierUnitCost: 8, supplierUnitCostSource: "plant_variants.supplier_price@sale" },
   );
   assert.deepEqual(parseStoredPartnerSupplierCost({ supplierPrice: 12.5 }), {});
 
@@ -532,6 +540,7 @@ async function main(): Promise<void> {
 
   applyMigration("db/migrations/057_orders_supplier_unit_cost.sql");
   applyMigration("db/migrations/058_finance.sql");
+  applyMigration("db/migrations/061_plant_variants_supplier_price.sql");
 
   const { sql } = await import("../lib/db");
   const { appendOrder } = await import("../lib/ordersStorage");

@@ -10,11 +10,19 @@ import "server-only";
 import { sql } from "@/lib/db";
 import { parseNumeric } from "@/lib/storageUtils";
 
-export const PLANT_UNIT_COST_SOURCE = "plants.supplier_price@sale" as const;
+export const PLANT_UNIT_COST_SOURCE = "plant_variants.supplier_price@sale" as const;
+export const LEGACY_PLANT_UNIT_COST_SOURCE = "plants.supplier_price@sale" as const;
 export const POT_UNIT_COST_SOURCE = "pots.supplier_price@sale" as const;
 export const LEGACY_POT_UNIT_COST_SOURCE = "pot_sizes.supplier_price@sale" as const;
 
-export type PlantUnitCostSource = typeof PLANT_UNIT_COST_SOURCE;
+export type PlantUnitCostSource =
+  | typeof PLANT_UNIT_COST_SOURCE
+  | typeof LEGACY_PLANT_UNIT_COST_SOURCE;
+
+export function isPlantUnitCostSource(value: unknown): value is PlantUnitCostSource {
+  return value === PLANT_UNIT_COST_SOURCE || value === LEGACY_PLANT_UNIT_COST_SOURCE;
+}
+
 export type PotUnitCostSource =
   | typeof POT_UNIT_COST_SOURCE
   | typeof LEGACY_POT_UNIT_COST_SOURCE;
@@ -192,7 +200,7 @@ function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
   const hasPlantCost = plantUnitCost != null;
   const hasPlantSource = plantSource != null;
   if (hasPlantCost !== hasPlantSource) return null;
-  if (hasPlantSource && plantSource !== PLANT_UNIT_COST_SOURCE) return null;
+  if (hasPlantSource && !isPlantUnitCostSource(plantSource)) return null;
   const hasPotCost = potUnitCost != null;
   const hasPotSource = potSource != null;
   if (hasPotCost !== hasPotSource) return null;
@@ -227,7 +235,7 @@ function parseSnapshotLine(value: unknown): CatalogPaymentSnapshotLine | null {
     potColor,
     potColorHe,
     plantUnitCost,
-    plantUnitCostSource: hasPlantCost ? PLANT_UNIT_COST_SOURCE : null,
+    plantUnitCostSource: hasPlantCost && isPlantUnitCostSource(plantSource) ? plantSource : null,
     potUnitCost,
     potUnitCostSource: hasPotCost ? (potSource as PotUnitCostSource) : null,
   };
@@ -261,11 +269,23 @@ export async function snapshotPlantUnitCosts(
     { plantUnitCost: number | null; plantUnitCostSource: PlantUnitCostSource | null }
   >();
   for (const id of ids) costs.set(id, plantUnitCostFromSupplierPrice(null));
+  return costs;
+}
+
+export async function snapshotPlantVariantUnitCosts(
+  plantVariantIds: string[],
+): Promise<Map<string, { plantUnitCost: number | null; plantUnitCostSource: PlantUnitCostSource | null }>> {
+  const ids = [...new Set(plantVariantIds.map((id) => id.trim()).filter(Boolean))];
+  const costs = new Map<
+    string,
+    { plantUnitCost: number | null; plantUnitCostSource: PlantUnitCostSource | null }
+  >();
+  for (const id of ids) costs.set(id, plantUnitCostFromSupplierPrice(null));
   if (ids.length === 0) return costs;
   const rows = await sql`
-    SELECT id, supplier_price
-    FROM plants
-    WHERE id = ANY(${ids}::text[])
+    SELECT id::text AS id, supplier_price
+    FROM plant_variants
+    WHERE id = ANY(${ids}::uuid[])
   `;
   for (const row of rows as { id: string; supplier_price: string | number | null }[]) {
     costs.set(String(row.id), plantUnitCostFromSupplierPrice(row.supplier_price));
@@ -297,12 +317,14 @@ export async function snapshotPotUnitCosts(
 export async function snapshotCatalogPaymentPlantCosts(
   snapshot: CatalogPaymentSnapshot,
 ): Promise<CatalogPaymentSnapshot> {
-  const plantCosts = await snapshotPlantUnitCosts(snapshot.lines.map((line) => line.plantId));
+  const plantCosts = await snapshotPlantVariantUnitCosts(
+    snapshot.lines.map((line) => line.plantVariantId),
+  );
   const potCosts = await snapshotPotUnitCosts(snapshot.lines.map((line) => line.potId));
   return {
     sourcePartnerId: snapshot.sourcePartnerId,
     lines: snapshot.lines.map((line) => {
-      const plant = plantCosts.get(line.plantId) ?? plantUnitCostFromSupplierPrice(null);
+      const plant = plantCosts.get(line.plantVariantId) ?? plantUnitCostFromSupplierPrice(null);
       const pot = line.potId
         ? (potCosts.get(line.potId) ?? potUnitCostFromSupplierPrice(null))
         : potUnitCostFromSupplierPrice(null);

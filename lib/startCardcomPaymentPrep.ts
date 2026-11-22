@@ -116,14 +116,18 @@ async function buildOrderSnapshot(input: {
 }): Promise<OrderSnapshot> {
   const { plant, offer, posSpot, fulfillmentMethod, inventoryType } = input;
   const partner = await getLocationById(posSpot.partnerLocationId);
-  const supplierCost = partnerSupplierCostFromPlantPrice(plant.supplierPrice);
   const plantVariantId = posSpot.plantVariantId?.trim() || "";
   let sizeLabel: string | undefined;
+  let sizeSupplierPrice: number | null | undefined;
   if (plantVariantId) {
     const variant = await getPlantVariantById(plantVariantId);
     const label = variant?.sizeLabel?.trim();
     if (label) sizeLabel = label;
+    sizeSupplierPrice = variant?.supplierPrice ?? null;
   }
+  const supplierCost = plantVariantId
+    ? partnerSupplierCostFromPlantPrice(sizeSupplierPrice)
+    : null;
   return {
     productId: plant.id,
     productName: plant.name,
