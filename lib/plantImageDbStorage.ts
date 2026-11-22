@@ -60,7 +60,7 @@ export async function savePlantLibraryImageToDb(
   };
 }
 
-/** Archive read. Image requests read public/plant-library and do not call this. */
+/** Archive read. Image GET uses this after disk and local blob miss. */
 export async function getPlantLibraryImageFromDb(
   filename: string,
 ): Promise<{ mimeType: string; data: Buffer } | null> {

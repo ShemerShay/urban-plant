@@ -1,5 +1,5 @@
 /**
- * Plant Size supplier price (061).
+ * Plant Size supplier price (061) + plant-library DB image fallback.
  *
  * Run: npx tsx scripts/verify-plant-size-supplier-price.ts
  */
@@ -90,6 +90,15 @@ function assertStaticContracts(): void {
   assert.doesNotMatch(partnerPrep, /plant\.supplierPrice/);
   assert.match(partnerPrep, /: null;/);
 
+  const imageSrc = read("lib/plantImageStorage.ts");
+  const getBytes = imageSrc.slice(imageSrc.indexOf("export async function getPlantLibraryImageBytes"));
+  assert.match(getBytes, /readPlantLibraryBlob/);
+  assert.match(getBytes, /getPlantLibraryImageFromDb/);
+  assert.ok(
+    getBytes.indexOf("readPlantLibraryBlob") < getBytes.indexOf("getPlantLibraryImageFromDb"),
+    "DB image lookup is after disk and blob",
+  );
+
   console.log("verify-plant-size-supplier-price: static contracts ok");
 }
 
@@ -125,6 +134,9 @@ async function main(): Promise<void> {
     partnerSupplierCostFromPlantPrice,
     parseStoredPartnerSupplierCost,
   } = await import("../lib/partnerSupplierCost");
+  const { getPlantLibraryImageBytes } = await import("../lib/plantImageStorage");
+  const { savePlantLibraryImageToDb } = await import("../lib/plantImageDbStorage");
+
   const cols = await sql`
     SELECT column_name, is_nullable, data_type
     FROM information_schema.columns
@@ -242,6 +254,7 @@ async function main(): Promise<void> {
   let sizeM = "";
   let sizeL = "";
   let sizeS = "";
+  const imageFilename = `verify-db-fallback-${randomUUID().slice(0, 8)}.jpg`;
   try {
     const plant = await createPlant(parsed.plant);
     plantId = plant.id;
@@ -280,8 +293,26 @@ async function main(): Promise<void> {
     assert.equal(costs.get(sizeS)?.plantUnitCost, 12.5);
     assert.equal(costs.get(sizeM)?.plantUnitCostSource, PLANT_UNIT_COST_SOURCE);
 
-    console.log("verify-plant-size-supplier-price: sizes and snapshots ok");
+    const jpeg = Buffer.from(
+      "ffd8ffe000104a46494600010100000100010000ffd9",
+      "hex",
+    );
+    await savePlantLibraryImageToDb(jpeg, "image/jpeg", imageFilename);
+    const fromDb = await getPlantLibraryImageBytes(imageFilename);
+    assert.equal(Boolean(fromDb), true);
+    assert.equal(fromDb?.data.byteLength, jpeg.byteLength);
+    assert.equal(fromDb?.data[0], 0xff);
+    assert.equal(fromDb?.data[1], 0xd8);
+
+    const onDisk = await getPlantLibraryImageBytes(
+      "chatgpt-image-sep-28-2026-11-55-47-am-1-0a0a7ff9.jpg",
+    );
+    assert.equal(Boolean(onDisk), true);
+    assert.ok((onDisk?.data.byteLength ?? 0) > 1000);
+
+    console.log("verify-plant-size-supplier-price: sizes, snapshots, image fallback ok");
   } finally {
+    await sql`DELETE FROM plant_library_images WHERE filename = ${imageFilename}`;
     if (sizeS) await deletePlantVariant({ plantId, variantId: sizeS }).catch(() => undefined);
     if (sizeM) await deletePlantVariant({ plantId, variantId: sizeM }).catch(() => undefined);
     if (sizeL) await deletePlantVariant({ plantId, variantId: sizeL }).catch(() => undefined);

@@ -207,6 +207,18 @@ export async function getPlantLibraryImageBytes(
   }
 
   const blob = await readPlantLibraryBlob(filename);
-  if (!blob) return null;
-  return { mimeType: mimeTypeForImageBytes(filename, blob), data: blob };
+  if (blob) {
+    return { mimeType: mimeTypeForImageBytes(filename, blob), data: blob };
+  }
+
+  if (!process.env.DATABASE_URL?.trim()) return null;
+  try {
+    const { getPlantLibraryImageFromDb } = await import("@/lib/plantImageDbStorage");
+    const image = await getPlantLibraryImageFromDb(filename);
+    if (!image) return null;
+    return { mimeType: mimeTypeForImageBytes(filename, image.data), data: image.data };
+  } catch (error) {
+    if (isMissingPlantLibraryTableError(error)) return null;
+    throw error;
+  }
 }

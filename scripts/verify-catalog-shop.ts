@@ -26,7 +26,11 @@ function assertShopWiring(): void {
   assert.match(imageStorage, /deletePlantLibraryBlob/);
   assert.doesNotMatch(imageStorage, /writeFile/);
   assert.match(imageRoute, /getPlantLibraryImageBytes/);
-  assert.doesNotMatch(imageStorage, /getPlantLibraryImageFromDb/);
+  assert.match(imageStorage, /getPlantLibraryImageFromDb/);
+  assert.ok(
+    imageStorage.indexOf("readPlantLibraryBlob") < imageStorage.indexOf("getPlantLibraryImageFromDb"),
+    "DB image lookup is after disk and blob",
+  );
   assert.doesNotMatch(imageRoute, /plant_library_images/);
   assert.match(imageBlobs, /PLANT_LIBRARY_BLOB_STORE = "plant-library"/);
   assert.match(imageBlobs, /getStore\(PLANT_LIBRARY_BLOB_STORE\)/);
