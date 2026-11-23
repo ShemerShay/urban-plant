@@ -475,14 +475,7 @@ function offerPriceStatusUpdate(offer: {
       WHERE s.placement_cycle_id = a.cycle_id
         AND s.ended_at IS NULL
         AND s.consumer_price IS DISTINCT FROM a.consumer_price
-      RETURNING
-        s.placement_cycle_id,
-        s.plant_unit_cost,
-        s.plant_unit_cost_source,
-        s.pot_unit_cost,
-        s.pot_unit_cost_source,
-        s.pot_name,
-        s.total_supplier_unit_cost
+      RETURNING s.placement_cycle_id
     ),
     opened_segments AS (
       INSERT INTO placement_segments (
@@ -495,13 +488,7 @@ function offerPriceStatusUpdate(offer: {
         offer_id,
         consumer_price,
         sellable_variant_id,
-        pot_id,
-        pot_name,
-        plant_unit_cost,
-        plant_unit_cost_source,
-        pot_unit_cost,
-        pot_unit_cost_source,
-        total_supplier_unit_cost
+        pot_id
       )
       SELECT
         gen_random_uuid(),
@@ -513,13 +500,7 @@ function offerPriceStatusUpdate(offer: {
         a.offer_id,
         a.consumer_price,
         a.sellable_variant_id,
-        a.pot_id,
-        cs.pot_name,
-        cs.plant_unit_cost,
-        cs.plant_unit_cost_source,
-        cs.pot_unit_cost,
-        cs.pot_unit_cost_source,
-        cs.total_supplier_unit_cost
+        a.pot_id
       FROM affected a
       INNER JOIN closed_segments cs ON cs.placement_cycle_id = a.cycle_id
       WHERE (

@@ -43,8 +43,8 @@ function assertStaticContracts(): void {
   assert.match(segmentSrc, /plant_variants\.supplier_price@cycle/);
 
   const offerSrc = read("lib/offerStorage.ts");
-  assert.match(offerSrc, /cs\.plant_unit_cost/);
-  assert.match(offerSrc, /cs\.pot_unit_cost/);
+  assert.match(offerSrc, /RETURNING s\.placement_cycle_id/);
+  assert.doesNotMatch(offerSrc, /s\.plant_unit_cost/);
   assert.doesNotMatch(offerSrc, /plants\.supplier_price@/);
 
   const posSrc = read("lib/posSpotStorage.ts");
