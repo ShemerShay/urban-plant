@@ -156,6 +156,19 @@ function assertCustomerPathsUntouched(): void {
   assert.match(offersAdmin, /listedOffers/);
   assert.match(offersAdmin, /inventoryType !== "plants"/);
   assert.match(offersAdmin, /offer\.sellableVariantId/);
+  assert.match(offersAdmin, /function groupPlantOffers/);
+  assert.match(offersAdmin, /groups.get\(productId\)/);
+  assert.match(offersAdmin, /isPlants \? groupPlantOffers\(filteredOffers\)/);
+  assert.match(offersAdmin, /groupedPlantOffers\.map/);
+  assert.match(offersAdmin, /grouped/);
+  assert.match(offersAdmin, /offerVariantSummary/);
+  assert.doesNotMatch(
+    offersAdmin.slice(offersAdmin.indexOf("function groupPlantOffers")),
+    /groups.get\(offer\.productName\)/,
+  );
+  const messages = read("lib/messages.ts");
+  assert.match(messages, /"admin.offers.groupCount"/);
+  assert.match(messages, /"admin.offers.groupToggleAria"/);
   assert.doesNotMatch(read("components/admin/AdminPartnerDetail.tsx"), /admin\.offers\.delete/);
   assert.doesNotMatch(read("components/admin/AdminPartnerDetail.tsx"), /routes\.api\.offer\(/);
   const runner = read("scripts/apply-sql-file.mjs");

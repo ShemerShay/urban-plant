@@ -11,6 +11,7 @@ import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import type { OfferAvailability, OfferSellableVariant, OfferStatus, OfferWithProduct } from "@/lib/offerTypes";
 import type { InventoryType } from "@/lib/inventoryType";
+import { PLANT_SIZE_LABELS } from "@/lib/plantSizes";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
 
@@ -66,6 +67,69 @@ function listedOffers(
 ): OfferWithProduct[] {
   if (inventoryType !== "plants") return offers;
   return offers.filter((offer) => Boolean(offer.sellableVariantId));
+}
+
+type PlantOfferGroup = {
+  productId: string;
+  productName: string;
+  plantImages: string[];
+  offers: OfferWithProduct[];
+};
+
+function sizeSortRank(label: string): number {
+  const index = PLANT_SIZE_LABELS.indexOf(label as (typeof PLANT_SIZE_LABELS)[number]);
+  return index < 0 ? PLANT_SIZE_LABELS.length : index;
+}
+
+function comparePlantOffers(a: OfferWithProduct, b: OfferWithProduct): number {
+  const sizeA = a.sellableVariant?.plantSizeLabel?.trim() ?? "";
+  const sizeB = b.sellableVariant?.plantSizeLabel?.trim() ?? "";
+  const sizeCmp = sizeSortRank(sizeA) - sizeSortRank(sizeB) || sizeA.localeCompare(sizeB);
+  if (sizeCmp !== 0) return sizeCmp;
+  const potA = a.sellableVariant?.potId ? 1 : 0;
+  const potB = b.sellableVariant?.potId ? 1 : 0;
+  if (potA !== potB) return potA - potB;
+  if (a.consumerPrice !== b.consumerPrice) return a.consumerPrice - b.consumerPrice;
+  return a.id.localeCompare(b.id);
+}
+
+function groupPlantOffers(offers: OfferWithProduct[]): PlantOfferGroup[] {
+  const groups = new Map<string, PlantOfferGroup>();
+  const order: string[] = [];
+  for (const offer of offers) {
+    const productId = offer.productId;
+    let group = groups.get(productId);
+    if (!group) {
+      group = {
+        productId,
+        productName: offer.productName,
+        plantImages: offer.plantImages,
+        offers: [],
+      };
+      groups.set(productId, group);
+      order.push(productId);
+    }
+    group.offers.push(offer);
+  }
+  return order
+    .map((productId) => {
+      const group = groups.get(productId);
+      if (!group) return { productId, productName: productId, plantImages: [], offers: [] };
+      return {
+        ...group,
+        offers: [...group.offers].sort(comparePlantOffers),
+      };
+    })
+    .sort(
+      (a, b) => a.productName.localeCompare(b.productName) || a.productId.localeCompare(b.productId),
+    );
+}
+
+function offerVariantSummary(offer: OfferWithProduct, noPot: string): string {
+  const size = offer.sellableVariant?.plantSizeLabel?.trim() ?? "";
+  const potName = offer.sellableVariant?.potName?.trim();
+  const pot = potName || noPot;
+  return [size, pot].filter(Boolean).join(" · ");
 }
 
 const inputClassName =
@@ -191,6 +255,9 @@ function offerMatchesSearch(offer: OfferWithProduct, query: string): boolean {
     offer.status,
     String(offer.consumerPrice),
     offer.createdAt,
+    offer.sellableVariant?.plantSizeLabel,
+    offer.sellableVariant?.potName,
+    offer.sellableVariantId,
   ]
     .filter(Boolean)
     .join(" ")
@@ -541,6 +608,7 @@ function AdminOfferCard({
   plants,
   locations,
   variantBacked,
+  grouped = false,
   isEditing,
   onStartEdit,
   onCancelEdit,
@@ -551,6 +619,7 @@ function AdminOfferCard({
   plants: PlantProduct[];
   locations: LocationChoice[];
   variantBacked: boolean;
+  grouped?: boolean;
   isEditing: boolean;
   onStartEdit: () => void;
   onCancelEdit: () => void;
@@ -606,12 +675,20 @@ function AdminOfferCard({
   }
 
   const headerImage = offer.plantImages[0];
+  const noPot = t(locale, "admin.offers.noPot");
   const savedVariantText = offer.sellableVariant
-    ? variantLabel(offer.sellableVariant, t(locale, "admin.offers.noPot"))
+    ? variantLabel(offer.sellableVariant, noPot)
     : offer.sellableVariantId ?? "";
+  const summaryName = grouped ? offerVariantSummary(offer, noPot) : offer.productName;
 
   return (
-    <article className="overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+    <article
+      className={
+        grouped
+          ? "overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200"
+          : "overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
+      }
+    >
       <div className="flex items-stretch">
         <button
           type="button"
@@ -619,7 +696,7 @@ function AdminOfferCard({
           className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4 text-left transition hover:bg-slate-50/80"
           aria-expanded={isOpen}
         >
-          {headerImage ? (
+          {grouped ? null : headerImage ? (
             <img
               src={headerImage}
               alt=""
@@ -631,8 +708,11 @@ function AdminOfferCard({
             </div>
           )}
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-base font-semibold text-emerald-950">
-              {offer.productName}
+            <span
+              className="block truncate text-base font-semibold text-emerald-950"
+              dir={grouped ? "ltr" : undefined}
+            >
+              {summaryName}
             </span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">
               {formatPrice(offer.consumerPrice, offer.currency, locale)}
@@ -650,7 +730,7 @@ function AdminOfferCard({
               onStartEdit();
             }}
             className="flex w-12 shrink-0 items-center justify-center text-slate-700 transition hover:bg-slate-50"
-            aria-label={t(locale, "admin.offers.editAria", { name: offer.productName })}
+            aria-label={t(locale, "admin.offers.editAria", { name: summaryName })}
           >
             <IconPencil className="h-5 w-5" />
           </button>
@@ -713,6 +793,88 @@ function AdminOfferCard({
   );
 }
 
+function AdminPlantOfferGroup({
+  group,
+  plants,
+  locations,
+  editingId,
+  onStartEdit,
+  onCancelEdit,
+  onSaved,
+  onRequestDelete,
+}: {
+  group: PlantOfferGroup;
+  plants: PlantProduct[];
+  locations: LocationChoice[];
+  editingId: string | null;
+  onStartEdit: (offerId: string) => void;
+  onCancelEdit: () => void;
+  onSaved: (offer: OfferWithProduct) => void;
+  onRequestDelete: (offerId: string) => void;
+}) {
+  const locale = useLocale();
+  const [open, setOpen] = useState(true);
+  const containsEditing = group.offers.some((offer) => offer.id === editingId);
+
+  useEffect(() => {
+    if (containsEditing) setOpen(true);
+  }, [containsEditing]);
+
+  const headerImage = group.plantImages[0];
+  const countLabel = t(locale, "admin.offers.groupCount", { count: group.offers.length });
+
+  return (
+    <section className="overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-slate-50/80"
+        aria-expanded={open}
+        aria-label={t(locale, "admin.offers.groupToggleAria", { name: group.productName })}
+      >
+        {headerImage ? (
+          <img
+            src={headerImage}
+            alt=""
+            className="h-14 w-14 shrink-0 rounded-xl object-cover ring-1 ring-slate-200"
+          />
+        ) : (
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-[10px] text-slate-500">
+            —
+          </div>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-semibold text-emerald-950">
+            {group.productName}
+          </span>
+          <span className="mt-0.5 block truncate text-sm text-slate-600">{countLabel}</span>
+        </span>
+        <IconChevron className="h-5 w-5 shrink-0 text-slate-500" open={open} />
+      </button>
+      {open ? (
+        <ul className="space-y-2 border-t border-slate-100 px-3 py-3">
+          {group.offers.map((offer) => (
+            <li key={offer.id}>
+              <AdminOfferCard
+                offer={offer}
+                plants={plants}
+                locations={locations}
+                variantBacked
+                grouped
+                isEditing={editingId === offer.id}
+                onStartEdit={() => onStartEdit(offer.id)}
+                onCancelEdit={onCancelEdit}
+                onSaved={onSaved}
+                onRequestDelete={() => onRequestDelete(offer.id)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 export function AdminOffersManager({
   inventoryType,
   initialOffers,
@@ -750,6 +912,10 @@ export function AdminOffersManager({
   const filteredOffers = useMemo(
     () => offers.filter((offer) => offerMatchesSearch(offer, searchQuery)),
     [offers, searchQuery],
+  );
+  const groupedPlantOffers = useMemo(
+    () => (isPlants ? groupPlantOffers(filteredOffers) : []),
+    [filteredOffers, isPlants],
   );
 
   const loadData = useCallback(async (signal?: AbortSignal) => {
@@ -1008,32 +1174,58 @@ export function AdminOffersManager({
         </p>
       ) : (
         <ul className="space-y-3">
-          {filteredOffers.map((offer) => (
-            <li key={offer.id}>
-              <AdminOfferCard
-                offer={offer}
-                plants={plants}
-                locations={locations}
-                variantBacked={isPlants && Boolean(offer.sellableVariantId)}
-                isEditing={editingId === offer.id}
-                onStartEdit={() => {
-                  setEditingId(offer.id);
-                  setShowCreate(false);
-                }}
-                onCancelEdit={() => setEditingId(null)}
-                onSaved={(updated) => {
-                  setOffers((prev) =>
-                    prev.map((item) => (item.id === updated.id ? updated : item)),
-                  );
-                  setEditingId(null);
-                }}
-                onRequestDelete={() => {
-                  setDeleteError(null);
-                  setDeleteId(offer.id);
-                }}
-              />
-            </li>
-          ))}
+          {isPlants
+            ? groupedPlantOffers.map((group) => (
+                <li key={group.productId}>
+                  <AdminPlantOfferGroup
+                    group={group}
+                    plants={plants}
+                    locations={locations}
+                    editingId={editingId}
+                    onStartEdit={(offerId) => {
+                      setEditingId(offerId);
+                      setShowCreate(false);
+                    }}
+                    onCancelEdit={() => setEditingId(null)}
+                    onSaved={(updated) => {
+                      setOffers((prev) =>
+                        prev.map((item) => (item.id === updated.id ? updated : item)),
+                      );
+                      setEditingId(null);
+                    }}
+                    onRequestDelete={(offerId) => {
+                      setDeleteError(null);
+                      setDeleteId(offerId);
+                    }}
+                  />
+                </li>
+              ))
+            : filteredOffers.map((offer) => (
+                <li key={offer.id}>
+                  <AdminOfferCard
+                    offer={offer}
+                    plants={plants}
+                    locations={locations}
+                    variantBacked={false}
+                    isEditing={editingId === offer.id}
+                    onStartEdit={() => {
+                      setEditingId(offer.id);
+                      setShowCreate(false);
+                    }}
+                    onCancelEdit={() => setEditingId(null)}
+                    onSaved={(updated) => {
+                      setOffers((prev) =>
+                        prev.map((item) => (item.id === updated.id ? updated : item)),
+                      );
+                      setEditingId(null);
+                    }}
+                    onRequestDelete={() => {
+                      setDeleteError(null);
+                      setDeleteId(offer.id);
+                    }}
+                  />
+                </li>
+              ))}
         </ul>
       )}
       <AdminConfirmDialog
