@@ -12,13 +12,24 @@ import { t } from "@/lib/messages";
 
 interface PageProps {
   params: Promise<{ plantId: string }>;
+  searchParams: Promise<{ size?: string | string[]; variant?: string | string[] }>;
 }
 
-export default async function ShopPlantPage({ params }: PageProps) {
-  const [{ plantId: rawId }, locale] = await Promise.all([params, getLocale()]);
+function oneParam(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+export default async function ShopPlantPage({ params, searchParams }: PageProps) {
+  const [{ plantId: rawId }, query, locale] = await Promise.all([
+    params,
+    searchParams,
+    getLocale(),
+  ]);
   const plantId = decodeURIComponent(rawId).trim();
   const plant = await readCatalogShopDetail(plantId);
   if (!plant) notFound();
+  const initialSizeId = oneParam(query.size);
+  const initialVariantId = oneParam(query.variant);
 
   return (
     <main
@@ -29,7 +40,13 @@ export default async function ShopPlantPage({ params }: PageProps) {
       <TrackProductView plant_id={plant.id} plant_name={plant.name} inventory_type="plants" />
       <PlantPageHeader knownPartner="" />
       <ShopCatalogBar locale={locale} showBack />
-      <ShopPlantDetail key={plant.id} plant={plant} locale={locale} />
+      <ShopPlantDetail
+        key={`${plant.id}:${initialSizeId ?? ""}:${initialVariantId ?? ""}`}
+        plant={plant}
+        locale={locale}
+        initialSizeId={initialSizeId}
+        initialVariantId={initialVariantId}
+      />
       <PlantPageContactLink
         whatsAppMessage={t(locale, "plant.whatsapp.withoutPartner", {
           plantName: localizedPlantText(locale, plant.name, plant.nameHe),

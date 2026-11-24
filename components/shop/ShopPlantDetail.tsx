@@ -25,6 +25,7 @@ import {
   catalogSizeChoices,
   resolveCardVariant,
   resolveExplicitConfiguration,
+  variantIsEligible,
 } from "@/lib/catalogShopSelection";
 import { localizedPlantText } from "@/lib/plantDisplay";
 import { t } from "@/lib/messages";
@@ -38,32 +39,74 @@ const potChoiceClass = (selected: boolean) =>
     selected ? "ring-2 ring-brand ring-offset-2" : "ring-1 ring-black/15 hover:ring-black/30"
   }`;
 
-/** Approved card default: one eligible pot, otherwise the eligible no-pot variant. */
+const noPotChipClass = (selected: boolean) =>
+  `text-caption inline-flex h-10 items-center justify-center rounded-full px-4 font-medium transition ${ctaFocusClass} ${
+    selected
+      ? "bg-brand text-white"
+      : "bg-neutral-100 text-foreground hover:bg-neutral-200/80"
+  }`;
+
+/** Shop default is the eligible no-pot offer. A pot is the default only when no no-pot offer exists. */
 function initialVariantSelection(size: CatalogShopSize | undefined): {
   variantId: string;
   noPot: boolean;
 } {
+  const noPot = size
+    ? size.variants.find((variant) => variant.potId == null && variantIsEligible(size, variant))
+    : undefined;
+  if (noPot) return { variantId: noPot.id, noPot: true };
   const variant = size
     ? resolveCardVariant({ id: size.id, quantity: size.quantity, variants: size.variants })
     : null;
-  if (!variant || variant.potId == null) {
-    return { variantId: variant?.id ?? "", noPot: true };
+  if (variant && variant.potId != null) return { variantId: variant.id, noPot: false };
+  return { variantId: "", noPot: false };
+}
+
+/** Card link selection. Rejects a variant that is not an eligible offer of that size. */
+function incomingShopSelection(
+  sizes: CatalogShopSize[],
+  sizeId: string | undefined,
+  variantId: string | undefined,
+): { sizeId: string; variantId: string; noPot: boolean } | null {
+  const requestedSize = sizeId?.trim() ?? "";
+  const requestedVariant = variantId?.trim() ?? "";
+  if (!requestedSize || !requestedVariant) return null;
+  const size = catalogSizeChoices(sizes).find((entry) => entry.id === requestedSize);
+  if (!size) return null;
+  const variant = size.variants.find((entry) => entry.id === requestedVariant);
+  if (!variant || !variantIsEligible(size, variant)) return null;
+  const resolved = resolveExplicitConfiguration(size, variant.id);
+  if (!resolved || resolved.sellableVariantId !== variant.id || resolved.plantSizeId !== size.id) {
+    return null;
   }
-  return { variantId: variant.id, noPot: false };
+  return { sizeId: size.id, variantId: variant.id, noPot: variant.potId == null };
 }
 
 function potOptionLabel(variant: CatalogShopVariant, locale: Locale): string {
   return localizedPlantText(locale, variant.potName, variant.potNameHe) || t(locale, "shop.pots");
 }
 
-export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; locale: Locale }) {
+export function ShopPlantDetail({
+  plant,
+  locale,
+  initialSizeId,
+  initialVariantId,
+}: {
+  plant: CatalogShopDetail;
+  locale: Locale;
+  initialSizeId?: string;
+  initialVariantId?: string;
+}) {
   const posthog = usePostHog();
   const cart = useCatalogCart();
   const sizeOptions = catalogSizeChoices(plant.sizes);
-  const initialSelection = initialVariantSelection(sizeOptions[0]);
-  const [selectedSizeId, setSelectedSizeId] = useState(sizeOptions[0]?.id ?? "");
-  const [selectedVariantId, setSelectedVariantId] = useState(initialSelection.variantId);
-  const [noPotSelected, setNoPotSelected] = useState(initialSelection.noPot);
+  const incoming = incomingShopSelection(plant.sizes, initialSizeId, initialVariantId);
+  const fallback = initialVariantSelection(sizeOptions[0]);
+  const [selectedSizeId, setSelectedSizeId] = useState(incoming?.sizeId ?? sizeOptions[0]?.id ?? "");
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    incoming?.variantId ?? fallback.variantId,
+  );
+  const [noPotSelected, setNoPotSelected] = useState(incoming?.noPot ?? fallback.noPot);
   const [justAdded, setJustAdded] = useState(false);
 
   const name = localizedPlantText(locale, plant.name, plant.nameHe);
@@ -72,8 +115,16 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
   const water = localizedPlantText(locale, plant.water, plant.waterHe);
   const showCare = Boolean(plant.light && water);
   const selectedSize = sizeOptions.find((size) => size.id === selectedSizeId);
-  const potVariants = selectedSize?.variants.filter((variant) => variant.potId != null) ?? [];
-  const noPotVariant = selectedSize?.variants.find((variant) => variant.potId == null);
+  const potVariants = selectedSize
+    ? selectedSize.variants.filter(
+        (variant) => variant.potId != null && variantIsEligible(selectedSize, variant),
+      )
+    : [];
+  const noPotVariant = selectedSize
+    ? selectedSize.variants.find(
+        (variant) => variant.potId == null && variantIsEligible(selectedSize, variant),
+      )
+    : undefined;
   const selectedVariant = noPotSelected
     ? noPotVariant
     : selectedSize?.variants.find((variant) => variant.id === selectedVariantId);
@@ -191,12 +242,12 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
                   {t(locale, "shop.diameter", { cm: selectedSize.nurseryPotDiameterCm })}
                 </p>
               ) : null}
-              <p className="text-caption mt-1 text-neutral-600">
-                {resolved ? t(locale, "shop.inStock") : t(locale, "shop.unavailable")}
-              </p>
+              {resolved ? null : (
+                <p className="text-caption mt-1 text-neutral-600">{t(locale, "shop.unavailable")}</p>
+              )}
             </div>
 
-            {potVariants.length > 0 || noPotVariant ? (
+            {potVariants.length > 0 ? (
               <section className="w-full">
                 <h2 id="shop-pots-heading" className="text-heading-sm font-medium text-foreground">
                   {t(locale, "shop.pots")}
@@ -206,6 +257,17 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
                   role="radiogroup"
                   aria-labelledby="shop-pots-heading"
                 >
+                  {noPotVariant ? (
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={noPotSelected}
+                      onClick={selectNoPot}
+                      className={noPotChipClass(noPotSelected)}
+                    >
+                      {t(locale, "shop.noPot")}
+                    </button>
+                  ) : null}
                   {potVariants.map((variant) => {
                     const selected = !noPotSelected && variant.id === selectedVariantId;
                     return (
@@ -230,17 +292,20 @@ export function ShopPlantDetail({ plant, locale }: { plant: CatalogShopDetail; l
                       </button>
                     );
                   })}
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={noPotSelected}
-                    onClick={selectNoPot}
-                    className={potChoiceClass(noPotSelected)}
-                  >
-                    {t(locale, "shop.noPot")}
-                  </button>
                 </div>
               </section>
+            ) : noPotVariant ? (
+              <div className="w-full" role="radiogroup" aria-label={t(locale, "shop.pots")}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={noPotSelected}
+                  onClick={selectNoPot}
+                  className={noPotChipClass(noPotSelected)}
+                >
+                  {t(locale, "shop.noPot")}
+                </button>
+              </div>
             ) : null}
 
             <button
