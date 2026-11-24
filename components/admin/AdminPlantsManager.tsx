@@ -672,6 +672,7 @@ function AdminPlantCard({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [sizesRevision, setSizesRevision] = useState(0);
 
   useEffect(() => {
     if (!isEditing) setDraft(plantToDraft(plant));
@@ -830,10 +831,13 @@ function AdminPlantCard({
             <PlantDetailView plant={plant} />
           )}
           {plant.inventoryType !== "flowers" ? (
-            <AdminPlantVariantsPanel plant={plant} />
+            <AdminPlantVariantsPanel
+              plant={plant}
+              onSizesChanged={() => setSizesRevision((revision) => revision + 1)}
+            />
           ) : null}
           {plant.inventoryType !== "flowers" ? (
-            <AdminSellableVariantsSection plant={plant} />
+            <AdminSellableVariantsSection plant={plant} sizesRevision={sizesRevision} />
           ) : null}
         </div>
       ) : null}

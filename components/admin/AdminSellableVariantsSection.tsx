@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { useLocale } from "@/components/locale/LocaleProvider";
@@ -12,7 +12,7 @@ import {
 import { displayApiError } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
-import { isPlantSizeLabel, type PlantSizeLabel } from "@/lib/plantSizes";
+import { isPlantSizeLabel, PLANT_SIZE_LABELS, type PlantSizeLabel } from "@/lib/plantSizes";
 import { routes } from "@/lib/routes";
 import type { PlantProduct } from "@/lib/types";
 
@@ -20,6 +20,19 @@ type PlantSizeOption = {
   id: string;
   sizeLabel: PlantSizeLabel;
 };
+
+function plantSizeOptions(
+  rows: { id?: string; sizeLabel?: string }[] | undefined,
+): PlantSizeOption[] {
+  const seen = new Set<string>();
+  return (rows ?? []).flatMap((row) => {
+    const id = row.id?.trim() ?? "";
+    const sizeLabel = row.sizeLabel?.trim();
+    if (!id || !isPlantSizeLabel(sizeLabel) || seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, sizeLabel }];
+  });
+}
 
 type PotOption = {
   id: string;
@@ -55,6 +68,38 @@ const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900";
 const labelClassName = "text-xs font-medium text-slate-500";
 
+function compareAdminText(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+function plantSizeRank(label: string): number {
+  const index = (PLANT_SIZE_LABELS as readonly string[]).indexOf(label);
+  return index === -1 ? PLANT_SIZE_LABELS.length : index;
+}
+
+/** Display order: no pot first, then size, then pot name, then id. */
+export function sortSellableVariantRows<
+  T extends {
+    sellableVariantId: string;
+    plantSizeLabel: string;
+    potId: string | null;
+    potName: string | null;
+  },
+>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const potGroup = Number(a.potId != null) - Number(b.potId != null);
+    if (potGroup !== 0) return potGroup;
+    const sizeGroup = plantSizeRank(a.plantSizeLabel) - plantSizeRank(b.plantSizeLabel);
+    if (sizeGroup !== 0) return sizeGroup;
+    const labelGroup = compareAdminText(a.plantSizeLabel, b.plantSizeLabel);
+    if (labelGroup !== 0) return labelGroup;
+    const nameGroup = compareAdminText(a.potName ?? "", b.potName ?? "");
+    if (nameGroup !== 0) return nameGroup;
+    return compareAdminText(a.sellableVariantId, b.sellableVariantId);
+  });
+}
+
 function variantTitle(row: SellableVariantRow, noPot: string): string {
   if (!row.potId) return `${row.plantSizeLabel} · ${noPot}`;
   const pot = catalogPotChoiceLabel({
@@ -64,7 +109,13 @@ function variantTitle(row: SellableVariantRow, noPot: string): string {
   return `${row.plantSizeLabel} · ${pot}`;
 }
 
-export function AdminSellableVariantsSection({ plant }: { plant: PlantProduct }) {
+export function AdminSellableVariantsSection({
+  plant,
+  sizesRevision = 0,
+}: {
+  plant: PlantProduct;
+  sizesRevision?: number;
+}) {
   const locale = useLocale();
   const [rows, setRows] = useState<SellableVariantRow[]>([]);
   const [plantSizes, setPlantSizes] = useState<PlantSizeOption[]>([]);
@@ -120,15 +171,8 @@ export function AdminSellableVariantsSection({ plant }: { plant: PlantProduct })
         setLoadError(t(locale, "admin.plants.sellableVariants.loadFailed"));
         return;
       }
-      setRows(variantData.sellableVariants ?? []);
-      setPlantSizes(
-        (sizeData.variants ?? []).flatMap((row) => {
-          const id = row.id?.trim() ?? "";
-          const sizeLabel = row.sizeLabel?.trim();
-          if (!id || !isPlantSizeLabel(sizeLabel)) return [];
-          return [{ id, sizeLabel }];
-        }),
-      );
+      setRows(sortSellableVariantRows(variantData.sellableVariants ?? []));
+      setPlantSizes(plantSizeOptions(sizeData.variants));
       setPots(
         (potData.pots ?? []).flatMap((pot) => {
           const id = pot.id?.trim() ?? "";
@@ -156,9 +200,33 @@ export function AdminSellableVariantsSection({ plant }: { plant: PlantProduct })
     }
   }, [locale, plant.id]);
 
+  const refreshPlantSizes = useCallback(async () => {
+    try {
+      const sizeRes = await fetch(routes.api.plantVariants(plant.id), { cache: "no-store" });
+      const sizeData = (await sizeRes.json().catch(() => ({}))) as {
+        variants?: { id?: string; sizeLabel?: string }[];
+      };
+      if (!sizeRes.ok) return;
+      const next = plantSizeOptions(sizeData.variants);
+      setPlantSizes(next);
+      setPlantSizeId((current) =>
+        current !== "" && !next.some((size) => size.id === current) ? "" : current,
+      );
+    } catch {
+      // Keep the current selector. The size panel reports its own mutation error.
+    }
+  }, [plant.id]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  const seenSizesRevision = useRef(sizesRevision);
+  useEffect(() => {
+    if (seenSizesRevision.current === sizesRevision) return;
+    seenSizesRevision.current = sizesRevision;
+    void refreshPlantSizes();
+  }, [refreshPlantSizes, sizesRevision]);
 
   const addChoices = catalogPotEditChoices(pots);
 

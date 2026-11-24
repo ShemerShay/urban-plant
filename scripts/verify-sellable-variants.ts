@@ -90,6 +90,13 @@ function assertWiring(): void {
 
   const admin = read("components/admin/AdminPlantsManager.tsx");
   assert.match(admin, /AdminSellableVariantsSection/);
+  assert.match(admin, /onSizesChanged/);
+  assert.match(admin, /sizesRevision/);
+  assert.match(read("components/admin/AdminPlantVariantsPanel.tsx"), /onSizesChanged\?\.\(\)/);
+  assert.match(section, /sizesRevision/);
+  assert.match(section, /refreshPlantSizes/);
+  assert.match(section, /sortSellableVariantRows/);
+  assert.match(section, /Number\(a\.potId != null\) - Number\(b\.potId != null\)/);
   assert.doesNotMatch(admin, /admin\.plants\.supplierCost/);
   assert.doesNotMatch(admin, /plant\.price/);
   assert.match(read("components/admin/AdminPlantVariantsPanel.tsx"), /admin\.plants\.supplierCost/);
@@ -124,8 +131,34 @@ function assertWiring(): void {
   console.log("verify-sellable-variants: Catalog reads sellable variants; cart and POS storage do not name that table");
 }
 
+async function assertAdminListOrder(): Promise<void> {
+  const { sortSellableVariantRows } = await import(
+    "../components/admin/AdminSellableVariantsSection.tsx"
+  );
+  const rows = [
+    { sellableVariantId: "b", plantSizeLabel: "L", potId: null, potName: null },
+    { sellableVariantId: "c", plantSizeLabel: "S", potId: "pot-graphite", potName: "Graphite" },
+    { sellableVariantId: "a", plantSizeLabel: "M", potId: "pot-terra", potName: "Terracotta" },
+    { sellableVariantId: "d", plantSizeLabel: "S", potId: null, potName: null },
+    { sellableVariantId: "e", plantSizeLabel: "M", potId: null, potName: null },
+    { sellableVariantId: "f", plantSizeLabel: "S", potId: "pot-terra-s", potName: "Terracotta" },
+    { sellableVariantId: "g", plantSizeLabel: "S", potId: "pot-graphite-2", potName: "Graphite" },
+  ];
+  const ordered = sortSellableVariantRows(rows);
+  assert.deepEqual(
+    ordered.map((row) => row.sellableVariantId),
+    ["d", "e", "b", "c", "g", "f", "a"],
+  );
+  assert.equal(ordered.length, rows.length);
+  assert.equal(new Set(ordered.map((row) => row.sellableVariantId)).size, rows.length);
+  assert.equal(ordered.filter((row) => row.potId == null).length, 3);
+  assert.ok(ordered.findIndex((row) => row.potId != null) > ordered.findIndex((row) => row.potId == null));
+  console.log("verify-sellable-variants: admin list shows no-pot variants before potted variants");
+}
+
 async function main(): Promise<void> {
   assertWiring();
+  await assertAdminListOrder();
 
   await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");

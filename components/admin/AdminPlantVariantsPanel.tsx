@@ -80,7 +80,13 @@ type VariantsApiResponse = {
   ok?: boolean;
 };
 
-export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
+export function AdminPlantVariantsPanel({
+  plant,
+  onSizesChanged,
+}: {
+  plant: PlantProduct;
+  onSizesChanged?: () => void;
+}) {
   const locale = useLocale();
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -173,6 +179,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
       setCreateQuantity("0");
       setCreateSupplierCost("");
       await loadVariants();
+      onSizesChanged?.();
     } catch {
       setCreateError(t(locale, "common.networkError"));
     } finally {
@@ -229,6 +236,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
       }
       setEditingId(null);
       await loadVariants();
+      onSizesChanged?.();
     } catch {
       setEditError(t(locale, "common.networkError"));
     } finally {
@@ -249,6 +257,7 @@ export function AdminPlantVariantsPanel({ plant }: { plant: PlantProduct }) {
       }
       setDeleteId(null);
       await loadVariants();
+      onSizesChanged?.();
     } catch {
       setDeleteError(t(locale, "common.networkError"));
     } finally {
