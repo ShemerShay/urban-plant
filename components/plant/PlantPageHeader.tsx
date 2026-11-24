@@ -13,9 +13,13 @@ export function PlantPageHeader({ knownPartner }: PlantPageHeaderProps) {
   const locale = useLocale();
   return (
     <header className="mb-8 flex flex-row-reverse items-end justify-between gap-3" dir="ltr">
-      <p className="font-display text-heading-sm font-medium tracking-tight text-foreground">
-        UrbanPlant
-      </p>
+      <img
+        src="/brand/cleaf-logo.png"
+        alt="Cleaf"
+        width={720}
+        height={242}
+        className="block h-7 w-auto shrink-0"
+      />
       <div className="flex max-w-[55%] flex-col items-start gap-1.5">
         <LanguageSwitcher />
         {knownPartner ? (

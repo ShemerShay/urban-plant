@@ -28,9 +28,13 @@ export function CustomerDeadEnd({
           className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]"
           aria-labelledby="customer-dead-end-title"
         >
-          <p className="font-display text-heading-sm font-medium tracking-tight text-foreground">
-            UrbanPlant
-          </p>
+          <img
+            src="/brand/cleaf-logo.png"
+            alt="Cleaf"
+            width={720}
+            height={242}
+            className="block h-7 w-auto"
+          />
           <h1
             id="customer-dead-end-title"
             className="text-display mt-3 font-semibold text-foreground"

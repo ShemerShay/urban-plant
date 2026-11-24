@@ -27,9 +27,13 @@ export default async function AccessibilityPage() {
       className="bg-background text-foreground mx-auto flex min-h-screen w-full max-w-md flex-col px-6 py-10"
     >
       <div className="flex-1 space-y-6">
-        <p className="font-display text-heading-sm font-medium tracking-tight text-foreground">
-          UrbanPlant
-        </p>
+        <img
+          src="/brand/cleaf-logo.png"
+          alt="Cleaf"
+          width={720}
+          height={242}
+          className="block h-7 w-auto"
+        />
         <h1 className="text-display font-semibold text-foreground">{t(locale, "a11y.title")}</h1>
 
         <section className="text-body space-y-4 leading-6 text-slate-700" aria-labelledby="a11y-commitment">
