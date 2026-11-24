@@ -21,11 +21,21 @@ function assertWiring(): void {
   assert.match(storage, /sql\.transaction\(/);
   assert.match(storage, /DELETE FROM offer_availabilities/);
   assert.match(storage, /offer_availabilities_offer_scope_location_key/);
-  assert.match(storage, /RETURNING s\.placement_cycle_id/);
-  assert.doesNotMatch(storage, /s\.plant_unit_cost/);
-  assert.doesNotMatch(storage, /plant_unit_cost_source/);
-  assert.doesNotMatch(storage, /pot_unit_cost_source/);
-  assert.doesNotMatch(storage, /total_supplier_unit_cost/);
+  assert.match(storage, /RETURNING\s+s\.placement_cycle_id/);
+  assert.match(storage, /s\.plant_unit_cost/);
+  assert.match(storage, /s\.plant_unit_cost_source/);
+  assert.match(storage, /s\.pot_unit_cost/);
+  assert.match(storage, /s\.pot_unit_cost_source/);
+  assert.match(storage, /s\.pot_name/);
+  assert.match(storage, /s\.total_supplier_unit_cost/);
+  assert.match(storage, /cs\.plant_unit_cost/);
+  assert.match(storage, /cs\.plant_unit_cost_source/);
+  assert.match(storage, /cs\.pot_unit_cost/);
+  assert.match(storage, /cs\.pot_unit_cost_source/);
+  assert.match(storage, /cs\.pot_name/);
+  assert.match(storage, /cs\.total_supplier_unit_cost/);
+  assert.doesNotMatch(storage, /pv\.supplier_price/);
+  assert.doesNotMatch(storage, /plants\.supplier_price@/);
   assert.doesNotMatch(storage, /ON DELETE CASCADE[\s\S]*FROM offers/);
 
   const route = read("app/api/offers/[offerId]/route.ts");
