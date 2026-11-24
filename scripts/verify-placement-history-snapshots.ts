@@ -43,8 +43,14 @@ function assertStaticContracts(): void {
   assert.match(segmentSrc, /plant_variants\.supplier_price@cycle/);
 
   const offerSrc = read("lib/offerStorage.ts");
-  assert.match(offerSrc, /RETURNING s\.placement_cycle_id/);
-  assert.doesNotMatch(offerSrc, /s\.plant_unit_cost/);
+  assert.match(offerSrc, /RETURNING\s+s\.placement_cycle_id/);
+  assert.match(offerSrc, /s\.plant_unit_cost/);
+  assert.match(offerSrc, /s\.plant_unit_cost_source/);
+  assert.match(offerSrc, /s\.pot_unit_cost/);
+  assert.match(offerSrc, /s\.pot_unit_cost_source/);
+  assert.match(offerSrc, /s\.pot_name/);
+  assert.match(offerSrc, /s\.total_supplier_unit_cost/);
+  assert.doesNotMatch(offerSrc, /pv\.supplier_price/);
   assert.doesNotMatch(offerSrc, /plants\.supplier_price@/);
 
   const posSrc = read("lib/posSpotStorage.ts");
@@ -382,6 +388,7 @@ async function main(): Promise<void> {
     `) as Record<string, unknown>[];
     assert.equal(segs.length, 4);
     assert.equal(Number(segs[3].consumer_price), nextPrice);
+    assert.equal(segs[3].pot_name, `${tag} pot a`);
     assert.equal(Number(segs[3].plant_unit_cost), 40);
     assert.equal(segs[3].plant_unit_cost_source, "plant_variants.supplier_price@cycle");
     assert.equal(Number(segs[3].pot_unit_cost), 12);

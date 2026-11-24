@@ -23,9 +23,17 @@ function assertStaticContracts(): void {
   assert.match(migration, /pv.supplier_price IS NULL/);
   assert.match(migration, /ALTER TABLE plants/);
   assert.match(migration, /DROP COLUMN IF EXISTS supplier_price/);
+  assert.match(migration, /061 refused to drop plants\.supplier_price/);
+  assert.match(migration, /not preserved on any plant size/);
+  assert.match(migration, /COALESCE\(p\.inventory_type, 'plants'\) <> 'flowers'/);
+  assert.doesNotMatch(migration, /INSERT INTO plant_variants/);
   assert.ok(
-    migration.indexOf("UPDATE plant_variants") < migration.indexOf("DROP COLUMN IF EXISTS supplier_price"),
-    "backfill must run before plants.supplier_price is dropped",
+    migration.indexOf("UPDATE plant_variants") < migration.indexOf("RAISE EXCEPTION"),
+    "backfill must run before the preservation guard",
+  );
+  assert.ok(
+    migration.indexOf("RAISE EXCEPTION") < migration.indexOf("DROP COLUMN IF EXISTS supplier_price"),
+    "preservation guard must run before plants.supplier_price is dropped",
   );
   assert.match(migration, /plant_variants\.supplier_price@sale/);
   assert.match(migration, /plant_variants\.supplier_price@cycle/);
