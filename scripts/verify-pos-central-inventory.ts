@@ -48,6 +48,18 @@ function assertStaticBoundaries(): void {
   assert.match(composer, /already_at_partner/);
   assert.doesNotMatch(composer, /Placement Cycle|placement_segment/i);
 
+  const admin = read("components/admin/AdminPartnerDetail.tsx");
+  assert.match(admin, /inventorySourceForRequest/);
+  assert.match(
+    admin,
+    /showInventorySource && inventorySource === "already_at_partner"\s*\?\s*"already_at_partner"\s*:\s*"central"/,
+  );
+  assert.match(admin, /inventorySource: inventorySourceForRequest/);
+  assert.doesNotMatch(
+    admin,
+    /\.\.\.\(showInventorySource && inventorySource \? \{ inventorySource \} : \{\}\)/,
+  );
+
   const migrations = readdirSync(join(root, "db/migrations"));
   assert.equal(existsSync(join(root, "db/migrations/038_pos_central_inventory.sql")), false);
   assert.equal(
@@ -63,6 +75,46 @@ function assertStaticBoundaries(): void {
 
 async function main(): Promise<void> {
   assertStaticBoundaries();
+
+  const { adminSaveNeedsInventorySource } = await import("../lib/inventorySource");
+  assert.equal(
+    adminSaveNeedsInventorySource({
+      selectedIsPlant: true,
+      creating: false,
+      occupiedVariantId: "",
+      selectedVariantId: "size-m",
+      sameVariantReplace: false,
+      existingOfferIsFlower: true,
+      introducesNewPotColor: false,
+    }),
+    true,
+    "a plant selected on a flower POS is a Place and needs a source",
+  );
+  assert.equal(
+    adminSaveNeedsInventorySource({
+      selectedIsPlant: true,
+      creating: false,
+      occupiedVariantId: "occupied-size",
+      selectedVariantId: "",
+      sameVariantReplace: false,
+      existingOfferIsFlower: false,
+      introducesNewPotColor: false,
+    }),
+    true,
+    "an unknown selected size on an occupied POS still needs a source",
+  );
+  assert.equal(
+    adminSaveNeedsInventorySource({
+      selectedIsPlant: true,
+      creating: false,
+      occupiedVariantId: "same-size",
+      selectedVariantId: "same-size",
+      sameVariantReplace: false,
+      existingOfferIsFlower: false,
+      introducesNewPotColor: false,
+    }),
+    false,
+  );
 
   await import("./stub-server-only.mjs");
   const { loadEnvLocal } = await import("./load-env-local.mjs");

@@ -33,12 +33,12 @@ export function adminSaveNeedsInventorySource(input: {
   introducesNewPotColor: boolean;
 }): boolean {
   if (!input.selectedIsPlant) return false;
-  if (input.existingOfferIsFlower && !input.creating) return false;
   if (input.creating) return true;
   const occupied = input.occupiedVariantId.trim();
   const selected = input.selectedVariantId.trim();
   if (!occupied) return true;
-  if (selected && selected !== occupied) return true;
+  // Unknown size on the client can still be Place/Replace on the server.
+  if (!selected || selected !== occupied) return true;
   if (input.sameVariantReplace) return true;
   if (input.introducesNewPotColor) return true;
   return false;

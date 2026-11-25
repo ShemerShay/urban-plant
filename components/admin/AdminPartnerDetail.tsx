@@ -363,7 +363,7 @@ export function AdminPartnerDetail({
   const [pocketId, setPocketId] = useState("");
   const [currentOfferId, setCurrentOfferId] = useState("");
   const [sameVariantReplace, setSameVariantReplace] = useState(false);
-  const [inventorySource, setInventorySource] = useState<InventorySource | "">("");
+  const [inventorySource, setInventorySource] = useState<InventorySource>("central");
   const [spotDescription, setSpotDescription] = useState("");
   const [placementNotes, setPlacementNotes] = useState("");
   const [spotStatus, setSpotStatus] = useState<PosSpotStatus>("available");
@@ -439,6 +439,10 @@ export function AdminPartnerDetail({
     existingOfferIsFlower,
     introducesNewPotColor: introducesNewPot,
   });
+  const inventorySourceForRequest: InventorySource =
+    showInventorySource && inventorySource === "already_at_partner"
+      ? "already_at_partner"
+      : "central";
 
   const loadAll = useCallback(async () => {
     setLoadError(null);
@@ -658,7 +662,7 @@ export function AdminPartnerDetail({
     setPocketId("");
     setCurrentOfferId(activeOffers[0]?.id ?? "");
     setSameVariantReplace(false);
-    setInventorySource("");
+    setInventorySource("central");
     setSpotDescription("");
     setPlacementNotes("");
     setSpotStatus("available");
@@ -672,7 +676,7 @@ export function AdminPartnerDetail({
     setPocketId(spot.pocketId ?? "");
     setCurrentOfferId(spot.currentOfferId ?? "");
     setSameVariantReplace(false);
-    setInventorySource("");
+    setInventorySource("central");
     setSpotDescription(spot.spotDescription ?? "");
     setPlacementNotes(spot.placementNotes ?? "");
     setSpotStatus(
@@ -758,7 +762,7 @@ export function AdminPartnerDetail({
             pocketId: pocketId || null,
             currentOfferId,
             ...(showSameVariantReplace && sameVariantReplace ? { sameVariantReplace: true } : {}),
-            ...(showInventorySource && inventorySource ? { inventorySource } : {}),
+            inventorySource: inventorySourceForRequest,
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -778,7 +782,7 @@ export function AdminPartnerDetail({
             posNumber: posNumber.trim(),
             ...(pocketId ? { pocketId } : {}),
             currentOfferId,
-            ...(showInventorySource && inventorySource ? { inventorySource } : {}),
+            inventorySource: inventorySourceForRequest,
             status: spotStatus,
             ...(spotDescription.trim() ? { spotDescription: spotDescription.trim() } : {}),
             ...(placementNotes.trim() ? { placementNotes: placementNotes.trim() } : {}),
@@ -1286,6 +1290,7 @@ export function AdminPartnerDetail({
             onChange={(e) => {
               setCurrentOfferId(e.target.value);
               setSameVariantReplace(false);
+              setInventorySource("central");
             }}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
           >
