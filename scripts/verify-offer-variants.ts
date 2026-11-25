@@ -154,7 +154,10 @@ function assertCustomerPathsUntouched(): void {
   assert.match(offersAdmin, /async function confirmDelete/);
   assert.match(offersAdmin, /AdminConfirmDialog/);
   assert.match(offersAdmin, /listedOffers/);
-  assert.match(offersAdmin, /inventoryType !== "plants"/);
+  assert.match(offersAdmin, /return offers/);
+  assert.doesNotMatch(offersAdmin, /filter\(\(offer\) => Boolean\(offer\.sellableVariantId\)\)/);
+  assert.match(offersAdmin, /admin\.offers\.legacyPos/);
+  assert.match(offersAdmin, /variantBacked=\{Boolean\(offer\.sellableVariantId\)\}/);
   assert.match(offersAdmin, /offer\.sellableVariantId/);
   assert.match(offersAdmin, /function groupPlantOffers/);
   assert.match(offersAdmin, /groups.get\(productId\)/);

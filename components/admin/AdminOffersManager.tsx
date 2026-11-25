@@ -63,10 +63,9 @@ const STATUS_OPTIONS: OfferStatus[] = ["active", "inactive"];
 
 function listedOffers(
   offers: OfferWithProduct[],
-  inventoryType: InventoryType,
+  _inventoryType: InventoryType,
 ): OfferWithProduct[] {
-  if (inventoryType !== "plants") return offers;
-  return offers.filter((offer) => Boolean(offer.sellableVariantId));
+  return offers;
 }
 
 type PlantOfferGroup = {
@@ -125,7 +124,8 @@ function groupPlantOffers(offers: OfferWithProduct[]): PlantOfferGroup[] {
     );
 }
 
-function offerVariantSummary(offer: OfferWithProduct, noPot: string): string {
+function offerVariantSummary(offer: OfferWithProduct, noPot: string, legacyLabel: string): string {
+  if (!offer.sellableVariantId) return legacyLabel;
   const size = offer.sellableVariant?.plantSizeLabel?.trim() ?? "";
   const potName = offer.sellableVariant?.potName?.trim();
   const pot = potName || noPot;
@@ -566,14 +566,14 @@ function OfferDetailView({
             <span className="font-mono text-xs text-slate-500">({offer.productId})</span>
           </dd>
         </div>
-        {offer.sellableVariant ? (
-          <div className="flex flex-wrap gap-x-2">
-            <dt className="font-medium text-slate-500">{t(locale, "admin.offers.variant")}</dt>
-            <dd className="text-slate-900">
-              {variantLabel(offer.sellableVariant, t(locale, "admin.offers.noPot"))}
-            </dd>
-          </div>
-        ) : null}
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="font-medium text-slate-500">{t(locale, "admin.offers.variant")}</dt>
+          <dd className="text-slate-900">
+            {offer.sellableVariant
+              ? variantLabel(offer.sellableVariant, t(locale, "admin.offers.noPot"))
+              : t(locale, "admin.offers.legacyPos")}
+          </dd>
+        </div>
         {offer.plantSubtitle ? (
           <div className="flex flex-wrap gap-x-2">
             <dt className="font-medium text-slate-500">{t(locale, "admin.offers.plantSubtitle")}</dt>
@@ -679,7 +679,9 @@ function AdminOfferCard({
   const savedVariantText = offer.sellableVariant
     ? variantLabel(offer.sellableVariant, noPot)
     : offer.sellableVariantId ?? "";
-  const summaryName = grouped ? offerVariantSummary(offer, noPot) : offer.productName;
+  const summaryName = grouped
+    ? offerVariantSummary(offer, noPot, t(locale, "admin.offers.legacyPos"))
+    : offer.productName;
 
   return (
     <article
@@ -859,7 +861,7 @@ function AdminPlantOfferGroup({
                 offer={offer}
                 plants={plants}
                 locations={locations}
-                variantBacked
+                variantBacked={Boolean(offer.sellableVariantId)}
                 grouped
                 isEditing={editingId === offer.id}
                 onStartEdit={() => onStartEdit(offer.id)}

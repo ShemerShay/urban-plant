@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { deletePlantLibraryBlob, readPlantLibraryBlob, writePlantLibraryBlob } from "@/lib/plantImageBlobs";
+import {
+  deletePlantLibraryBlob,
+  readPlantLibraryBlob,
+  usesNetlifyBlobStore,
+  writePlantLibraryBlob,
+} from "@/lib/plantImageBlobs";
 
 import {
   MAX_PLANT_IMAGE_UPLOAD_BYTES,
@@ -206,9 +211,14 @@ export async function getPlantLibraryImageBytes(
     }
   }
 
-  const blob = await readPlantLibraryBlob(filename);
-  if (blob) {
-    return { mimeType: mimeTypeForImageBytes(filename, blob), data: blob };
+  // Local dev keeps blob-only uploads in the stand-in directory. Production
+  // Netlify blob reads hang when the key is absent, so a deployed site with
+  // DATABASE_URL serves the database archive and does not call that store.
+  if (!usesNetlifyBlobStore()) {
+    const blob = await readPlantLibraryBlob(filename);
+    if (blob) {
+      return { mimeType: mimeTypeForImageBytes(filename, blob), data: blob };
+    }
   }
 
   if (!process.env.DATABASE_URL?.trim()) return null;
