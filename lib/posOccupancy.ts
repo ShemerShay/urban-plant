@@ -191,11 +191,11 @@ async function resolvePlantOccupancyIds(input: {
   partnerLocationId: string;
   previousOfferId?: string;
 }): Promise<{ plantVariantId: string; potId: string | null }> {
-  assertPlantOfferEligibleForWrite(input.offer, input.partnerLocationId, input.previousOfferId);
   const sellable = input.offer.sellableVariant;
-  if (!input.offer.sellableVariantId || !sellable?.plantSizeId) {
+  if (!input.offer.sellableVariantId?.trim() || !sellable?.plantSizeId) {
     throw new PosOccupancyError("Place requires a variant-backed Offer");
   }
+  assertPlantOfferEligibleForWrite(input.offer, input.partnerLocationId, input.previousOfferId);
   return {
     plantVariantId: sellable.plantSizeId,
     potId: sellable.potId?.trim() || null,
@@ -315,6 +315,12 @@ async function updateSameUnitPatch(
   }
 
   if (!occupyingVariantId) {
+    if (!offer.sellableVariantId || !offer.sellableVariant?.plantSizeId) {
+      if (offer.id !== (existing.currentOfferId ?? "")) {
+        throw new PosOccupancyError("Place requires a variant-backed Offer");
+      }
+      return unchangedOccupancy("update");
+    }
     throw new PosOccupancyError("Update requires an occupying plant");
   }
 
@@ -447,6 +453,16 @@ export async function resolveOccupancyForPosPatch(
         offerChanged: offer.id !== (existing.currentOfferId ?? ""),
       });
     }
+    return unchangedOccupancy("update");
+  }
+
+  // Keeping the Offer already on this POS is not a Place or Replace.
+  // Legacy rows have no plant size, so an unchanged Offer must not be
+  // validated as a new variant-backed occupancy.
+  const keepingExistingLegacyOffer =
+    offer.id === (existing.currentOfferId ?? "") &&
+    (!offer.sellableVariantId?.trim() || !offer.sellableVariant?.plantSizeId?.trim());
+  if (keepingExistingLegacyOffer) {
     return unchangedOccupancy("update");
   }
 

@@ -151,6 +151,7 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not save POS Spot": "admin.qr.saveFailed",
   "This variant has no remaining Back Office stock": "admin.pos.inventorySource.zeroStock",
   "inventorySource is required for Place and Replace": "admin.pos.inventorySource.required",
+  "Place requires a variant-backed Offer": "admin.partners.detail.legacyOfferHint",
   "inventorySource is invalid": "admin.pos.inventorySource.invalid",
   [PLANT_IMAGE_UNSUPPORTED_TYPE_MESSAGE]: "admin.image.unsupportedType",
   [PLANT_IMAGE_SOURCE_TOO_LARGE_MESSAGE]: "admin.image.sourceTooLarge",

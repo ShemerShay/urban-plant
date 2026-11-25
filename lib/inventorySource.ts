@@ -31,8 +31,11 @@ export function adminSaveNeedsInventorySource(input: {
   sameVariantReplace: boolean;
   existingOfferIsFlower: boolean;
   introducesNewPotColor: boolean;
+  /** Same legacy Offer already on this POS. Not a Place or Replace. */
+  keepingExistingLegacyOffer?: boolean;
 }): boolean {
   if (!input.selectedIsPlant) return false;
+  if (input.keepingExistingLegacyOffer) return false;
   if (input.creating) return true;
   const occupied = input.occupiedVariantId.trim();
   const selected = input.selectedVariantId.trim();

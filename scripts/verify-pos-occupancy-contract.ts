@@ -345,6 +345,137 @@ async function main(): Promise<void> {
     assert.equal(legacy.plantVariantId, undefined);
     assert.equal(posAllowsNewCustomerPurchase(legacy), true);
 
+    const offerLegacyOther = `occ-legacy-other-${tag}`;
+    await sql`
+      INSERT INTO offers (id, product_id, consumer_price, status, created_at)
+      VALUES (${offerLegacyOther}, ${plantId}, 34, 'active', now())
+    `;
+    const soldLegacy = await updatePosSpot(legacy.id, {
+      partnerLocationId,
+      posNumber: legacy.posNumber ?? "93",
+      posName: legacy.posName,
+      updateStatus: true,
+      status: "sold",
+    });
+    assert.equal(soldLegacy?.status, "sold");
+    assert.equal(soldLegacy?.currentOfferId, offerLegacy);
+    const cyclesBeforeLegacy = await sql`
+      SELECT COUNT(*)::int AS n
+      FROM placement_cycles
+      WHERE pos_spot_id = ${legacy.id}::uuid
+    `;
+    const qtyBeforeLegacyEdit = await getInventoryQuantity(variantA);
+    const reactivated = await resolveOccupancyForPosPatch({
+      existing: soldLegacy!,
+      partnerLocationId,
+      requestedOfferId: offerLegacy,
+      requestedStatus: "available",
+    });
+    assert.equal(reactivated.action, "update");
+    assert.equal(reactivated.updateCurrentOfferId, false);
+    assert.equal(reactivated.updatePlantVariantId, false);
+    assert.equal(reactivated.updatePotColorId, false);
+    assert.equal(reactivated.forceAvailable, false);
+    assert.equal(reactivated.introducesNewPotColor, false);
+    const availableAgain = await updatePosSpot(legacy.id, {
+      partnerLocationId,
+      posNumber: legacy.posNumber ?? "93",
+      posName: legacy.posName,
+      spotDescription: "front desk",
+      updatePocketId: true,
+      pocketId: pocket.id,
+      updateStatus: true,
+      status: "available",
+      ...occupancyToSpotFields(reactivated),
+    });
+    assert.ok(availableAgain);
+    assert.equal(availableAgain.status, "available");
+    assert.equal(availableAgain.currentOfferId, offerLegacy);
+    assert.equal(availableAgain.plantVariantId, undefined);
+    assert.equal(availableAgain.potId, undefined);
+    assert.equal(availableAgain.spotDescription, "front desk");
+    assert.equal(availableAgain.pocketId, pocket.id);
+    assert.equal(await getInventoryQuantity(variantA), qtyBeforeLegacyEdit);
+    assert.equal(
+      (cyclesBeforeLegacy as { n: number }[])[0]?.n,
+      (
+        (await sql`
+          SELECT COUNT(*)::int AS n
+          FROM placement_cycles
+          WHERE pos_spot_id = ${legacy.id}::uuid
+        `) as { n: number }[]
+      )[0]?.n,
+    );
+    const described = await resolveOccupancyForPosPatch({
+      existing: availableAgain,
+      partnerLocationId,
+      requestedOfferId: offerLegacy,
+    });
+    assert.equal(described.action, "update");
+    assert.equal(described.updateCurrentOfferId, false);
+    const { writePosUpdate } = await import("../lib/posCentralStock");
+    const edited = await writePosUpdate({
+      occupancyAction: described.action,
+      inventorySource: undefined,
+      introducesNewPot: described.introducesNewPotColor,
+      id: availableAgain.id,
+      existing: availableAgain,
+      variantId: described.plantVariantId,
+      potId: described.potId,
+      patch: {
+        partnerLocationId,
+        posNumber: availableAgain.posNumber ?? "93",
+        posName: availableAgain.posName,
+        spotDescription: "window",
+        updateStatus: true,
+        status: "available",
+        ...occupancyToSpotFields(described),
+      },
+    });
+    assert.equal(edited?.spotDescription, "window");
+    assert.equal(edited?.currentOfferId, offerLegacy);
+    assert.equal(edited?.status, "available");
+    assert.equal(await getInventoryQuantity(variantA), qtyBeforeLegacyEdit);
+    await assert.rejects(
+      () =>
+        resolveOccupancyForPosPatch({
+          existing: availableAgain,
+          partnerLocationId,
+          requestedOfferId: offerLegacyOther,
+        }),
+      (err: unknown) =>
+        err instanceof PosOccupancyError &&
+        err.message === "Place requires a variant-backed Offer",
+    );
+    await assert.rejects(
+      () =>
+        resolveOccupancyForPosCreate({
+          offerId: offerLegacy,
+          partnerLocationId,
+        }),
+      (err: unknown) => err instanceof PosOccupancyError,
+    );
+    const stillSame = await getPosSpotById(legacy.id);
+    assert.equal(stillSame?.currentOfferId, offerLegacy);
+    assert.equal(posAllowsNewCustomerPurchase(stillSame!), true);
+    const { getPosLandingDetails } = await import("../lib/posLandingRead");
+    const landing = await getPosLandingDetails(stillSame!);
+    assert.equal(landing.offer?.id, offerLegacy);
+    assert.equal(landing.offer?.sellableVariantId ?? null, null);
+    assert.equal(
+      adminSaveNeedsInventorySource({
+        selectedIsPlant: true,
+        creating: false,
+        occupiedVariantId: "",
+        selectedVariantId: "",
+        sameVariantReplace: false,
+        existingOfferIsFlower: false,
+        introducesNewPotColor: false,
+        keepingExistingLegacyOffer: true,
+      }),
+      false,
+    );
+
     // 2-3. Place works; Place on occupied is rejected.
     const placed = await getPosSpotById(plantSpot.id);
     assert.ok(placed?.plantVariantId);
@@ -356,6 +487,13 @@ async function main(): Promise<void> {
         }),
       (err: unknown) => err instanceof PosOccupancyError,
     );
+    const restockSameOffer = await resolveOccupancyForPosPatch({
+      existing: { ...placed, plantVariantId: undefined, status: "sold" },
+      partnerLocationId,
+      requestedOfferId: offerA,
+      requestedStatus: "available",
+    });
+    assert.equal(restockSameOffer.action, "place");
 
     // 4. Pocket move keeps occupancy.
     const beforeMove = await getPosSpotById(plantSpot.id);
@@ -734,6 +872,7 @@ async function main(): Promise<void> {
       )
     `;
     await sql`DELETE FROM placement_cycles WHERE plant_variant_id IN (${variantA}::uuid, ${variantB}::uuid)`;
+    await sql`DELETE FROM offers WHERE id = ${`occ-legacy-other-${tag}`}`;
     await fixture.cleanup();
   }
 }

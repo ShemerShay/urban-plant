@@ -430,6 +430,12 @@ export function AdminPartnerDetail({
     if (fromOffers) return fromOffers.inventoryType === "flowers";
     return offerById.get(offerId)?.inventoryType === "flowers";
   })();
+  const keepingExistingLegacyOffer = Boolean(
+    editSpot?.currentOfferId &&
+      currentOfferId === editSpot.currentOfferId &&
+      selectedIsPlant &&
+      !derivedPlantSizeId,
+  );
   const showInventorySource = adminSaveNeedsInventorySource({
     selectedIsPlant,
     creating: !editSpot,
@@ -438,6 +444,7 @@ export function AdminPartnerDetail({
     sameVariantReplace,
     existingOfferIsFlower,
     introducesNewPotColor: introducesNewPot,
+    keepingExistingLegacyOffer,
   });
   const inventorySourceForRequest: InventorySource =
     showInventorySource && inventorySource === "already_at_partner"
@@ -1318,7 +1325,7 @@ export function AdminPartnerDetail({
                   .join(" ")}`
               : ` · ${t(locale, "admin.partners.detail.noPot")}`}
           </p>
-        ) : selectedIsPlant && selectedOffer ? (
+        ) : selectedIsPlant && selectedOffer && !keepingExistingLegacyOffer ? (
           <p className="text-xs text-amber-700">{t(locale, "admin.partners.detail.legacyOfferHint")}</p>
         ) : null}
         {showSameVariantReplace ? (
