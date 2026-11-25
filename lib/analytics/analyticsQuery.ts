@@ -1,10 +1,9 @@
 import type { DateFilterValue } from "@/lib/dateFilter";
 import {
-  DEFAULT_DATE_FILTER_PRESET,
-  defaultDateFilterValue,
   isDateFilterPresetId,
   normalizeDateFilterValue,
   parseCalendarYmd,
+  type DateFilterPresetId,
 } from "@/lib/dateFilter";
 import { DEFAULT_INVENTORY_TYPE, parseInventoryType, type InventoryType } from "@/lib/inventoryType";
 import { routes } from "@/lib/routes";
@@ -13,6 +12,9 @@ export type AnalyticsInventoryFilter = InventoryType | "all";
 
 export const DEFAULT_ANALYTICS_INVENTORY_FILTER: AnalyticsInventoryFilter =
   DEFAULT_INVENTORY_TYPE;
+
+/** Fresh /admin/analytics. Explicit `date=today` still selects today. */
+export const DEFAULT_ANALYTICS_DATE_PRESET: DateFilterPresetId = "last_month";
 
 export type AnalyticsArea = "overall" | "logistics" | "financial";
 
@@ -61,7 +63,7 @@ export function parseAnalyticsDateFilter(
   if (isDateFilterPresetId(input.date)) {
     return { mode: "preset", presetId: input.date };
   }
-  return defaultDateFilterValue();
+  return { mode: "preset", presetId: DEFAULT_ANALYTICS_DATE_PRESET };
 }
 
 export function parseAnalyticsFilterState(
@@ -91,7 +93,7 @@ export function analyticsQueryUrl(state: AnalyticsFilterState): string {
   if (state.dateFilter.mode === "range") {
     params.set("from", state.dateFilter.from);
     params.set("to", state.dateFilter.to);
-  } else if (state.dateFilter.presetId !== DEFAULT_DATE_FILTER_PRESET) {
+  } else if (state.dateFilter.presetId !== DEFAULT_ANALYTICS_DATE_PRESET) {
     params.set("date", state.dateFilter.presetId);
   }
   if (state.partnerId) params.set("partner", state.partnerId);

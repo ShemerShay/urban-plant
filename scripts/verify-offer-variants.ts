@@ -156,6 +156,9 @@ function assertCustomerPathsUntouched(): void {
   assert.match(offersAdmin, /listedOffers/);
   assert.match(offersAdmin, /return offers/);
   assert.doesNotMatch(offersAdmin, /filter\(\(offer\) => Boolean\(offer\.sellableVariantId\)\)/);
+  const offersPlantsPage = read("app/admin/offers/plants/page.tsx");
+  assert.match(offersPlantsPage, /enrichOffersWithProduct\(offersRaw\)/);
+  assert.doesNotMatch(offersPlantsPage, /Boolean\(offer\.sellableVariantId\)/);
   assert.match(offersAdmin, /admin\.offers\.legacyPos/);
   assert.match(offersAdmin, /variantBacked=\{Boolean\(offer\.sellableVariantId\)\}/);
   assert.match(offersAdmin, /offer\.sellableVariantId/);

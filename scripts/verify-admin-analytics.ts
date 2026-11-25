@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import {
   analyticsQueryUrl,
+  DEFAULT_ANALYTICS_DATE_PRESET,
   DEFAULT_ANALYTICS_INVENTORY_FILTER,
   parseAnalyticsFilterState,
 } from "../lib/analytics/analyticsQuery";
@@ -243,13 +244,14 @@ const query = read("lib/analytics/analyticsQuery.ts");
 assert.doesNotMatch(query, /params\.set\("range"/);
 assert.doesNotMatch(query, /\brange=/);
 assert.match(query, /inventoryType/);
-assert.match(query, /DEFAULT_DATE_FILTER_PRESET/);
+assert.match(query, /DEFAULT_ANALYTICS_DATE_PRESET/);
+assert.match(query, /last_month/);
+assert.doesNotMatch(query, /defaultDateFilterValue/);
 assert.match(query, /DEFAULT_ANALYTICS_INVENTORY_FILTER/);
 assert.match(query, /DEFAULT_INVENTORY_TYPE/);
 assert.match(query, /v === "all"/);
 assert.doesNotMatch(query, /parseInventoryType\(raw\) \?\? "all"/);
 assert.match(query, /normalizeDateFilterValue/);
-assert.match(query, /defaultDateFilterValue/);
 
 const dateFilterSrc = read("lib/dateFilter.ts");
 assert.match(
@@ -282,6 +284,7 @@ assert.match(envExample, /POSTHOG_PROJECT_ID/);
 
 assert.equal(DEFAULT_ANALYTICS_INVENTORY_FILTER, "plants");
 assert.equal(DEFAULT_DATE_FILTER_PRESET, "today");
+assert.equal(DEFAULT_ANALYTICS_DATE_PRESET, "last_month");
 
 const loading = read("app/admin/analytics/loading.tsx");
 assert.match(loading, /admin-analytics-loading/);
@@ -292,8 +295,16 @@ const emptyFilters = parseAnalyticsFilterState({});
 assert.equal(emptyFilters.inventoryType, "plants");
 assert.equal(emptyFilters.partnerId, null);
 assert.equal(emptyFilters.area, "overall");
-assert.deepEqual(emptyFilters.dateFilter, { mode: "preset", presetId: "today" });
+assert.deepEqual(emptyFilters.dateFilter, { mode: "preset", presetId: "last_month" });
 assert.equal(analyticsQueryUrl(emptyFilters), "/admin/analytics");
+
+const explicitToday = parseAnalyticsFilterState({ date: "today" });
+assert.deepEqual(explicitToday.dateFilter, { mode: "preset", presetId: "today" });
+assert.match(analyticsQueryUrl(explicitToday), /date=today/);
+
+const explicitLastMonth = parseAnalyticsFilterState({ date: "last_month" });
+assert.deepEqual(explicitLastMonth.dateFilter, { mode: "preset", presetId: "last_month" });
+assert.equal(analyticsQueryUrl(explicitLastMonth), "/admin/analytics");
 
 const allLastWeek = parseAnalyticsFilterState({
   inventoryType: "all",
@@ -326,6 +337,6 @@ const futureOnlyUrl = parseAnalyticsFilterState(
   frozenNow,
 );
 assert.deepEqual(futureOnlyUrl.dateFilter, { mode: "preset", presetId: "today" });
-assert.equal(analyticsQueryUrl(futureOnlyUrl), "/admin/analytics");
+assert.match(analyticsQueryUrl(futureOnlyUrl), /date=today/);
 
 console.log("OK: admin analytics wiring verified");

@@ -13,9 +13,7 @@ export default async function AdminOffersPlantsPage() {
     readSellableVariantChoices(),
     readPartnerLocations(),
   ]);
-  const offers = await enrichOffersWithProduct(
-    offersRaw.filter((offer) => Boolean(offer.sellableVariantId)),
-  );
+  const offers = await enrichOffersWithProduct(offersRaw);
 
   return (
     <main
