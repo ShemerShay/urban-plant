@@ -9,6 +9,7 @@ import "server-only";
 
 import { randomUUID } from "crypto";
 
+import { BRAND_NAME } from "@/lib/brand";
 import {
   CardcomError,
   createCardcomLowProfile,
@@ -380,6 +381,7 @@ async function createCatalogAttemptAndHolds(input: {
               AND o.id IS NOT NULL
               AND o.id = i.offer_id
               AND o.status = 'active'
+              AND o.admin_hidden = false
               AND o.sellable_variant_id = sv.id
               AND EXISTS (
                 SELECT 1
@@ -511,7 +513,7 @@ async function createCatalogAttemptAndHolds(input: {
           CASE
             WHEN (SELECT COUNT(*) FROM matched) = 1
               THEN (SELECT m.plant_name FROM matched m ORDER BY m.line_no LIMIT 1)
-            ELSE 'Urban Plant (' || (SELECT COUNT(*) FROM matched)::text || ' items)'
+            ELSE ${BRAND_NAME} || ' (' || (SELECT COUNT(*) FROM matched)::text || ' items)'
           END AS product_name
         ),
         attempt_ins AS (

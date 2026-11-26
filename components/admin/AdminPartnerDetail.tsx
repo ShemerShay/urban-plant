@@ -17,6 +17,7 @@ import { AdminEntityList } from "@/components/admin/shared/AdminEntityList";
 import { AdminFormModal } from "@/components/admin/shared/AdminFormModal";
 import { AdminManagementSection } from "@/components/admin/shared/AdminManagementSection";
 import { useLocale } from "@/components/locale/LocaleProvider";
+import { BRAND_NAME } from "@/lib/brand";
 import { formatStoredDeliveryAddressDisplay } from "@/lib/deliveryAddress";
 import {
   adminHeldForPaymentLabel,
@@ -900,7 +901,7 @@ export function AdminPartnerDetail({
     const safeSlug = previewIdentity.spotSlug.replace(/[^a-zA-Z0-9_-]/g, "");
     const anchor = document.createElement("a");
     anchor.href = blobUrl;
-    anchor.download = `urban-plant-qr-${safeSlug}.svg`;
+    anchor.download = `${BRAND_NAME.toLowerCase()}-qr-${safeSlug}.svg`;
     anchor.click();
     URL.revokeObjectURL(blobUrl);
   }

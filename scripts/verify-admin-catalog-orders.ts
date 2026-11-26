@@ -49,7 +49,7 @@ function order(patch: Partial<SavedOrder> = {}): SavedOrder {
   return {
     orderId: "11111111-1111-1111-1111-111111111111",
     plantId: "plant-a",
-    plantName: "Urban Plant (2 items)",
+    plantName: "Cleaf (2 items)",
     locationId: null,
     locationName: null,
     locationAddress: null,
@@ -233,7 +233,7 @@ async function assertHelpers(): Promise<void> {
   assert.equal(catalogStoredPlantName(line(), "he"), "מונסטרה");
   assert.equal(catalogStoredPlantName(line(), "en"), "Monstera");
   assert.match(catalogStoredItemSummary(items[catalog.orderId], "en"), /Monstera/);
-  assert.doesNotMatch(catalogStoredItemSummary(items[catalog.orderId], "en"), /Urban Plant/);
+  assert.doesNotMatch(catalogStoredItemSummary(items[catalog.orderId], "en"), /Cleaf/);
 
   const recon = reconciliationAttemptViewFromAttempt({
     id: "attempt-1",

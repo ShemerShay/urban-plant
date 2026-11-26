@@ -65,13 +65,13 @@ const en = {
   "plant.gallery.next": "Next photo",
   "plant.contact.ask": "Ask us anything",
   "plant.contact.whatsappSr": " on WhatsApp (opens in a new tab)",
-  "plant.contact.instagram": "Urban Plant on Instagram (opens in a new tab)",
+  "plant.contact.instagram": "Cleaf on Instagram (opens in a new tab)",
   "plant.contact.a11yLabel": "Accessibility statement",
   "plant.contact.a11yTitle": "Accessibility",
   "plant.whatsapp.withPartner":
-    "Hi Urban Plant — I have a question about “{plantName}” at {partnerName}.",
+    "Hi Cleaf — I have a question about “{plantName}” at {partnerName}.",
   "plant.whatsapp.withoutPartner":
-    "Hi Urban Plant — I have a question about “{plantName}”.",
+    "Hi Cleaf — I have a question about “{plantName}”.",
 
   "checkout.back": "Back to plant",
   "checkout.ordering": "You are ordering",
@@ -145,10 +145,10 @@ const en = {
   "success.thanks.delivery":
     "Your order was received successfully. Your plant will be delivered within 1-3 days, team member will contact with you",
   "success.emailFailed":
-    "We couldn’t send the confirmation email just now. Your order is still confirmed — Urban Plant will contact you soon with pickup or delivery details.",
+    "We couldn’t send the confirmation email just now. Your order is still confirmed — Cleaf will contact you soon with pickup or delivery details.",
   "success.update.title": "Order update",
   "success.update.body":
-    "This order is not a completed purchase. If you need help, message Urban Plant on WhatsApp.",
+    "This order is not a completed purchase. If you need help, message Cleaf on WhatsApp.",
   "success.summary": "Order summary",
   "success.photoAlt": "Photo of {plantName}",
   "success.line.delivery": "{plantName} · Delivery",
@@ -157,19 +157,19 @@ const en = {
   "success.returnPlant": "Return to plant",
   "success.returnPlant.flowers": "Back to flowers",
   "success.whatsapp":
-    "Hi Urban Plant — I have a question about my order for “{plantName}”.",
-  "success.whatsapp.flowers": "Hi Urban Plant — I have a question about my flower order.",
+    "Hi Cleaf — I have a question about my order for “{plantName}”.",
+  "success.whatsapp.flowers": "Hi Cleaf — I have a question about my flower order.",
 
   "payment.verify.invalidTitle": "We couldn’t verify this payment",
   "payment.verify.timeoutTitle": "Payment verification is taking longer than expected",
   "payment.verify.cancelledTitle": "Payment wasn’t completed",
   "payment.verify.verifyingTitle": "Verifying your payment",
   "payment.verify.invalidBody":
-    "This page is only a temporary return from payment. If you completed a purchase, message Urban Plant on WhatsApp and we’ll help.",
+    "This page is only a temporary return from payment. If you completed a purchase, message Cleaf on WhatsApp and we’ll help.",
   "payment.verify.timeoutBody":
-    "Your payment may still be processing. You can check again or contact Urban Plant.",
+    "Your payment may still be processing. You can check again or contact Cleaf.",
   "payment.verify.cancelledBody":
-    "Payment failed. Please try again from the plant page, or contact Urban Plant.",
+    "Payment failed. Please try again from the plant page, or contact Cleaf.",
   "payment.verify.verifyingBody":
     "We received your payment request and are waiting for final confirmation. This usually takes a few moments.",
   "payment.verify.checkAgain": "Check again",
@@ -178,24 +178,24 @@ const en = {
     "Payment failed. Your cart is unchanged. You can try again from the shop.",
   "payment.verify.confirmationTitle": "Payment received",
   "payment.verify.confirmationBody":
-    "We received your payment. Your order needs confirmation before it is complete. Urban Plant will follow up with you.",
+    "We received your payment. Your order needs confirmation before it is complete. Cleaf will follow up with you.",
   "payment.verify.whatsapp.withOrder":
-    "Hi Urban Plant — I’m waiting on payment verification for order {orderId}.",
+    "Hi Cleaf — I’m waiting on payment verification for order {orderId}.",
   "payment.verify.whatsapp.withoutOrder":
-    "Hi Urban Plant — I returned from payment and need help verifying my order.",
+    "Hi Cleaf — I returned from payment and need help verifying my order.",
   "payment.failed.title": "Payment wasn’t completed",
   "payment.failed.body":
-    "Payment failed. Please try again from the plant page, or contact Urban Plant.",
+    "Payment failed. Please try again from the plant page, or contact Cleaf.",
   "payment.failed.whatsapp.withOrder":
-    "Hi Urban Plant — my payment didn’t complete for order {orderId}.",
+    "Hi Cleaf — my payment didn’t complete for order {orderId}.",
   "payment.failed.whatsapp.withoutOrder":
-    "Hi Urban Plant — my payment didn’t complete and I need help.",
+    "Hi Cleaf — my payment didn’t complete and I need help.",
 
   "recovery.nextSteps": "Next steps",
   "recovery.returnPrevious": "Return to previous page",
-  "recovery.whatsapp": "Contact Urban Plant on WhatsApp",
+  "recovery.whatsapp": "Contact Cleaf on WhatsApp",
   "recovery.whatsapp.default":
-    "Hi Urban Plant — I opened a plant page that didn’t load (broken link or QR). Can you help?",
+    "Hi Cleaf — I opened a plant page that didn’t load (broken link or QR). Can you help?",
   "error.title": "Something went wrong",
   "error.body":
     "We couldn’t load this page. You can go back if you were viewing a plant, or message us on WhatsApp.",
@@ -203,12 +203,12 @@ const en = {
   "notFound.body":
     "The link or QR code you used couldn’t be opened. The plant or offer may have been moved or removed.",
 
-  "a11y.meta.title": "Accessibility | Urban Plant",
-  "a11y.meta.description": "Accessibility commitment and contact for Urban Plant",
+  "a11y.meta.title": "Accessibility | Cleaf",
+  "a11y.meta.description": "Accessibility commitment and contact for Cleaf",
   "a11y.title": "Accessibility",
   "a11y.commitment.title": "Our commitment",
   "a11y.commitment.p1":
-    "Urban Plant aims to make this website accessible so customers can browse plants, check out, and complete payment using assistive technologies and keyboard-only navigation.",
+    "Cleaf aims to make this website accessible so customers can browse plants, check out, and complete payment using assistive technologies and keyboard-only navigation.",
   "a11y.commitment.p2":
     "We use the Web Content Accessibility Guidelines (WCAG) 2.2 Level AA as our practical accessibility target. We continue to improve the experience and do not claim full legal certification or complete conformance for every page at all times.",
   "a11y.contact.title": "Report an accessibility problem",
@@ -218,9 +218,9 @@ const en = {
   "a11y.contact.whatsapp": "WhatsApp:",
   "a11y.emailSubject": "Accessibility feedback",
   "a11y.whatsapp":
-    "Hi Urban Plant — I have an accessibility question or barrier to report.",
+    "Hi Cleaf — I have an accessibility question or barrier to report.",
 
-  "admin.brand": "Urban Plant · Admin",
+  "admin.brand": "Cleaf · Admin",
   "admin.home.title": "Admin",
   "admin.home.intro": "Choose a page to manage orders, inventory types, offers, and partners.",
   "admin.home.analytics": "Analytics",
@@ -581,7 +581,7 @@ const en = {
   "admin.plants.catalogUnpublishedBadge": "Catalog unpublished",
   "admin.plants.variants.title": "Plant sizes and central stock",
   "admin.plants.variants.intro":
-    "Catalog price is independent of POS offers. Stock here is Urban Plant warehouse quantity for each plant size.",
+    "Catalog price is independent of POS offers. Stock here is Cleaf warehouse quantity for each plant size.",
   "admin.plants.variants.loading": "Loading sizes…",
   "admin.plants.variants.empty": "No sizes yet.",
   "admin.plants.variants.loadFailed": "Could not load sizes",
@@ -680,7 +680,7 @@ const en = {
   "admin.pots.deleteFailed": "Could not delete pot",
   "admin.inventoryTypes.title": "Inventory Types",
   "shop.title": "Shop",
-  "shop.whatsapp": "Hi Urban Plant — I have a question about a plant in the shop.",
+  "shop.whatsapp": "Hi Cleaf — I have a question about a plant in the shop.",
   "shop.empty": "No plants are published yet.",
   "shop.unavailable": "Unavailable",
   "shop.inStock": "In stock",
@@ -783,11 +783,16 @@ const en = {
   "admin.offers.delete": "Delete",
   "admin.offers.deleteTitle": "Delete offer?",
   "admin.offers.deleteMessage":
-    "This removes the offer when nothing still uses it or keeps it in history.",
+    "This removes the offer from catalog management. An offer assigned to a POS stays in place.",
   "admin.offers.deleteConfirm": "Delete offer",
   "admin.offers.deleteFailed": "Could not delete offer",
   "admin.offers.deleteAria": "Delete offer for {name}",
-  "admin.offers.inUse": "This offer is still in use or in history and cannot be deleted.",
+  "admin.offers.deleteBlockedPos": "This offer is assigned to a POS and cannot be deleted.",
+  "admin.offers.deleteBlockedPayment": "This offer has an unfinished payment and cannot be deleted.",
+  "admin.offers.deleteBlockedPlacement": "This offer has an open placement and cannot be deleted.",
+  "admin.offers.deleteBlockedReference": "This offer is still referenced and cannot be deleted.",
+  "admin.offers.removedPrice": "This price belongs to a removed offer.",
+  "admin.offers.removed": "This offer was removed from catalog management.",
   "admin.image.removeAria": "Remove image",
   "admin.image.uploading": "Uploading…",
   "admin.image.dragHere": "Drag images here",
@@ -823,6 +828,7 @@ const en = {
   "admin.analytics.dateRange": "Date range",
   "admin.analytics.inventoryType": "Inventory type",
   "admin.analytics.totalScans": "Total scans",
+  "admin.analytics.uniqueScans": "Unique scans",
   "admin.analytics.uniqueScanners": "Unique scanners",
   "admin.analytics.uniqueDevices": "Unique browsers/devices",
   "admin.analytics.purchases": "Purchases",
@@ -846,7 +852,7 @@ const en = {
   "admin.analytics.area.logistics": "Logistics",
   "admin.analytics.area.financial": "Financial",
   "admin.analytics.partner": "Partner",
-  "admin.analytics.scopeUrban": "Urban Plant",
+  "admin.analytics.scopeUrban": "Cleaf",
   "admin.analytics.checkoutStarted": "Checkout started",
   "admin.analytics.paymentStarted": "Payment started",
   "admin.analytics.catalogCheckoutStarted": "Catalog checkout started",
@@ -1089,18 +1095,18 @@ const he: { [K in keyof typeof en]: string } = {
   "plant.gallery.next": "התמונה הבאה",
   "plant.contact.ask": "דברו איתנו",
   "plant.contact.whatsappSr": " בוואטסאפ (נפתח בכרטיסייה חדשה)",
-  "plant.contact.instagram": "Urban Plant באינסטגרם (נפתח בכרטיסייה חדשה)",
+  "plant.contact.instagram": "Cleaf באינסטגרם (נפתח בכרטיסייה חדשה)",
   "plant.contact.a11yLabel": "הצהרת נגישות",
   "plant.contact.a11yTitle": "נגישות",
   "plant.whatsapp.withPartner":
-    "שלום Urban Plant — יש לי שאלה לגבי \"{plantName}\" ב{partnerName}.",
+    "שלום Cleaf — יש לי שאלה לגבי \"{plantName}\" ב{partnerName}.",
   "plant.whatsapp.withoutPartner":
-    "שלום Urban Plant — יש לי שאלה לגבי \"{plantName}\".",
+    "שלום Cleaf — יש לי שאלה לגבי \"{plantName}\".",
 
   "checkout.back": "חזרה לדף הצמח",
   "checkout.ordering": "אתם מזמינים",
   "checkout.ordering.flowers": "אתם מזמינים פרחים",
-  "checkout.plant.withPot": "{name} בכד",
+  "checkout.plant.withPot": "{name} והכד שאיתו",
   "checkout.plant.size": "גודל {size}",
   "checkout.plant.pot": "{pot} {size}",
   "checkout.plant.color": "צבע: {color}",
@@ -1166,10 +1172,10 @@ const he: { [K in keyof typeof en]: string } = {
   "success.thanks.delivery":
     "ההזמנה התקבלה בהצלחה. הצמח יישלח תוך 1–3 ימים, ונציג יצור איתכם קשר.",
   "success.emailFailed":
-    "לא הצלחנו לשלוח כרגע את אימייל האישור. ההזמנה עדיין מאושרת — Urban Plant ייצור איתכם קשר בקרוב עם פרטי האיסוף או המשלוח.",
+    "לא הצלחנו לשלוח כרגע את אימייל האישור. ההזמנה עדיין מאושרת — Cleaf ייצור איתכם קשר בקרוב עם פרטי האיסוף או המשלוח.",
   "success.update.title": "עדכון הזמנה",
   "success.update.body":
-    "הזמנה זו אינה רכישה שהושלמה. אם אתם צריכים עזרה, כתבו ל־Urban Plant בוואטסאפ.",
+    "הזמנה זו אינה רכישה שהושלמה. אם אתם צריכים עזרה, כתבו ל־Cleaf בוואטסאפ.",
   "success.summary": "סיכום הזמנה",
   "success.photoAlt": "תמונה של {plantName}",
   "success.line.delivery": "{plantName} · משלוח",
@@ -1178,19 +1184,19 @@ const he: { [K in keyof typeof en]: string } = {
   "success.returnPlant": "חזרה לצמח",
   "success.returnPlant.flowers": "חזרה לפרחים",
   "success.whatsapp":
-    "שלום Urban Plant — יש לי שאלה לגבי ההזמנה שלי עבור \"{plantName}\".",
-  "success.whatsapp.flowers": "שלום Urban Plant — יש לי שאלה לגבי הזמנת הפרחים שלי.",
+    "שלום Cleaf — יש לי שאלה לגבי ההזמנה שלי עבור \"{plantName}\".",
+  "success.whatsapp.flowers": "שלום Cleaf — יש לי שאלה לגבי הזמנת הפרחים שלי.",
 
   "payment.verify.invalidTitle": "לא הצלחנו לאמת את התשלום",
   "payment.verify.timeoutTitle": "אימות התשלום לוקח יותר זמן מהצפוי",
   "payment.verify.cancelledTitle": "התשלום לא הושלם",
   "payment.verify.verifyingTitle": "מאמתים את התשלום",
   "payment.verify.invalidBody":
-    "עמוד זה הוא רק חזרה זמנית מהתשלום. אם השלמתם רכישה, כתבו ל־Urban Plant בוואטסאפ ונעזור.",
+    "עמוד זה הוא רק חזרה זמנית מהתשלום. אם השלמתם רכישה, כתבו ל־Cleaf בוואטסאפ ונעזור.",
   "payment.verify.timeoutBody":
-    "ייתכן שהתשלום עדיין בעיבוד. אפשר לבדוק שוב או ליצור קשר עם Urban Plant.",
+    "ייתכן שהתשלום עדיין בעיבוד. אפשר לבדוק שוב או ליצור קשר עם Cleaf.",
   "payment.verify.cancelledBody":
-    "התשלום נכשל. נסו שוב מעמוד הצמח, או צרו קשר עם Urban Plant.",
+    "התשלום נכשל. נסו שוב מעמוד הצמח, או צרו קשר עם Cleaf.",
   "payment.verify.verifyingBody":
     "קיבלנו את בקשת התשלום וממתינים לאישור סופי. זה בדרך כלל לוקח כמה רגעים.",
   "payment.verify.checkAgain": "בדקו שוב",
@@ -1198,24 +1204,24 @@ const he: { [K in keyof typeof en]: string } = {
   "payment.verify.catalogFailedBody": "התשלום נכשל. העגלה נשארה כמו שהיא. אפשר לנסות שוב מהחנות.",
   "payment.verify.confirmationTitle": "התשלום התקבל",
   "payment.verify.confirmationBody":
-    "קיבלנו את התשלום. ההזמנה צריכה אישור לפני שהיא מושלמת. Urban Plant יחזרו אליכם.",
+    "קיבלנו את התשלום. ההזמנה צריכה אישור לפני שהיא מושלמת. Cleaf יחזרו אליכם.",
   "payment.verify.whatsapp.withOrder":
-    "שלום Urban Plant — אני ממתין לאימות תשלום עבור הזמנה {orderId}.",
+    "שלום Cleaf — אני ממתין לאימות תשלום עבור הזמנה {orderId}.",
   "payment.verify.whatsapp.withoutOrder":
-    "שלום Urban Plant — חזרתי מהתשלום ואני צריך עזרה באימות ההזמנה.",
+    "שלום Cleaf — חזרתי מהתשלום ואני צריך עזרה באימות ההזמנה.",
   "payment.failed.title": "התשלום לא הושלם",
   "payment.failed.body":
-    "התשלום נכשל. נסו שוב מעמוד הצמח, או צרו קשר עם Urban Plant.",
+    "התשלום נכשל. נסו שוב מעמוד הצמח, או צרו קשר עם Cleaf.",
   "payment.failed.whatsapp.withOrder":
-    "שלום Urban Plant — התשלום שלי לא הושלם עבור הזמנה {orderId}.",
+    "שלום Cleaf — התשלום שלי לא הושלם עבור הזמנה {orderId}.",
   "payment.failed.whatsapp.withoutOrder":
-    "שלום Urban Plant — התשלום שלי לא הושלם ואני צריך עזרה.",
+    "שלום Cleaf — התשלום שלי לא הושלם ואני צריך עזרה.",
 
   "recovery.nextSteps": "השלבים הבאים",
   "recovery.returnPrevious": "חזרה לעמוד הקודם",
   "recovery.whatsapp": "יש לכם שאלה?",
   "recovery.whatsapp.default":
-    "שלום Urban Plant — פתחתי עמוד צמח שלא נטען (קישור או QR שבור). אפשר לעזור?",
+    "שלום Cleaf — פתחתי עמוד צמח שלא נטען (קישור או QR שבור). אפשר לעזור?",
   "error.title": "משהו השתבש",
   "error.body":
     "לא הצלחנו לטעון את העמוד. אפשר לחזור אם צפיתם בצמח, או לכתוב לנו בוואטסאפ.",
@@ -1223,12 +1229,12 @@ const he: { [K in keyof typeof en]: string } = {
   "notFound.body":
     "לא ניתן היה לפתוח את הקישור או את קוד ה־QR. ייתכן שהצמח או ההצעה הועברו או הוסרו.",
 
-  "a11y.meta.title": "נגישות | Urban Plant",
-  "a11y.meta.description": "מחויבות לנגישות ופרטי יצירת קשר של Urban Plant",
+  "a11y.meta.title": "נגישות | Cleaf",
+  "a11y.meta.description": "מחויבות לנגישות ופרטי יצירת קשר של Cleaf",
   "a11y.title": "נגישות",
   "a11y.commitment.title": "המחויבות שלנו",
   "a11y.commitment.p1":
-    "Urban Plant שואפת להנגיש את האתר כך שלקוחות יוכלו לעיין בצמחים, להשלים הזמנה ותשלום באמצעות טכנולוגיות מסייעות וניווט במקלדת בלבד.",
+    "Cleaf שואפת להנגיש את האתר כך שלקוחות יוכלו לעיין בצמחים, להשלים הזמנה ותשלום באמצעות טכנולוגיות מסייעות וניווט במקלדת בלבד.",
   "a11y.commitment.p2":
     "אנו משתמשים בהנחיות הנגישות לתוכן אינטרנט (WCAG) 2.2 ברמה AA כיעד מעשי לנגישות. אנו ממשיכים לשפר את החוויה ואיננו טוענים להסמכה משפטית מלאה או להתאמה מוחלטת בכל עמוד בכל רגע.",
   "a11y.contact.title": "דיווח על בעיית נגישות",
@@ -1237,9 +1243,9 @@ const he: { [K in keyof typeof en]: string } = {
   "a11y.contact.email": "אימייל:",
   "a11y.contact.whatsapp": "וואטסאפ:",
   "a11y.emailSubject": "משוב נגישות",
-  "a11y.whatsapp": "שלום Urban Plant — יש לי שאלה או דיווח על חסם נגישות.",
+  "a11y.whatsapp": "שלום Cleaf — יש לי שאלה או דיווח על חסם נגישות.",
 
-  "admin.brand": "Urban Plant · Admin",
+  "admin.brand": "Cleaf · Admin",
   "admin.home.title": "ניהול",
   "admin.home.intro": "בחרו עמוד לניהול אנליטיקה, הזמנות, סוגי מלאי, הצעות ושותפים.",
   "admin.home.analytics": "אנליטיקה",
@@ -1365,7 +1371,7 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.plants.catalogUnpublishedBadge": "לא מפורסם בקטלוג",
   "admin.plants.variants.title": "גדלי צמח ומלאי מחסן",
   "admin.plants.variants.intro":
-    "מחיר הקטלוג נפרד ממחירי נקודות המכירה. הכמות כאן היא מלאי המחסן של Urban Plant לכל גודל צמח.",
+    "מחיר הקטלוג נפרד ממחירי נקודות המכירה. הכמות כאן היא מלאי המחסן של Cleaf לכל גודל צמח.",
   "admin.plants.variants.loading": "טוען גדלים…",
   "admin.plants.variants.empty": "אין עדיין גדלים.",
   "admin.plants.variants.loadFailed": "לא ניתן לטעון גדלים",
@@ -1457,7 +1463,7 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.pots.deleteFailed": "לא ניתן למחוק את הכד",
   "admin.inventoryTypes.title": "סוגי מלאי",
   "shop.title": "חנות",
-  "shop.whatsapp": "שלום Urban Plant — יש לי שאלה לגבי צמח בחנות.",
+  "shop.whatsapp": "שלום Cleaf — יש לי שאלה לגבי צמח בחנות.",
   "shop.empty": "עדיין אין צמחים שפורסמו.",
   "shop.unavailable": "לא זמין",
   "shop.inStock": "במלאי",
@@ -1557,11 +1563,16 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.offers.delete": "מחיקה",
   "admin.offers.deleteTitle": "למחוק את ההצעה?",
   "admin.offers.deleteMessage":
-    "ההצעה תימחק רק אם שום דבר עדיין לא משתמש בה ואין לה היסטוריה.",
+    "ההצעה תוסר מניהול הקטלוג. הצעה שמשויכת לקופה נשארת במקומה.",
   "admin.offers.deleteConfirm": "מחיקת הצעה",
   "admin.offers.deleteFailed": "לא ניתן למחוק את ההצעה",
   "admin.offers.deleteAria": "מחיקת הצעה עבור {name}",
-  "admin.offers.inUse": "ההצעה עדיין בשימוש או בהיסטוריה ולא ניתן למחוק אותה.",
+  "admin.offers.deleteBlockedPos": "ההצעה משויכת לקופה ולא ניתן למחוק אותה.",
+  "admin.offers.deleteBlockedPayment": "להצעה יש תשלום שלא הושלם ולא ניתן למחוק אותה.",
+  "admin.offers.deleteBlockedPlacement": "להצעה יש הצבה פתוחה ולא ניתן למחוק אותה.",
+  "admin.offers.deleteBlockedReference": "ההצעה עדיין מקושרת ולא ניתן למחוק אותה.",
+  "admin.offers.removedPrice": "המחיר הזה שייך להצעה שהוסרה.",
+  "admin.offers.removed": "ההצעה הוסרה מניהול הקטלוג.",
   "admin.image.removeAria": "הסרת תמונה",
   "admin.image.uploading": "מעלה…",
   "admin.image.dragHere": "גררו תמונות לכאן",
@@ -1826,6 +1837,7 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.analytics.dateRange": "טווח תאריכים",
   "admin.analytics.inventoryType": "סוג מלאי",
   "admin.analytics.totalScans": "סה״כ סריקות",
+  "admin.analytics.uniqueScans": "סריקות ייחודיות",
   "admin.analytics.uniqueScanners": "סורקים ייחודיים",
   "admin.analytics.uniqueDevices": "דפדפנים/מכשירים ייחודיים",
   "admin.analytics.purchases": "רכישות",
@@ -1849,7 +1861,7 @@ const he: { [K in keyof typeof en]: string } = {
   "admin.analytics.area.logistics": "לוגיסטיקה",
   "admin.analytics.area.financial": "פיננסי",
   "admin.analytics.partner": "שותף",
-  "admin.analytics.scopeUrban": "Urban Plant",
+  "admin.analytics.scopeUrban": "Cleaf",
   "admin.analytics.checkoutStarted": "התחילו קופה",
   "admin.analytics.paymentStarted": "התחילו סליקה",
   "admin.analytics.catalogCheckoutStarted": "התחילו קופה בקטלוג",

@@ -41,6 +41,13 @@ async function assertScanner(): Promise<void> {
     }
   }
 
+  assert.ok(files.includes("062_offers_admin_hidden.sql"));
+  const hiddenMigration = read("db/migrations/062_offers_admin_hidden.sql");
+  assert.match(
+    hiddenMigration,
+    /ADD COLUMN IF NOT EXISTS admin_hidden boolean NOT NULL DEFAULT false/,
+  );
+
   const initial = read("db/migrations/001_initial_schema.sql");
   assert.match(initial, /--.*spot_description;/);
   assert.deepEqual(splitSqlStatements(initial), splitSqlStatementsLegacy(initial));
@@ -144,12 +151,13 @@ function assertCustomerPathsUntouched(): void {
   const storage = read("lib/offerStorage.ts");
   const deleteAt = storage.indexOf("export async function deleteOffer");
   assert.ok(deleteAt >= 0);
-  const deleteFn = storage.slice(deleteAt);
-  assert.match(deleteFn, /offerHasBlockingReferences/);
-  assert.match(deleteFn, /DELETE FROM offer_availabilities/);
+  const deleteFn = storage.slice(deleteAt, storage.indexOf("async function readVariantPlant"));
+  assert.match(deleteFn, /FOR UPDATE/);
+  assert.match(deleteFn, /current_offer_id/);
+  assert.match(deleteFn, /admin_hidden = true/);
   assert.match(deleteFn, /DELETE FROM offers/);
-  assert.doesNotMatch(deleteFn, /status = 'inactive'/);
   assert.doesNotMatch(deleteFn, /SET status/);
+  assert.doesNotMatch(deleteFn, /status = 'inactive'/);
   const offersAdmin = read("components/admin/AdminOffersManager.tsx");
   assert.match(offersAdmin, /async function confirmDelete/);
   assert.match(offersAdmin, /AdminConfirmDialog/);
@@ -216,14 +224,20 @@ async function main(): Promise<void> {
   const { createPartnerLocation } = await import("../lib/partnerLocationStorage");
   const {
     OfferWriteError,
+    OFFER_ASSIGNED_TO_POS,
     OFFER_CATALOG_CONFLICT,
-    OFFER_IN_USE,
+    OFFER_OPEN_PLACEMENT,
     OFFER_PRICE_CONFLICT,
+    OFFER_REMOVED_REUSE,
+    OFFER_UNFINISHED_PAYMENT,
     appendFlowerOffer,
     createOrReusePlantOffer,
     getOfferById,
     updateOffer,
   } = await import("../lib/offerStorage");
+
+  const { posAllowsNewCustomerPurchase } = await import("../lib/posOccupancy");
+  const { getPosSpotById } = await import("../lib/posSpotStorage");
 
   const unauthenticatedGet = new NextRequest("http://local.test/api/offers?inventoryType=plants");
   assert.equal((await GET(unauthenticatedGet)).status, 401);
@@ -342,11 +356,63 @@ async function main(): Promise<void> {
     return { status: response.status, body: (await response.json()) as Record<string, unknown> };
   }
 
-  async function assertDeleteBlocked(offerId: string) {
+  async function listedIds(): Promise<string[]> {
+    const response = await GET(
+      new NextRequest("http://local.test/api/offers?inventoryType=plants", {
+        headers: adminHeaders,
+      }),
+    );
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { offers?: { id: string }[] };
+    return (body.offers ?? []).map((offer) => offer.id);
+  }
+
+  async function assertDeleteBlocked(
+    offerId: string,
+    error: string,
+    kind: "pos" | "payment" | "placement",
+  ) {
+    const before = await sql`
+      SELECT admin_hidden, status, consumer_price::float8 AS consumer_price
+      FROM offers WHERE id = ${offerId}
+    `;
     const result = await adminDelete(offerId);
     assert.equal(result.status, 409);
-    assert.equal(result.body.error, OFFER_IN_USE);
-    assert.ok(await getOfferById(offerId));
+    assert.equal(result.body.error, error);
+    const blockers = result.body.blockers as { kind: string }[] | undefined;
+    assert.ok(blockers?.some((item) => item.kind === kind));
+    const kept = await getOfferById(offerId);
+    assert.equal(kept?.id, offerId);
+    assert.equal(kept?.adminHidden, false);
+    const after = (await sql`
+      SELECT admin_hidden, status, consumer_price::float8 AS consumer_price
+      FROM offers WHERE id = ${offerId}
+    `) as { admin_hidden: boolean; status: string; consumer_price: number }[];
+    const previous = (before as { admin_hidden: boolean; status: string; consumer_price: number }[])[0];
+    assert.equal(after[0]?.admin_hidden, false);
+    assert.equal(after[0]?.status, previous?.status);
+    assert.equal(after[0]?.consumer_price, previous?.consumer_price);
+  }
+
+  async function assertRemovedFromCatalog(offerId: string, price: number, status: string) {
+    const result = await adminDelete(offerId);
+    assert.equal(result.status, 200);
+    assert.equal(result.body.error, undefined);
+    const kept = await getOfferById(offerId);
+    assert.equal(kept?.id, offerId);
+    assert.equal(kept?.adminHidden, true);
+    assert.equal(kept?.status, status);
+    assert.equal(kept?.consumerPrice, price);
+    assert.equal(kept?.availabilities.length, 0);
+    assert.equal((await listedIds()).includes(offerId), false);
+    const stored = await sql`
+      SELECT admin_hidden, status, consumer_price::float8 AS consumer_price
+      FROM offers WHERE id = ${offerId}
+    `;
+    const row = (stored as { admin_hidden: boolean; status: string; consumer_price: number }[])[0];
+    assert.equal(row?.admin_hidden, true);
+    assert.equal(row?.status, status);
+    assert.equal(row?.consumer_price, price);
   }
 
   try {
@@ -835,8 +901,50 @@ async function main(): Promise<void> {
         ${posOffer.offer.id}, 'available', false, now()
       )
     `;
-    await assertDeleteBlocked(posOffer.offer.id);
+    await assertDeleteBlocked(posOffer.offer.id, OFFER_ASSIGNED_TO_POS, "pos");
+    const spotStill = await sql`
+      SELECT current_offer_id, status FROM pos_spots WHERE id = ${posSpotId}::uuid
+    `;
+    assert.equal((spotStill as { current_offer_id: string }[])[0]?.current_offer_id, posOffer.offer.id);
     await sql`UPDATE pos_spots SET current_offer_id = NULL WHERE id = ${posSpotId}::uuid`;
+
+    for (const spotStatus of ["sold", "inactive", "held_for_payment"] as const) {
+      const statusOffer = await createOrReusePlantOffer({
+        sellableVariantId: noPot.sellableVariantId,
+        consumerPrice: 500 + spotStatus.length,
+        status: "active",
+      });
+      const statusSpotId = randomUUID();
+      await sql`
+        INSERT INTO pos_spots (
+          id, spot_name, partner_location_id, pos_name, spot_slug, current_offer_id, status,
+          check_status, created_at, payment_hold_started_at
+        ) VALUES (
+          ${statusSpotId}::uuid,
+          ${`${tag} ${spotStatus}`},
+          ${branchA.id},
+          ${`${tag} ${spotStatus}`},
+          ${`offer-${spotStatus.slice(0, 3)}-${statusSpotId.slice(0, 8)}`},
+          ${statusOffer.offer.id},
+          ${spotStatus},
+          false,
+          now(),
+          ${spotStatus === "held_for_payment" ? new Date().toISOString() : null}
+        )
+      `;
+      const blocked = await adminDelete(statusOffer.offer.id);
+      assert.equal(blocked.status, 409);
+      assert.equal(blocked.body.error, OFFER_ASSIGNED_TO_POS);
+      const blockers = blocked.body.blockers as { kind: string; status?: string; posName?: string }[];
+      assert.ok(blockers.some((item) => item.kind === "pos" && item.status === spotStatus));
+      const assigned = await sql`
+        SELECT current_offer_id FROM pos_spots WHERE id = ${statusSpotId}::uuid
+      `;
+      assert.equal(
+        (assigned as { current_offer_id: string }[])[0]?.current_offer_id,
+        statusOffer.offer.id,
+      );
+    }
 
     const orderOffer = await createOrReusePlantOffer({
       sellableVariantId: noPot.sellableVariantId,
@@ -853,7 +961,9 @@ async function main(): Promise<void> {
         'delivery', 'sold', now(), 'catalog', ${orderOffer.offer.id}
       )
     `;
-    await assertDeleteBlocked(orderOffer.offer.id);
+    await assertRemovedFromCatalog(orderOffer.offer.id, 406, "active");
+    const orderStill = await sql`SELECT offer_id FROM orders WHERE order_id = ${orderId}::uuid`;
+    assert.equal((orderStill as { offer_id: string }[])[0]?.offer_id, orderOffer.offer.id);
 
     const payOffer = await createOrReusePlantOffer({
       sellableVariantId: noPot.sellableVariantId,
@@ -870,7 +980,27 @@ async function main(): Promise<void> {
         'Delete Buyer', 'delete@example.com', 'delivery', 407, ${randomUUID()}, now(), now(), 'catalog'
       )
     `;
-    await assertDeleteBlocked(payOffer.offer.id);
+    await assertRemovedFromCatalog(payOffer.offer.id, 407, "active");
+    const payStill = await sql`SELECT offer_id, status FROM payment_attempts WHERE id = ${payId}::uuid`;
+    assert.equal((payStill as { offer_id: string; status: string }[])[0]?.offer_id, payOffer.offer.id);
+    assert.equal((payStill as { status: string }[])[0]?.status, "cancelled");
+
+    const pendingOffer = await createOrReusePlantOffer({
+      sellableVariantId: noPot.sellableVariantId,
+      consumerPrice: 417,
+      status: "active",
+    });
+    const pendingId = randomUUID();
+    await sql`
+      INSERT INTO payment_attempts (
+        id, status, offer_id, product_id, product_name, full_name, customer_email,
+        fulfillment_method, amount, payment_resume_token, created_at, updated_at, channel
+      ) VALUES (
+        ${pendingId}::uuid, 'awaiting_payment', ${pendingOffer.offer.id}, ${plantId}, ${`${tag} plant`},
+        'Delete Buyer', 'delete@example.com', 'delivery', 417, ${randomUUID()}, now(), now(), 'catalog'
+      )
+    `;
+    await assertDeleteBlocked(pendingOffer.offer.id, OFFER_UNFINISHED_PAYMENT, "payment");
 
     const historyOffer = await createOrReusePlantOffer({
       sellableVariantId: noPot.sellableVariantId,
@@ -879,8 +1009,11 @@ async function main(): Promise<void> {
     });
     const cycleId = randomUUID();
     await sql`
-      INSERT INTO placement_cycles (id, pos_spot_id, plant_variant_id, started_at)
-      VALUES (${cycleId}::uuid, ${posSpotId}::uuid, ${size.id}::uuid, now())
+      INSERT INTO placement_cycles (
+        id, pos_spot_id, plant_variant_id, started_at, ended_at, end_reason
+      ) VALUES (
+        ${cycleId}::uuid, ${posSpotId}::uuid, ${size.id}::uuid, now(), now(), 'removed'
+      )
     `;
     await sql`
       INSERT INTO placement_segments (
@@ -889,7 +1022,34 @@ async function main(): Promise<void> {
         ${cycleId}::uuid, now(), now(), ${historyOffer.offer.id}, 408
       )
     `;
-    await assertDeleteBlocked(historyOffer.offer.id);
+    await assertRemovedFromCatalog(historyOffer.offer.id, 408, "active");
+    const segmentStill = await sql`
+      SELECT offer_id, consumer_price::float8 AS consumer_price
+      FROM placement_segments
+      WHERE offer_id = ${historyOffer.offer.id}
+    `;
+    assert.equal((segmentStill as { offer_id: string }[])[0]?.offer_id, historyOffer.offer.id);
+    assert.equal((segmentStill as { consumer_price: number }[])[0]?.consumer_price, 408);
+
+    const openOffer = await createOrReusePlantOffer({
+      sellableVariantId: noPot.sellableVariantId,
+      consumerPrice: 418,
+      status: "inactive",
+    });
+    const openCycleId = randomUUID();
+    await sql`
+      INSERT INTO placement_cycles (id, pos_spot_id, plant_variant_id, started_at)
+      VALUES (${openCycleId}::uuid, ${posSpotId}::uuid, ${size.id}::uuid, now())
+    `;
+    await sql`
+      INSERT INTO placement_segments (
+        placement_cycle_id, started_at, offer_id, consumer_price
+      ) VALUES (
+        ${openCycleId}::uuid, now(), ${openOffer.offer.id}, 418
+      )
+    `;
+    await assertDeleteBlocked(openOffer.offer.id, OFFER_OPEN_PLACEMENT, "placement");
+    assert.equal((await listedIds()).includes(openOffer.offer.id), true);
 
     const itemOffer = await createOrReusePlantOffer({
       sellableVariantId: noPot.sellableVariantId,
@@ -905,7 +1065,83 @@ async function main(): Promise<void> {
         ${itemOffer.offer.id}, 1, 409, 409, 'ILS', ${`${tag} plant`}
       )
     `;
-    await assertDeleteBlocked(itemOffer.offer.id);
+    await assertRemovedFromCatalog(itemOffer.offer.id, 409, "active");
+    const itemStill = await sql`
+      SELECT offer_id FROM order_items WHERE offer_id = ${itemOffer.offer.id}
+    `;
+    assert.equal((itemStill as { offer_id: string }[])[0]?.offer_id, itemOffer.offer.id);
+    const revived = await adminPost("plants", {
+      sellableVariantId: noPot.sellableVariantId,
+      consumerPrice: 409,
+      status: "active",
+      availabilities: [{ scope: "catalog" }],
+    });
+    assert.equal(revived.status, 409);
+    assert.equal(revived.body.error, OFFER_REMOVED_REUSE);
+    const stillHidden = await sql`
+      SELECT admin_hidden, status FROM offers WHERE id = ${itemOffer.offer.id}
+    `;
+    assert.equal((stillHidden as { admin_hidden: boolean; status: string }[])[0]?.admin_hidden, true);
+    assert.equal((stillHidden as { status: string }[])[0]?.status, "active");
+
+    const legacyAssignedId = `legacy-assigned-${tag}`;
+    await sql`
+      INSERT INTO offers (id, product_id, consumer_price, status, created_at)
+      VALUES (${legacyAssignedId}, ${plantId}, 80, 'active', now())
+    `;
+    const legacySpotId = randomUUID();
+    await sql`
+      INSERT INTO pos_spots (
+        id, spot_name, partner_location_id, pos_name, spot_slug, current_offer_id, status, check_status, created_at
+      ) VALUES (
+        ${legacySpotId}::uuid, ${`${tag} legacy`}, ${branchA.id}, ${`${tag} legacy`},
+        ${`legacy-${legacySpotId.slice(0, 8)}`}, ${legacyAssignedId}, 'available', false, now()
+      )
+    `;
+    const legacySpot = await getPosSpotById(legacySpotId);
+    assert.ok(legacySpot);
+    assert.equal(posAllowsNewCustomerPurchase(legacySpot), true);
+    assert.equal(legacySpot.plantVariantId, undefined);
+    await assertDeleteBlocked(legacyAssignedId, OFFER_ASSIGNED_TO_POS, "pos");
+    const legacyStillAssigned = await sql`
+      SELECT current_offer_id FROM pos_spots WHERE id = ${legacySpotId}::uuid
+    `;
+    assert.equal(
+      (legacyStillAssigned as { current_offer_id: string }[])[0]?.current_offer_id,
+      legacyAssignedId,
+    );
+
+    const legacyHistoryId = `legacy-history-${tag}`;
+    await sql`
+      INSERT INTO offers (id, product_id, consumer_price, status, created_at)
+      VALUES (${legacyHistoryId}, ${plantId}, 81, 'inactive', now())
+    `;
+    const legacyOrderId = randomUUID();
+    await sql`
+      INSERT INTO orders (
+        order_id, product_id, product_name, price, full_name,
+        fulfillment_method, order_status, created_at, channel, offer_id
+      ) VALUES (
+        ${legacyOrderId}::uuid, ${plantId}, ${`${tag} legacy`}, 81, 'Legacy Buyer',
+        'delivery', 'sold', now(), 'catalog', ${legacyHistoryId}
+      )
+    `;
+    assert.equal((await listedIds()).includes(legacyHistoryId), true);
+    await assertRemovedFromCatalog(legacyHistoryId, 81, "inactive");
+    const legacyOrderStill = await sql`
+      SELECT offer_id FROM orders WHERE order_id = ${legacyOrderId}::uuid
+    `;
+    assert.equal((legacyOrderStill as { offer_id: string }[])[0]?.offer_id, legacyHistoryId);
+
+    const legacyFreeId = `legacy-free-${tag}`;
+    await sql`
+      INSERT INTO offers (id, product_id, consumer_price, status, created_at)
+      VALUES (${legacyFreeId}, ${plantId}, 82, 'inactive', now())
+    `;
+    assert.equal((await listedIds()).includes(legacyFreeId), true);
+    const legacyDeleted = await adminDelete(legacyFreeId);
+    assert.equal(legacyDeleted.status, 200);
+    assert.equal(await getOfferById(legacyFreeId), undefined);
 
     let blockedDelete = false;
     try {

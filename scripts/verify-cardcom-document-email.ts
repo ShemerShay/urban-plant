@@ -1,5 +1,5 @@
 /**
- * Focused verification: Cardcom document + Urban Plant email post-payment flow.
+ * Focused verification: Cardcom document + Cleaf email post-payment flow.
  * Option B: startCardcomPaymentPrep + webhook finalize → real Order, then document/email.
  * Never calls real Cardcom Documents or Gmail — injects mocks.
  *
@@ -149,11 +149,11 @@ async function main(): Promise<void> {
     assert.ok(htmlPickup.includes("Hi Ada,"));
     assert.ok(htmlPickup.includes('lang="en"'));
     assert.ok(htmlPickup.includes('dir="ltr"'));
-    assert.ok(htmlPickup.includes("Thank you for your purchase from Urban Plant"));
+    assert.ok(htmlPickup.includes("Thank you for your purchase from Cleaf"));
     assert.ok(htmlPickup.includes("You may take the plant with you."));
     assert.ok(htmlPickup.includes("Order total:"));
     assert.ok(htmlPickup.includes("<strong>₪89</strong>"));
-    assert.ok(htmlPickup.includes("— Urban Plant"));
+    assert.ok(htmlPickup.includes("— Cleaf"));
     assert.ok(!htmlPickup.includes("direction:rtl"));
     assert.ok(!/[\u0590-\u05FF]/.test(htmlPickup));
 
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
     );
     assert.ok(!htmlDelivery.includes("direction:rtl"));
     assert.ok(!/[\u0590-\u05FF]/.test(htmlDelivery));
-    assert.equal(PURCHASE_EMAIL_SUBJECT, "Your Urban Plant order is confirmed");
+    assert.equal(PURCHASE_EMAIL_SUBJECT, "Your Cleaf order is confirmed");
 
     const helperSrc = readFileSync(
       path.join(root, "lib/purchaseEmail.ts"),
@@ -222,7 +222,7 @@ async function main(): Promise<void> {
     );
     assert.ok(
       helperSrc.includes(
-        "Thank you for your purchase from Urban Plant. Your order was received.",
+        "Thank you for your purchase from Cleaf. Your order was received.",
       ),
     );
     assert.ok(helperSrc.includes("to: customerEmail"));
@@ -265,7 +265,7 @@ async function main(): Promise<void> {
     assert.ok(htmlInternal.includes("Cafe Partner"));
     assert.ok(htmlInternal.includes("order-verify-1"));
     assert.ok(htmlInternal.includes("The customer was not copied"));
-    assert.ok(!htmlInternal.includes("Thank you for your purchase from Urban Plant"));
+    assert.ok(!htmlInternal.includes("Thank you for your purchase from Cleaf"));
   }
 
   // --- DB integration ---
@@ -804,7 +804,7 @@ async function main(): Promise<void> {
       assert.equal((await getOrderById(orderId))?.orderStatus, "pending_payment");
     }
 
-    // Flower order without customer email skips document + Urban Plant email.
+    // Flower order without customer email skips document + Cleaf email.
     {
       const { createPlant, deletePlant, getPlantByIdAsync } = await import(
         "../lib/plantStorage"
@@ -876,7 +876,7 @@ async function main(): Promise<void> {
       }
     }
 
-    // Independent sends: customer failure still notifies Urban Plant.
+    // Independent sends: customer failure still notifies Cleaf.
     {
       const lp = `lp-doc-custfail-${randomUUID()}`;
       const txId = 700000007;
@@ -931,7 +931,7 @@ async function main(): Promise<void> {
       await setPosSpotStatus(available.id, "available");
     }
 
-    // Independent sends: Urban Plant failure does not block customer confirmation.
+    // Independent sends: Cleaf failure does not block customer confirmation.
     {
       const lp = `lp-doc-stafffail-${randomUUID()}`;
       const txId = 700000008;

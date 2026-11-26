@@ -194,7 +194,12 @@ const API_ERROR_KEYS: Record<string, MessageKey> = {
   "Could not create offer": "admin.offers.createFailed",
   "This price is already used by another offer for this variant": "admin.offers.priceConflict",
   "Another active Catalog offer already exists for this variant": "admin.offers.catalogConflict",
-  "This offer is still in use or in history and cannot be deleted": "admin.offers.inUse",
+  "This offer is assigned to a POS and cannot be deleted": "admin.offers.deleteBlockedPos",
+  "This offer has an unfinished payment and cannot be deleted": "admin.offers.deleteBlockedPayment",
+  "This offer has an open placement and cannot be deleted": "admin.offers.deleteBlockedPlacement",
+  "This offer is still referenced and cannot be deleted": "admin.offers.deleteBlockedReference",
+  "This price belongs to a removed offer": "admin.offers.removedPrice",
+  "This offer was removed from catalog management": "admin.offers.removed",
   "Could not delete offer": "admin.offers.deleteFailed",
 };
 

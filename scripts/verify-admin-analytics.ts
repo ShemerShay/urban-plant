@@ -28,8 +28,11 @@ assert.doesNotMatch(page, /searchParams.*range/);
 
 const dash = read("components/admin/AdminAnalyticsDashboard.tsx");
 assert.match(dash, /AdminAnalyticsFilters/);
+assert.match(dash, /t\(locale, "admin\.brand"\)/);
+assert.doesNotMatch(dash, /admin\.analytics\.brand/);
 assert.match(dash, /admin\.analytics\.totalScans/);
-assert.match(dash, /admin\.analytics\.uniqueScanners/);
+assert.match(dash, /admin\.analytics\.uniqueScans/);
+assert.doesNotMatch(dash, /admin\.analytics\.uniqueScanners/);
 assert.match(dash, /admin\.analytics\.purchases/);
 assert.match(dash, /admin\.analytics\.purchasesPlants/);
 assert.match(dash, /admin\.analytics\.purchasesFlowers/);
@@ -55,6 +58,31 @@ assert.doesNotMatch(dash, /analyticsWithRange/);
 assert.doesNotMatch(dash, /ANALYTICS_RANGE_OPTIONS/);
 assert.match(dash, /formatInstantInBusinessTimeZone/);
 assert.doesNotMatch(dash, /getTimezoneOffset/);
+
+const overall = dash.slice(
+  dash.indexOf("function OverallSection"),
+  dash.indexOf("function LogisticsSection"),
+);
+const logistics = dash.slice(
+  dash.indexOf("function LogisticsSection"),
+  dash.indexOf("function FinancialSection"),
+);
+assert.match(overall, /admin\.analytics\.totalScans/);
+assert.match(overall, /admin\.analytics\.uniqueScans/);
+assert.match(overall, /data\.totalScans/);
+assert.match(overall, /data\.uniqueScanners/);
+assert.doesNotMatch(overall, /admin\.analytics\.units/);
+assert.doesNotMatch(overall, /admin\.analytics\.checkoutStarted/);
+assert.doesNotMatch(overall, /admin\.analytics\.paymentStarted/);
+assert.doesNotMatch(logistics, /admin\.analytics\.totalScans/);
+assert.doesNotMatch(logistics, /admin\.analytics\.uniqueScans/);
+assert.doesNotMatch(logistics, /admin\.analytics\.uniqueScanners/);
+assert.doesNotMatch(logistics, /admin\.analytics\.checkoutStarted/);
+assert.doesNotMatch(logistics, /admin\.analytics\.paymentStarted/);
+assert.match(logistics, /admin\.analytics\.catalogCheckoutStarted/);
+assert.match(logistics, /admin\.analytics\.catalogPaymentStarted/);
+assert.match(logistics, /admin\.analytics\.scansOverTime/);
+assert.match(logistics, /admin\.analytics\.units/);
 
 const filters = read("components/admin/AdminAnalyticsFilters.tsx");
 assert.match(filters, /INVENTORY_TYPES/);
@@ -122,6 +150,8 @@ assert.doesNotMatch(neon, /NOT LIKE '%asaf%'/);
 assert.doesNotMatch(neon, /ILIKE/);
 
 const biz = read("lib/analytics/businessAnalytics.ts");
+assert.match(biz, /count\(\) AS total_scans/);
+assert.match(biz, /uniq\(distinct_id\) AS unique_scanners/);
 assert.match(biz, /pos_scan/);
 assert.match(biz, /purchase_completed/);
 assert.match(biz, /\$session_id/);
@@ -154,6 +184,16 @@ assert.match(messages, /admin\.dateFilter\.cancel/);
 assert.doesNotMatch(messages, /admin\.analytics\.posthogUnavailable/);
 assert.doesNotMatch(messages, /admin\.analytics\.purchaseUnavailable/);
 assert.match(messages, /admin\.analytics\.scansOverTimeUnavailable/);
+assert.equal(messages.match(/"admin\.analytics\.scopeUrban": "Cleaf"/g)?.length, 2);
+assert.equal(messages.match(/"admin\.brand": "Cleaf · Admin"/g)?.length, 2);
+assert.doesNotMatch(messages, /admin\.analytics\.brand/);
+assert.match(messages, /"admin\.analytics\.uniqueScans": "Unique scans"/);
+assert.match(messages, /"admin\.analytics\.uniqueScans": "סריקות ייחודיות"/);
+assert.doesNotMatch(messages, /Urban Plant/);
+
+const shell = read("components/admin/AdminShell.tsx");
+assert.match(shell, /admin\.brand/);
+assert.doesNotMatch(shell, /admin\.analytics\.brand/);
 assert.doesNotMatch(messages, /admin\.analytics\.last7/);
 assert.doesNotMatch(messages, /admin\.analytics\.allTime/);
 assert.match(biz, /console\.info/);
@@ -245,7 +285,11 @@ assert.doesNotMatch(query, /params\.set\("range"/);
 assert.doesNotMatch(query, /\brange=/);
 assert.match(query, /inventoryType/);
 assert.match(query, /DEFAULT_ANALYTICS_DATE_PRESET/);
-assert.match(query, /last_month/);
+assert.match(
+  query,
+  /DEFAULT_ANALYTICS_DATE_PRESET:\s*DateFilterPresetId\s*=\s*"today"/,
+);
+assert.match(query, /Asia\/Jerusalem/);
 assert.doesNotMatch(query, /defaultDateFilterValue/);
 assert.match(query, /DEFAULT_ANALYTICS_INVENTORY_FILTER/);
 assert.match(query, /DEFAULT_INVENTORY_TYPE/);
@@ -284,7 +328,7 @@ assert.match(envExample, /POSTHOG_PROJECT_ID/);
 
 assert.equal(DEFAULT_ANALYTICS_INVENTORY_FILTER, "plants");
 assert.equal(DEFAULT_DATE_FILTER_PRESET, "today");
-assert.equal(DEFAULT_ANALYTICS_DATE_PRESET, "last_month");
+assert.equal(DEFAULT_ANALYTICS_DATE_PRESET, "today");
 
 const loading = read("app/admin/analytics/loading.tsx");
 assert.match(loading, /admin-analytics-loading/);
@@ -295,16 +339,16 @@ const emptyFilters = parseAnalyticsFilterState({});
 assert.equal(emptyFilters.inventoryType, "plants");
 assert.equal(emptyFilters.partnerId, null);
 assert.equal(emptyFilters.area, "overall");
-assert.deepEqual(emptyFilters.dateFilter, { mode: "preset", presetId: "last_month" });
+assert.deepEqual(emptyFilters.dateFilter, { mode: "preset", presetId: "today" });
 assert.equal(analyticsQueryUrl(emptyFilters), "/admin/analytics");
 
 const explicitToday = parseAnalyticsFilterState({ date: "today" });
 assert.deepEqual(explicitToday.dateFilter, { mode: "preset", presetId: "today" });
-assert.match(analyticsQueryUrl(explicitToday), /date=today/);
+assert.equal(analyticsQueryUrl(explicitToday), "/admin/analytics");
 
 const explicitLastMonth = parseAnalyticsFilterState({ date: "last_month" });
 assert.deepEqual(explicitLastMonth.dateFilter, { mode: "preset", presetId: "last_month" });
-assert.equal(analyticsQueryUrl(explicitLastMonth), "/admin/analytics");
+assert.equal(analyticsQueryUrl(explicitLastMonth), "/admin/analytics?date=last_month");
 
 const allLastWeek = parseAnalyticsFilterState({
   inventoryType: "all",
@@ -337,6 +381,6 @@ const futureOnlyUrl = parseAnalyticsFilterState(
   frozenNow,
 );
 assert.deepEqual(futureOnlyUrl.dateFilter, { mode: "preset", presetId: "today" });
-assert.match(analyticsQueryUrl(futureOnlyUrl), /date=today/);
+assert.equal(analyticsQueryUrl(futureOnlyUrl), "/admin/analytics");
 
 console.log("OK: admin analytics wiring verified");

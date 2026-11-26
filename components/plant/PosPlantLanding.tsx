@@ -36,6 +36,7 @@ export async function PosPlantLanding({ spotSlug }: { spotSlug: string }) {
 
   const { offer, plant, partner: knownPartner, pocket } = await getPosLandingDetails(posSpot);
   if (!offer || offer.status !== "active") notFound();
+  if (offer.adminHidden) notFound();
   if (!plant) notFound();
   if (!plant.light || !plant.images?.length) notFound();
 

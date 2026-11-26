@@ -233,6 +233,7 @@ async function readCatalogSnapshot(plantIds: string[] | null): Promise<{
       INNER JOIN offers o
         ON o.sellable_variant_id = sv.id
        AND o.status = 'active'
+       AND o.admin_hidden = false
       INNER JOIN offer_availabilities a
         ON a.offer_id = o.id
        AND a.scope = 'catalog'

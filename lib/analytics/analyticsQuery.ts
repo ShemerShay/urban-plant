@@ -13,8 +13,11 @@ export type AnalyticsInventoryFilter = InventoryType | "all";
 export const DEFAULT_ANALYTICS_INVENTORY_FILTER: AnalyticsInventoryFilter =
   DEFAULT_INVENTORY_TYPE;
 
-/** Fresh /admin/analytics. Explicit `date=today` still selects today. */
-export const DEFAULT_ANALYTICS_DATE_PRESET: DateFilterPresetId = "last_month";
+/**
+ * Fresh /admin/analytics. Day bounds come from the shared filter in Asia/Jerusalem.
+ * Explicit `date=today` still selects today.
+ */
+export const DEFAULT_ANALYTICS_DATE_PRESET: DateFilterPresetId = "today";
 
 export type AnalyticsArea = "overall" | "logistics" | "financial";
 

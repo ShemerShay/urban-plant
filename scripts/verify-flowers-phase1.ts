@@ -229,10 +229,11 @@ assert.match(successPage, /success\.returnPlant\.flowers/);
 assert.match(successPage, /inventoryTypeOrDefault\(plant\?\.inventoryType\) === "flowers"/);
 
 const messages = read("lib/messages.ts");
-assert.match(messages, /"checkout\.plant\.withPot": "\{name\} בכד"/);
+assert.match(messages, /"checkout\.plant\.withPot": "\{name\} והכד שאיתו"/);
+assert.match(messages, /"checkout\.plant\.withPot": "\{name\} and its pot"/);
 assert.match(messages, /"checkout\.fulfillment\.take": "לקחת"/);
 assert.match(messages, /"checkout\.fulfillment\.pickup": "איסוף"/);
-assert.doesNotMatch(messages, /והכד שאיתו/);
+assert.doesNotMatch(messages, /"checkout\.plant\.withPot": "\{name\} בכד"/);
 assert.match(messages, /"success\.thanks\.title\.flowers": "Thank you for buying flowers"/);
 assert.match(messages, /"success\.returnPlant\.flowers": "Back to flowers"/);
 assert.match(messages, /"success\.thanks\.title\.flowers": "תודה שקניתם פרחים"/);

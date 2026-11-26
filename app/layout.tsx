@@ -6,6 +6,7 @@ import { LocaleProvider } from "@/components/locale/LocaleProvider";
 import { SkipToMainContent } from "@/components/customer/SkipToMainContent";
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { PostHogPageView } from "@/components/PostHogPageView";
+import { BRAND_NAME } from "@/lib/brand";
 import { getLocale } from "@/lib/getLocale";
 import { localeHtmlDir, localeHtmlLang } from "@/lib/locale";
 
@@ -33,7 +34,7 @@ const notoSansHebrew = Noto_Sans_Hebrew({
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getLocale();
   return {
-    title: "Urban Plant",
+    title: BRAND_NAME,
     description:
       locale === "he"
         ? "חוויית מסחר בצמחים מבוססת QR"

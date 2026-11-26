@@ -307,16 +307,20 @@ function OverallSection({
     <div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
+          label={t(locale, "admin.analytics.totalScans")}
+          value={formatNumber(data.totalScans, locale)}
+        />
+        <KpiCard
+          label={t(locale, "admin.analytics.uniqueScans")}
+          value={formatNumber(data.uniqueScanners, locale)}
+        />
+        <KpiCard
           label={t(locale, "admin.analytics.purchases")}
           value={formatNumber(data.purchases, locale)}
         />
         <KpiCard
           label={t(locale, "admin.analytics.revenue")}
           value={formatMoney(data.revenue, locale)}
-        />
-        <KpiCard
-          label={t(locale, "admin.analytics.units")}
-          value={formatNumber(data.units, locale)}
         />
         <KpiCard
           label={t(locale, "admin.analytics.averageOrderValue")}
@@ -428,23 +432,6 @@ function LogisticsSection({
   return (
     <div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard
-          label={t(locale, "admin.analytics.totalScans")}
-          value={formatNumber(data.totalScans, locale)}
-        />
-        <KpiCard
-          label={t(locale, "admin.analytics.uniqueScanners")}
-          value={formatNumber(data.uniqueScanners, locale)}
-          hint={t(locale, "admin.analytics.uniqueDevices")}
-        />
-        <KpiCard
-          label={t(locale, "admin.analytics.checkoutStarted")}
-          value={formatNumber(data.checkoutStarted, locale)}
-        />
-        <KpiCard
-          label={t(locale, "admin.analytics.paymentStarted")}
-          value={formatNumber(data.paymentStarted, locale)}
-        />
         <KpiCard
           label={t(locale, "admin.analytics.scanToCheckout")}
           value={formatPercent(data.scanToCheckoutPercent)}

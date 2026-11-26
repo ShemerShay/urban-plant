@@ -369,6 +369,9 @@ export async function startCardcomPaymentPrep(
   if (!offer || offer.status !== "active") {
     return { ok: false, code: "validation", error: "Offer is not available", httpStatus: 400 };
   }
+  if (offer.adminHidden) {
+    return { ok: false, code: "validation", error: "Offer is not available", httpStatus: 400 };
+  }
   if (offer.productId !== catalogPlant.id) {
     return {
       ok: false,

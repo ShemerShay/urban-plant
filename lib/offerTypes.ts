@@ -33,16 +33,19 @@ export interface Offer {
   availabilities: OfferAvailability[];
   consumerPrice: number;
   status: OfferStatus;
+  /** True after Admin removal when history must keep the row. */
+  adminHidden: boolean;
   createdAt: string;
 }
 
 /** True when an offer can back a customer-facing POS plant page. */
 export function isPosAssignableOffer(
-  offer: Pick<Offer, "id" | "productId" | "status">,
+  offer: Pick<Offer, "id" | "productId" | "status" | "adminHidden">,
 ): boolean {
   if (offer.id === MANUAL_OFFER_ID || offer.productId === MANUAL_PRODUCT_ID) {
     return false;
   }
+  if (offer.adminHidden) return false;
   return offer.status === "active";
 }
 
@@ -59,7 +62,10 @@ export function offerAvailableAtPartnerLocation(
 
 /** Plant Offer that may start or change occupancy at this Partner Location. */
 export function isPlantPosEligibleOffer(
-  offer: Pick<Offer, "id" | "productId" | "status" | "sellableVariantId" | "availabilities">,
+  offer: Pick<
+    Offer,
+    "id" | "productId" | "status" | "adminHidden" | "sellableVariantId" | "availabilities"
+  >,
   partnerLocationId: string,
 ): boolean {
   if (!isPosAssignableOffer(offer)) return false;

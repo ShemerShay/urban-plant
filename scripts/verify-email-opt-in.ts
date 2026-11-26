@@ -361,7 +361,7 @@ async function main(): Promise<void> {
       },
       fetchPdf: async () => {
         counters.pdf += 1;
-        return { bytes: pdfBytes, filename: `urban-plant-${opts.documentNumber}.pdf` };
+        return { bytes: pdfBytes, filename: `cleaf-${opts.documentNumber}.pdf` };
       },
       sendEmail: async (params: {
         customerEmail: string;

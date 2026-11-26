@@ -224,6 +224,7 @@ export async function readSellableVariantsForPlant(plantId: string): Promise<Sel
         FROM offers o
         WHERE o.sellable_variant_id = sv.id
           AND o.status = 'active'
+          AND o.admin_hidden = false
       ) AS referenced_by_active_offer
     FROM sellable_variants sv
     INNER JOIN plant_variants pv ON pv.id = sv.plant_variant_id
@@ -258,6 +259,7 @@ async function readMappedSellableVariant(id: string): Promise<SellableVariant> {
         FROM offers o
         WHERE o.sellable_variant_id = sv.id
           AND o.status = 'active'
+          AND o.admin_hidden = false
       ) AS referenced_by_active_offer
     FROM sellable_variants sv
     INNER JOIN plant_variants pv ON pv.id = sv.plant_variant_id
@@ -353,6 +355,7 @@ async function sellableVariantHasActiveOffer(sellableVariantId: string): Promise
     FROM offers
     WHERE sellable_variant_id = ${sellableVariantId}::uuid
       AND status = 'active'
+      AND admin_hidden = false
     LIMIT 1
   `;
   return (rows as unknown[]).length > 0;
@@ -437,6 +440,7 @@ export async function updateSellableVariantPot(input: {
           FROM offers o
           WHERE o.sellable_variant_id = sellable_variants.id
             AND o.status = 'active'
+            AND o.admin_hidden = false
         )
       RETURNING id
     `;

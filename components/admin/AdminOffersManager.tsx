@@ -6,21 +6,47 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/components/locale/LocaleProvider";
 import { AdminConfirmDialog } from "@/components/admin/shared/AdminConfirmDialog";
 import { adminCheckboxClassName } from "@/components/admin/shared/adminSelectionStyles";
-import { displayApiError, offerStatusLabel } from "@/lib/displayLabels";
+import { displayApiError, offerStatusLabel, posSpotAdminAvailabilityLabel } from "@/lib/displayLabels";
 import { formatPrice } from "@/lib/mockPlants";
 import { t } from "@/lib/messages";
 import type { OfferAvailability, OfferSellableVariant, OfferStatus, OfferWithProduct } from "@/lib/offerTypes";
 import type { InventoryType } from "@/lib/inventoryType";
 import { PLANT_SIZE_LABELS } from "@/lib/plantSizes";
 import { routes } from "@/lib/routes";
+import { isPosSpotStatus } from "@/lib/posSpotTypes";
 import type { PlantProduct } from "@/lib/types";
+
+type OfferDeletionBlocker =
+  | { kind: "pos"; id: string; posName: string; status: string; spotSlug: string }
+  | { kind: "payment"; id: string; status: string }
+  | { kind: "placement"; id: string };
 
 type OffersApiResponse = {
   offers?: OfferWithProduct[];
   offer?: OfferWithProduct;
   reused?: boolean;
   error?: string;
+  blockers?: OfferDeletionBlocker[];
 };
+
+function deletionFailureText(
+  locale: Parameters<typeof offerStatusLabel>[0],
+  data: OffersApiResponse,
+): string {
+  const base = displayApiError(locale, data.error, "admin.offers.deleteFailed");
+  const details = (data.blockers ?? []).map((blocker) => {
+    if (blocker.kind === "pos") {
+      const status = isPosSpotStatus(blocker.status)
+        ? posSpotAdminAvailabilityLabel(locale, blocker.status)
+        : blocker.status;
+      const slug = blocker.spotSlug ? ` · ${blocker.spotSlug}` : "";
+      return `${blocker.posName}${slug} (${status})`;
+    }
+    if (blocker.kind === "payment") return `${blocker.status} · ${blocker.id}`;
+    return blocker.id;
+  });
+  return details.length > 0 ? `${base} ${details.join(", ")}` : base;
+}
 
 type PlantsApiResponse = {
   plants?: PlantProduct[];
@@ -988,7 +1014,7 @@ export function AdminOffersManager({
       const res = await fetch(routes.api.offer(deleteId), { method: "DELETE" });
       const data = (await res.json().catch(() => ({}))) as OffersApiResponse;
       if (!res.ok) {
-        setDeleteError(displayApiError(locale, data.error, "admin.offers.deleteFailed"));
+        setDeleteError(deletionFailureText(locale, data));
         return;
       }
       setOffers((prev) => prev.filter((item) => item.id !== deleteId));

@@ -90,6 +90,7 @@ export default async function PosCheckoutPage({
     );
   }
   if (!offer || offer.status !== "active") notFound();
+  if (offer.adminHidden) notFound();
   if (!plant) notFound();
 
   const inventoryType = inventoryTypeOrDefault(plant.inventoryType);
@@ -266,14 +267,6 @@ export default async function PosCheckoutPage({
                   {placement.plantSizeLabel ? (
                     <p className="text-body mt-1 text-slate-600">
                       {t(locale, "checkout.plant.size", { size: placement.plantSizeLabel })}
-                    </p>
-                  ) : null}
-                  {placement.potColor && (placement.potName || placement.potSizeLabel) ? (
-                    <p className="text-body mt-1 text-slate-600">
-                      {t(locale, "checkout.plant.pot", {
-                        pot: placement.potName ?? "",
-                        size: placement.potSizeLabel ?? "",
-                      }).trim()}
                     </p>
                   ) : null}
                   {placement.potColor ? (

@@ -7,6 +7,7 @@ import "server-only";
 
 import nodemailer from "nodemailer";
 
+import { BRAND_NAME } from "@/lib/brand";
 import { englishCareInstructionForEmail } from "@/lib/careInstructionsHebrew";
 import { PUBLIC_CONTACT_EMAIL } from "@/lib/publicContact";
 
@@ -95,12 +96,12 @@ export type SendInternalCatalogReconciliationAlertParams = {
   lines: PurchaseEmailOrderLine[];
 };
 
-export const PURCHASE_EMAIL_SUBJECT = "Your Urban Plant order is confirmed";
+export const PURCHASE_EMAIL_SUBJECT = `Your ${BRAND_NAME} order is confirmed`;
 export const PURCHASE_EMAIL_REPLY_TO = PUBLIC_CONTACT_EMAIL;
 
 /** Independent Urban Plant inbox — never CC/BCC on the customer confirmation. */
 export const URBAN_PLANT_NOTIFICATION_TO = PUBLIC_CONTACT_EMAIL;
-export const URBAN_PLANT_NOTIFICATION_SUBJECT = "New Urban Plant order";
+export const URBAN_PLANT_NOTIFICATION_SUBJECT = `New ${BRAND_NAME} order`;
 export const URBAN_PLANT_RECONCILIATION_SUBJECT =
   "Catalog payment needs reconciliation";
 
@@ -214,13 +215,13 @@ export function buildPurchaseEmailHtml(params: BuildPurchaseEmailHtmlParams): st
 <body dir="ltr" style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;direction:ltr;text-align:left;">
   <p style="margin:0 0 16px;font-size:16px;">${greeting}</p>
   <p style="margin:0;font-size:15px;line-height:1.5;color:#374151;">
-    Thank you for your purchase from Urban Plant. Your order was received.
+    Thank you for your purchase from ${BRAND_NAME}. Your order was received.
   </p>
   ${buildCatalogOrderSummaryBlock(orderLines)}
   ${buildCatalogFulfillmentSentence(params.fulfillmentMethod)}
   ${catalogCare}
   ${priceLine}
-  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— Urban Plant</p>
+  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— ${BRAND_NAME}</p>
 </body>
 </html>
 `.trim();
@@ -251,12 +252,12 @@ export function buildPurchaseEmailHtml(params: BuildPurchaseEmailHtmlParams): st
 <body dir="ltr" style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;direction:ltr;text-align:left;">
   <p style="margin:0 0 16px;font-size:16px;">${greeting}</p>
   <p style="margin:0;font-size:15px;line-height:1.5;color:#374151;">
-    Thank you for your purchase from Urban Plant. Your order was received.
+    Thank you for your purchase from ${BRAND_NAME}. Your order was received.
   </p>
   ${plantBlock}
   ${careSectionsBlock}
   ${priceLine}
-  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— Urban Plant</p>
+  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">— ${BRAND_NAME}</p>
 </body>
 </html>
 `.trim();
@@ -315,7 +316,7 @@ export function buildInternalOrderNotificationHtml(
 <!DOCTYPE html>
 <html>
 <body style="font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#111827;max-width:560px;margin:0;padding:24px;">
-  <p style="margin:0 0 16px;font-size:16px;">A new Urban Plant order was received.</p>
+  <p style="margin:0 0 16px;font-size:16px;">A new ${BRAND_NAME} order was received.</p>
   <table style="border-collapse:collapse;font-size:15px;line-height:1.5;">
     ${row("Order ID", params.orderId ?? "")}
     ${row("Customer name", params.fullName)}
@@ -327,7 +328,7 @@ export function buildInternalOrderNotificationHtml(
     ${row("Delivery address", addressLine)}
     ${row("Location", locationLine)}
   </table>
-  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">This notice was sent only to Urban Plant. The customer was not copied.</p>
+  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">This notice was sent only to ${BRAND_NAME}. The customer was not copied.</p>
 </body>
 </html>
 `.trim();
@@ -368,7 +369,7 @@ export async function sendPurchaseEmail(
 
   try {
     const info = await transporter.sendMail({
-      from: `"Urban Plant" <${gmailUser}>`,
+      from: `"${BRAND_NAME}" <${gmailUser}>`,
       to: customerEmail,
       replyTo: PURCHASE_EMAIL_REPLY_TO,
       subject: PURCHASE_EMAIL_SUBJECT,
@@ -411,7 +412,7 @@ export async function sendInternalOrderNotificationEmail(
 ): Promise<{ messageId: string | null }> {
   const to = URBAN_PLANT_NOTIFICATION_TO.trim();
   if (!to || !isValidPurchaseEmailAddress(to)) {
-    throw new Error("Urban Plant notification address is not configured");
+    throw new Error(`${BRAND_NAME} notification address is not configured`);
   }
 
   const { gmailUser, gmailAppPassword } = requireGmailAuth();
@@ -433,7 +434,7 @@ export async function sendInternalOrderNotificationEmail(
 
   try {
     const info = await transporter.sendMail({
-      from: `"Urban Plant" <${gmailUser}>`,
+      from: `"${BRAND_NAME}" <${gmailUser}>`,
       to,
       ...(customerEmail && isValidPurchaseEmailAddress(customerEmail)
         ? { replyTo: customerEmail }
@@ -519,7 +520,7 @@ export function buildInternalCatalogReconciliationAlertHtml(
     ${row("Checkout session", params.checkoutSessionId ?? "")}
   </table>
   ${linesBlock}
-  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">This notice was sent only to Urban Plant. The customer was not copied.</p>
+  <p style="margin:24px 0 0;font-size:14px;color:#6b7280;">This notice was sent only to ${BRAND_NAME}. The customer was not copied.</p>
 </body>
 </html>
 `.trim();
@@ -534,7 +535,7 @@ export async function sendInternalCatalogReconciliationAlert(
 ): Promise<{ messageId: string | null }> {
   const to = URBAN_PLANT_NOTIFICATION_TO.trim();
   if (!to || !isValidPurchaseEmailAddress(to)) {
-    throw new Error("Urban Plant notification address is not configured");
+    throw new Error(`${BRAND_NAME} notification address is not configured`);
   }
 
   const { gmailUser, gmailAppPassword } = requireGmailAuth();
@@ -553,7 +554,7 @@ export async function sendInternalCatalogReconciliationAlert(
 
   try {
     const info = await transporter.sendMail({
-      from: `"Urban Plant" <${gmailUser}>`,
+      from: `"${BRAND_NAME}" <${gmailUser}>`,
       to,
       ...(customerEmail && isValidPurchaseEmailAddress(customerEmail)
         ? { replyTo: customerEmail }

@@ -36,18 +36,33 @@ export const OFFER_FLOWER_VARIANT_REJECTED =
 export const OFFER_LEGACY_VARIANT_REJECTED =
   "This offer cannot gain a variant or availabilities";
 export const OFFER_VARIANT_IMMUTABLE = "sellableVariantId cannot be changed";
-export const OFFER_IN_USE =
-  "This offer is still in use or in history and cannot be deleted";
+export const OFFER_ASSIGNED_TO_POS =
+  "This offer is assigned to a POS and cannot be deleted";
+export const OFFER_UNFINISHED_PAYMENT =
+  "This offer has an unfinished payment and cannot be deleted";
+export const OFFER_OPEN_PLACEMENT =
+  "This offer has an open placement and cannot be deleted";
+export const OFFER_STILL_REFERENCED =
+  "This offer is still referenced and cannot be deleted";
+export const OFFER_REMOVED_REUSE = "This price belongs to a removed offer";
+export const OFFER_REMOVED = "This offer was removed from catalog management";
+
+export type OfferDeletionBlocker =
+  | { kind: "pos"; id: string; posName: string; status: string; spotSlug: string }
+  | { kind: "payment"; id: string; status: string }
+  | { kind: "placement"; id: string };
 
 export type OfferWriteCode = "conflict" | "invalid" | "not_found";
 
 export class OfferWriteError extends Error {
   readonly code: OfferWriteCode;
+  readonly blockers?: OfferDeletionBlocker[];
 
-  constructor(code: OfferWriteCode, message: string) {
+  constructor(code: OfferWriteCode, message: string, blockers?: OfferDeletionBlocker[]) {
     super(message);
     this.name = "OfferWriteError";
     this.code = code;
+    this.blockers = blockers;
   }
 }
 
@@ -83,6 +98,7 @@ export type OfferRow = {
   availabilities?: unknown;
   consumer_price: string | number;
   status: string;
+  admin_hidden?: boolean | null;
   created_at: string | Date;
 };
 
@@ -149,6 +165,7 @@ export function mapOfferRow(row: OfferRow): Offer {
     availabilities: mapAvailabilities(row.availabilities),
     consumerPrice: parseNumeric(row.consumer_price),
     status,
+    adminHidden: row.admin_hidden === true,
     createdAt,
   };
 }
@@ -298,9 +315,11 @@ async function assertLocationsExist(availabilities: OfferAvailability[]): Promis
 async function queryOffers(filter?: {
   inventoryType?: InventoryType | null;
   id?: string | null;
+  excludeHidden?: boolean;
 }): Promise<Offer[]> {
   const inventoryType = filter?.inventoryType ?? null;
   const id = filter?.id ?? null;
+  const excludeHidden = filter?.excludeHidden === true;
   const rows = await sql`
     SELECT
       o.id,
@@ -308,6 +327,7 @@ async function queryOffers(filter?: {
       o.sellable_variant_id,
       o.consumer_price,
       o.status,
+      o.admin_hidden,
       o.created_at,
       variant_plant.name AS variant_plant_name,
       sv.plant_variant_id AS plant_size_id,
@@ -337,6 +357,7 @@ async function queryOffers(filter?: {
     LEFT JOIN pots pot ON pot.id = sv.pot_id
     WHERE (${inventoryType}::text IS NULL OR product.inventory_type = ${inventoryType})
       AND (${id}::text IS NULL OR o.id = ${id})
+      AND (${excludeHidden}::boolean = false OR o.admin_hidden = false)
     ORDER BY o.created_at ASC
   `;
   return (rows as OfferRow[]).map(mapOfferRow);
@@ -344,8 +365,13 @@ async function queryOffers(filter?: {
 
 export async function readOffers(filter?: {
   inventoryType?: InventoryType;
+  /** History lookups. Admin, catalog, and new POS assignment omit removed Offers. */
+  includeHidden?: boolean;
 }): Promise<Offer[]> {
-  return queryOffers({ inventoryType: filter?.inventoryType ?? null });
+  return queryOffers({
+    inventoryType: filter?.inventoryType ?? null,
+    excludeHidden: filter?.includeHidden !== true,
+  });
 }
 
 export async function getOfferById(id: string): Promise<Offer | undefined> {
@@ -360,54 +386,181 @@ function isForeignKeyViolation(error: unknown): boolean {
   return code === "23503" || /foreign key|violates foreign key constraint/i.test(message);
 }
 
-function quoteIdent(name: string): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-    throw new Error("Unexpected identifier");
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
   }
-  return `"${name}"`;
+  return typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
-async function offerHasBlockingReferences(offerId: string): Promise<boolean> {
-  const columns = await sql`
-    SELECT table_name, column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND column_name IN ('offer_id', 'current_offer_id')
-      AND table_name <> 'offer_availabilities'
-      AND table_name <> 'offers'
-  `;
-  const seen = new Set<string>();
-  for (const row of columns as { table_name: string; column_name: string }[]) {
-    const key = `${row.table_name}.${row.column_name}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const counted = await sql.query(
-      `SELECT count(*)::int AS n FROM ${quoteIdent(row.table_name)} WHERE ${quoteIdent(row.column_name)} = $1`,
-      [offerId],
-    );
-    if ((counted[0] as { n: number } | undefined)?.n) return true;
+function asArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
-  return false;
+  return [];
 }
 
+function textField(value: unknown): string {
+  return typeof value === "string" ? value : value == null ? "" : String(value);
+}
+
+function removalBlockers(row: Record<string, unknown>): OfferDeletionBlocker[] {
+  const spots = asArray(row.spots).map((item) => {
+    const spot = asObject(item) ?? {};
+    return {
+      kind: "pos" as const,
+      id: textField(spot.id),
+      posName: textField(spot.posName),
+      status: textField(spot.status),
+      spotSlug: textField(spot.spotSlug),
+    };
+  });
+  const payments = asArray(row.payments).map((item) => {
+    const payment = asObject(item) ?? {};
+    return {
+      kind: "payment" as const,
+      id: textField(payment.id),
+      status: textField(payment.status),
+    };
+  });
+  const placements = asArray(row.placements).map((item) => {
+    const placement = asObject(item) ?? {};
+    return { kind: "placement" as const, id: textField(placement.id) };
+  });
+  return [...spots, ...payments, ...placements];
+}
+
+function removalError(blockers: OfferDeletionBlocker[]): OfferWriteError {
+  if (blockers.some((item) => item.kind === "pos")) {
+    return new OfferWriteError("conflict", OFFER_ASSIGNED_TO_POS, blockers);
+  }
+  if (blockers.some((item) => item.kind === "payment")) {
+    return new OfferWriteError("conflict", OFFER_UNFINISHED_PAYMENT, blockers);
+  }
+  return new OfferWriteError("conflict", OFFER_OPEN_PLACEMENT, blockers);
+}
+
+/**
+ * One locked statement.
+ * Any current POS assignment blocks removal.
+ * Unfinished payments and open placements block removal.
+ * History keeps the row and drops catalog availability.
+ * Anything else is deleted.
+ */
 export async function deleteOffer(offerId: string): Promise<void> {
   const trimmed = offerId.trim();
   if (!trimmed) throw new OfferWriteError("not_found", "Offer not found");
-  const existing = await getOfferById(trimmed);
-  if (!existing) throw new OfferWriteError("not_found", "Offer not found");
-  if (await offerHasBlockingReferences(trimmed)) {
-    throw new OfferWriteError("conflict", OFFER_IN_USE);
-  }
+  let rows: Record<string, unknown>[];
   try {
-    await sql.transaction([
-      sql`DELETE FROM offer_availabilities WHERE offer_id = ${trimmed}`,
-      sql`DELETE FROM offers WHERE id = ${trimmed}`,
-    ]);
+    rows = (await sql`
+      WITH locked AS (
+        SELECT id
+        FROM offers
+        WHERE id = ${trimmed}
+        FOR UPDATE
+      ),
+      spots AS (
+        SELECT p.id::text AS id, p.pos_name, p.status, p.spot_slug
+        FROM pos_spots p
+        INNER JOIN locked l ON p.current_offer_id = l.id
+      ),
+      payments AS (
+        SELECT pa.id::text AS id, pa.status
+        FROM payment_attempts pa
+        INNER JOIN locked l ON pa.offer_id = l.id
+        WHERE pa.status IN ('created', 'awaiting_payment', 'needs_reconciliation')
+      ),
+      placements AS (
+        SELECT s.id::text AS id
+        FROM placement_segments s
+        INNER JOIN locked l ON s.offer_id = l.id
+        WHERE s.ended_at IS NULL
+      ),
+      history AS (
+        SELECT (
+          EXISTS (SELECT 1 FROM orders o INNER JOIN locked l ON o.offer_id = l.id)
+          OR EXISTS (SELECT 1 FROM payment_attempts pa INNER JOIN locked l ON pa.offer_id = l.id)
+          OR EXISTS (SELECT 1 FROM placement_segments s INNER JOIN locked l ON s.offer_id = l.id)
+          OR EXISTS (SELECT 1 FROM order_items oi INNER JOIN locked l ON oi.offer_id = l.id)
+          OR EXISTS (SELECT 1 FROM events e INNER JOIN locked l ON e.offer_id = l.id)
+        ) AS has_history
+      ),
+      decision AS (
+        SELECT CASE
+          WHEN NOT EXISTS (SELECT 1 FROM locked) THEN 'missing'
+          WHEN EXISTS (SELECT 1 FROM spots)
+            OR EXISTS (SELECT 1 FROM payments)
+            OR EXISTS (SELECT 1 FROM placements)
+            THEN 'blocked'
+          WHEN (SELECT has_history FROM history) THEN 'hide'
+          ELSE 'delete'
+        END AS action
+      ),
+      hidden AS (
+        UPDATE offers
+        SET admin_hidden = true
+        WHERE id IN (SELECT id FROM locked)
+          AND (SELECT action FROM decision) = 'hide'
+        RETURNING id
+      ),
+      cleared_avail AS (
+        DELETE FROM offer_availabilities
+        WHERE offer_id IN (SELECT id FROM locked)
+          AND (SELECT action FROM decision) = 'hide'
+        RETURNING offer_id
+      ),
+      deleted AS (
+        DELETE FROM offers
+        WHERE id IN (SELECT id FROM locked)
+          AND (SELECT action FROM decision) = 'delete'
+        RETURNING id
+      )
+      SELECT
+        (SELECT action FROM decision) AS action,
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+            'id', s.id,
+            'posName', s.pos_name,
+            'status', s.status,
+            'spotSlug', s.spot_slug
+          ) ORDER BY s.pos_name, s.id) FROM spots s),
+          '[]'::json
+        ) AS spots,
+        COALESCE(
+          (SELECT json_agg(json_build_object('id', p.id, 'status', p.status) ORDER BY p.id)
+           FROM payments p),
+          '[]'::json
+        ) AS payments,
+        COALESCE(
+          (SELECT json_agg(json_build_object('id', pl.id) ORDER BY pl.id) FROM placements pl),
+          '[]'::json
+        ) AS placements
+    `) as Record<string, unknown>[];
   } catch (error) {
     if (isForeignKeyViolation(error)) {
-      throw new OfferWriteError("conflict", OFFER_IN_USE);
+      throw new OfferWriteError("conflict", OFFER_STILL_REFERENCED);
     }
     throw error;
+  }
+  const row = rows[0];
+  const action = textField(row?.action);
+  if (action === "missing" || !action) {
+    throw new OfferWriteError("not_found", "Offer not found");
+  }
+  if (action === "blocked") {
+    throw removalError(removalBlockers(row ?? {}));
   }
   await revalidateCatalogShopCache();
 }
@@ -446,6 +599,7 @@ function offerPriceStatusUpdate(offer: {
         status = ${offer.status}
       FROM old
       WHERE offers.id = old.id
+        AND offers.admin_hidden = false
       RETURNING offers.id, offers.consumer_price, old.consumer_price AS previous_price
     ),
     affected AS (
@@ -544,6 +698,10 @@ function replaceAvailabilities(offerId: string, availabilities: OfferAvailabilit
     sql`
       DELETE FROM offer_availabilities AS a
       WHERE a.offer_id = ${offerId}
+        AND EXISTS (
+          SELECT 1 FROM offers o
+          WHERE o.id = a.offer_id AND o.admin_hidden = false
+        )
         AND NOT EXISTS (
           SELECT 1
           FROM jsonb_array_elements(${payload}::jsonb) AS item
@@ -568,6 +726,10 @@ function replaceAvailabilities(offerId: string, availabilities: OfferAvailabilit
         item->>'scope',
         NULLIF(item->>'partnerLocationId', '')
       FROM jsonb_array_elements(${payload}::jsonb) AS item
+      WHERE EXISTS (
+        SELECT 1 FROM offers o
+        WHERE o.id = ${offerId} AND o.admin_hidden = false
+      )
       ON CONFLICT ON CONSTRAINT offer_availabilities_offer_scope_location_key DO NOTHING
     `,
   ];
@@ -633,20 +795,46 @@ export async function createOrReusePlantOffer(input: {
   let reused = false;
   try {
     const rows = await sql`
-      SELECT offer_id, reused
-      FROM apply_plant_offer(
-        ${offerId},
-        ${sellableVariantId}::uuid,
-        ${input.consumerPrice}::numeric,
-        ${status},
-        ${JSON.stringify(availabilities)}::jsonb
-      )
+      SELECT
+        CASE
+          WHEN EXISTS (
+            SELECT 1
+            FROM offers
+            WHERE sellable_variant_id = ${sellableVariantId}::uuid
+              AND consumer_price = ${input.consumerPrice}::numeric
+            FOR UPDATE
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM offers
+            WHERE sellable_variant_id = ${sellableVariantId}::uuid
+              AND consumer_price = ${input.consumerPrice}::numeric
+              AND admin_hidden = true
+          )
+          THEN NULL
+          ELSE (
+            SELECT json_build_object('offer_id', offer_id, 'reused', reused)
+            FROM apply_plant_offer(
+              ${offerId},
+              ${sellableVariantId}::uuid,
+              ${input.consumerPrice}::numeric,
+              ${status},
+              ${JSON.stringify(availabilities)}::jsonb
+            )
+          )
+        END AS result
     `;
-    const row = (rows as { offer_id: string; reused: boolean }[])[0];
-    if (!row?.offer_id) throw new OfferWriteError("not_found", "Offer not found");
-    reused = row.reused === true || String(row.reused) === "t" || String(row.reused) === "true";
+    const result = asObject((rows as { result: unknown }[])[0]?.result);
+    if (!result?.offer_id) throw new OfferWriteError("conflict", OFFER_REMOVED_REUSE);
+    const row = {
+      offer_id: textField(result.offer_id),
+      reused: result.reused,
+    };
+    if (!row.offer_id) throw new OfferWriteError("not_found", "Offer not found");
+    reused =
+      row.reused === true || String(row.reused) === "t" || String(row.reused) === "true";
     const offer = await getOfferById(row.offer_id);
-    if (!offer) throw new OfferWriteError("not_found", "Offer not found");
+    if (!offer || offer.adminHidden) throw new OfferWriteError("conflict", OFFER_REMOVED_REUSE);
     await revalidateCatalogShopCache();
     return { offer, reused };
   } catch (error) {
@@ -664,6 +852,7 @@ export async function updateOffer(
 
   const existing = await getOfferById(trimmed);
   if (!existing) return undefined;
+  if (existing.adminHidden) throw new OfferWriteError("conflict", OFFER_REMOVED);
 
   if (input.consumerPrice !== undefined) assertConsumerPrice(input.consumerPrice);
   if (input.status !== undefined) assertStatus(input.status);
@@ -711,7 +900,9 @@ export async function updateOffer(
       throwMapped(error);
     }
     await revalidateCatalogShopCache();
-    return getOfferById(trimmed);
+    const saved = await getOfferById(trimmed);
+    if (saved?.adminHidden) throw new OfferWriteError("conflict", OFFER_REMOVED);
+    return saved;
   }
 
   if (input.sellableVariantId !== undefined || input.availabilities !== undefined) {
@@ -725,5 +916,7 @@ export async function updateOffer(
     throwMapped(error);
   }
   await revalidateCatalogShopCache();
-  return getOfferById(trimmed);
+  const saved = await getOfferById(trimmed);
+  if (saved?.adminHidden) throw new OfferWriteError("conflict", OFFER_REMOVED);
+  return saved;
 }

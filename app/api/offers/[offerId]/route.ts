@@ -22,7 +22,13 @@ function unauthorized() {
 function offerError(error: unknown, fallback: string) {
   if (error instanceof OfferWriteError) {
     const http = offerWriteHttp(error);
-    return NextResponse.json({ error: http.error }, { status: http.status });
+    return NextResponse.json(
+      {
+        error: http.error,
+        ...(error.blockers?.length ? { blockers: error.blockers } : {}),
+      },
+      { status: http.status },
+    );
   }
   const message = error instanceof Error ? error.message : fallback;
   return NextResponse.json({ error: message }, { status: 500 });

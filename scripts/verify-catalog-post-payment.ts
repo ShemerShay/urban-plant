@@ -112,7 +112,7 @@ async function main(): Promise<void> {
         dealNumber: 1,
         name: "Ada",
         phone: "0546605603",
-        productDescription: "Urban Plant (2 items)",
+        productDescription: "Cleaf (2 items)",
         unitCost: 150,
         products,
         externalId: "order-1",
@@ -183,7 +183,7 @@ async function main(): Promise<void> {
     assert.ok(storedName.includes("דנה"));
     assert.ok(storedName.includes("מונסטרה"));
     assert.ok(storedName.includes('dir="ltr"'));
-    assert.ok(storedName.includes("Thank you for your purchase from Urban Plant"));
+    assert.ok(storedName.includes("Thank you for your purchase from Cleaf"));
     assert.ok(storedName.includes("we’ll contact you within the next 1–3 business days"));
     assert.ok(!storedName.includes("direction:rtl"));
 
@@ -209,7 +209,7 @@ async function main(): Promise<void> {
       ],
     });
     assert.equal(count(catalogHtml, "Hi Dana,"), 1);
-    assert.equal(count(catalogHtml, "Thank you for your purchase from Urban Plant"), 1);
+    assert.equal(count(catalogHtml, "Thank you for your purchase from Cleaf"), 1);
     assert.equal(count(catalogHtml, "Order summary:"), 1);
     assert.ok(catalogHtml.includes("Monstera Deliciosa × 1"));
     assert.ok(catalogHtml.includes("Golden Pothos + White Pot × 2"));
@@ -227,7 +227,7 @@ async function main(): Promise<void> {
     assert.equal(count(catalogHtml, "Water when the top soil feels dry."), 1);
     assert.equal(count(catalogHtml, "Rotate weekly for even growth."), 1);
     assert.equal(count(catalogHtml, "Order total:"), 1);
-    assert.equal(count(catalogHtml, "— Urban Plant"), 1);
+    assert.equal(count(catalogHtml, "— Cleaf"), 1);
     assert.ok(catalogHtml.indexOf("Order summary:") < catalogHtml.indexOf("Monstera Deliciosa × 1"));
     assert.ok(
       catalogHtml.indexOf("Monstera Deliciosa × 1") <
@@ -267,7 +267,7 @@ async function main(): Promise<void> {
     assert.ok(oneLineHtml.includes("Monstera Deliciosa × 1"));
     assert.equal(count(oneLineHtml, "You may take the plant with you."), 1);
     assert.equal(count(oneLineHtml, "Care instructions"), 1);
-    assert.equal(count(oneLineHtml, "— Urban Plant"), 1);
+    assert.equal(count(oneLineHtml, "— Cleaf"), 1);
 
     const repeatedPlantHtml = buildPurchaseEmailHtml({
       fullName: "Dana",
@@ -714,14 +714,14 @@ async function main(): Promise<void> {
         0,
       );
       assert.equal(documentTotal, 150);
-      assert.ok(!document.Products.some((line) => line.Description.includes("Urban Plant (2 items)")));
+      assert.ok(!document.Products.some((line) => line.Description.includes("Cleaf (2 items)")));
       assert.ok(!document.Products.some((line) => line.UnitCost === 99 || line.UnitCost === 999));
 
       const attempt = await getPaymentAttemptById(started.attemptId);
       assert.ok(attempt?.finalizedOrderId);
       orderIds.push(attempt.finalizedOrderId);
       const order = await getOrderById(attempt.finalizedOrderId);
-      assert.equal(order?.plantName, "Urban Plant (2 items)");
+      assert.equal(order?.plantName, "Cleaf (2 items)");
       assert.equal(order?.price, 150);
       assert.equal(order?.purchaseEmailStatus, "sent");
       assert.ok(order?.purchaseEmailSentAt);
@@ -755,7 +755,7 @@ async function main(): Promise<void> {
       const html = renderCustomerHtml(mails[0]!);
       assert.ok(html.includes('lang="en"'));
       assert.ok(html.includes('dir="ltr"'));
-      assert.equal(occurrences(html, "Thank you for your purchase from Urban Plant"), 1);
+      assert.equal(occurrences(html, "Thank you for your purchase from Cleaf"), 1);
       assert.equal(occurrences(html, "Order summary:"), 1);
       assert.ok(html.includes(`${originalName} × 1`));
       assert.ok(html.includes(`${originalName} + Pot ${tag} × 2`));
@@ -772,7 +772,7 @@ async function main(): Promise<void> {
       assert.equal(occurrences(html, `<strong>${originalName}</strong>`), 1);
       assert.equal(occurrences(html, careA), 1);
       assert.equal(occurrences(html, "Order total:"), 1);
-      assert.equal(occurrences(html, "— Urban Plant"), 1);
+      assert.equal(occurrences(html, "— Cleaf"), 1);
       assert.ok(html.indexOf("Order summary:") < html.indexOf(`${originalName} × 1`));
       assert.ok(html.indexOf(`${originalName} × 1`) < html.indexOf(`${originalName} + Pot ${tag} × 2`));
       assert.ok(html.indexOf(`${originalName} + Pot ${tag} × 2`) < html.indexOf("We’ll contact you"));
@@ -868,7 +868,7 @@ async function main(): Promise<void> {
         1,
       );
       assert.equal(occurrences(html, "Order total:"), 1);
-      assert.equal(occurrences(html, "— Urban Plant"), 1);
+      assert.equal(occurrences(html, "— Cleaf"), 1);
       assert.ok(html.includes('dir="ltr"'));
       const attempt = await getPaymentAttemptById(started.attemptId);
       assert.ok(attempt?.finalizedOrderId);
@@ -947,7 +947,7 @@ async function main(): Promise<void> {
         [originalName, secondName],
       );
       const html = renderCustomerHtml(mails[0]!);
-      assert.equal(occurrences(html, "Thank you for your purchase from Urban Plant"), 1);
+      assert.equal(occurrences(html, "Thank you for your purchase from Cleaf"), 1);
       assert.equal(occurrences(html, "Order summary:"), 1);
       assert.ok(html.includes(`${originalName} × 1`));
       assert.ok(html.includes(`${secondName} × 1`));
@@ -963,7 +963,7 @@ async function main(): Promise<void> {
         1,
       );
       assert.equal(occurrences(html, "Order total:"), 1);
-      assert.equal(occurrences(html, "— Urban Plant"), 1);
+      assert.equal(occurrences(html, "— Cleaf"), 1);
       const summary = html.indexOf("Order summary:");
       const lineAText = html.indexOf(`${originalName} × 1`);
       const lineBText = html.indexOf(`${secondName} × 1`);
@@ -1044,9 +1044,9 @@ async function main(): Promise<void> {
       assert.equal(occurrences(html, "Care instructions"), 0);
       assert.equal(occurrences(html, "Order summary:"), 1);
       assert.ok(html.includes(`${secondName} × 1`));
-      assert.equal(occurrences(html, "Thank you for your purchase from Urban Plant"), 1);
+      assert.equal(occurrences(html, "Thank you for your purchase from Cleaf"), 1);
       assert.equal(occurrences(html, "Order total:"), 1);
-      assert.equal(occurrences(html, "— Urban Plant"), 1);
+      assert.equal(occurrences(html, "— Cleaf"), 1);
       const attempt = await getPaymentAttemptById(started.attemptId);
       assert.ok(attempt?.finalizedOrderId);
       orderIds.push(attempt.finalizedOrderId);

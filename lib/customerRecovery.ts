@@ -4,13 +4,14 @@
  * never invents a plant URL or sends users into admin.
  */
 
+import { BRAND_NAME } from "@/lib/brand";
 import { isSafeCustomerReturnPath } from "@/lib/routes";
 import { buildWhatsAppChatUrl } from "@/lib/whatsappContact";
 
 export const LAST_GOOD_CUSTOMER_PATH_KEY = "urban-plant:last-good-customer-path";
 
 export const CUSTOMER_RECOVERY_WHATSAPP_MESSAGE =
-  "Hi Urban Plant — I opened a plant page that didn’t load (broken link or QR). Can you help?";
+  `Hi ${BRAND_NAME} — I opened a plant page that didn’t load (broken link or QR). Can you help?`;
 
 export function rememberGoodCustomerPath(pathname: string): void {
   if (typeof window === "undefined") return;

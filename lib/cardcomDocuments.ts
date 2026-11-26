@@ -5,6 +5,7 @@
 
 import "server-only";
 
+import { BRAND_NAME } from "@/lib/brand";
 import {
   CardcomError,
   getCardcomAuthFieldsForEnvironment,
@@ -398,7 +399,7 @@ export async function fetchCardcomDocumentPdf(
       const bytes = await fetchPdfFromUrl(info.documentUrl);
       return {
         bytes,
-        filename: `urban-plant-${info.documentNumber}.pdf`,
+        filename: `${BRAND_NAME.toLowerCase()}-${info.documentNumber}.pdf`,
       };
     } catch {
       // Fall through to CreateDocumentUrl.
@@ -415,6 +416,6 @@ export async function fetchCardcomDocumentPdf(
   const bytes = await fetchPdfFromUrl(url);
   return {
     bytes,
-    filename: `urban-plant-${info.documentNumber}.pdf`,
+    filename: `${BRAND_NAME.toLowerCase()}-${info.documentNumber}.pdf`,
   };
 }
